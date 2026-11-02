@@ -22,7 +22,7 @@ import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
 app.innerHTML = `
-  <h1>Android版・動作確認</h1>
+  <h1>動作確認（Android / iOS）</h1>
 
   <section class="card">
     <h2>1. いま動いている場所</h2>
@@ -64,11 +64,15 @@ app.innerHTML = `
 /* ---------- 1. 環境の表示 ---------- */
 
 const envEl = document.querySelector("#env")!;
+const platformName = (p: string): string => ({ android: "Android", ios: "iOS" })[p] ?? "ブラウザ";
 const renderEnv = () => {
+  const platform = Capacitor.getPlatform();
+  const viewport = window.visualViewport;
   const rows: [string, string][] = [
-    ["土台", Capacitor.getPlatform()],
-    ["ネイティブか", Capacitor.isNativePlatform() ? "はい（APK）" : "いいえ（ブラウザ）"],
+    ["土台", platform],
+    ["ネイティブか", Capacitor.isNativePlatform() ? `はい（${platformName(platform)}）` : "いいえ（ブラウザ）"],
     ["画面の大きさ", `${window.innerWidth} × ${window.innerHeight}`],
+    ["見えている高さ", viewport ? `${Math.round(viewport.height)}` : "取得できない"],
     ["画面の細かさ", String(window.devicePixelRatio)],
     ["縦書きに対応", CSS.supports("writing-mode", "vertical-rl") ? "はい" : "いいえ"],
     ["傍点に対応", CSS.supports("text-emphasis", "filled dot") ? "はい" : "いいえ"],
@@ -83,6 +87,12 @@ renderEnv();
  * 縦書きの原稿欄がどれだけ潰れるかは、この数字を見ないと分からない。
  */
 window.addEventListener("resize", renderEnv);
+/**
+ * iOS の WKWebView は、ソフトキーボードが出ても window の resize を送らないことがある。
+ * 見えている範囲（visualViewport）の変化も拾わないと、キーボードで原稿欄が隠れたかが分からない。
+ */
+window.visualViewport?.addEventListener("resize", renderEnv);
+window.visualViewport?.addEventListener("scroll", renderEnv);
 
 /* ---------- 2. 文字数 ---------- */
 

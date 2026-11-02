@@ -3,9 +3,9 @@
 パソコン版（`../novel-ai-assistant` のVSCode拡張機能）を Android と iOS へ移す作業場。iOS 版もこのリポジトリで作る（2026-11-02 作者「同じリポジトリで、iOS版まで開発します」）。Capacitor を使い、1つのプロジェクトから Android と iOS の両方を組み立てる。
 
 - GitHub：<https://github.com/nonahisa/novel-ai-mobile>（公開。拡張機能のリポジトリにならった）。2026-11-02 に `novel-ai-android` から改名した。古い URL は GitHub が新しい名前へ転送する。手元のフォルダー名は `novel-ai-android` のまま
-- iOS の組み立て：Mac（Xcode）か、GitHub Actions の macOS の機械が要る。**どちらにするかは作者がまだ決めていない**（詳細設計書 11章・12章）
+- iOS の組み立て：Mac（Xcode）か、GitHub Actions の macOS の機械が要る。**どちらにするかは作者がまだ決めていない**（詳細設計書 11章・12章）。土台の `ios/` は生成済み（`@capacitor/ios` 8.5.0、Android と同じ版）
 - ライセンス：MIT（`LICENSE`。拡張機能のコードを流用するので、著作権の行も拡張機能と同じにしている）
-- CI：`main` への push と PR のたびに、Windows で `npm run apk`（型の検査 → ビルド → APK）を走らせる（`.github/workflows/ci.yml`）
+- CI：`main` への push と PR のたびに、Windows で `pnpm run apk`（型の検査 → ビルド → APK）を走らせる。macOS では `pnpm run sync:ios` を走らせる（`.github/workflows/ci.yml`）
 
 ---
 
@@ -24,26 +24,44 @@
 
 | 段階 | やり方 | 何を見るか |
 |---|---|---|
-| 1 | `npm run dev` → <http://localhost:5173> | 画面と処理のほとんど。Claudeが自分で開いて確認できる |
+| 1 | `pnpm run dev` → <http://localhost:5173> | 画面と処理のほとんど。Claudeが自分で開いて確認できる |
 | 2 | 同じWi-Fiのスマホで `http://<パソコンのIP>:5173` | **ビルド不要**。日本語入力・縦書き・指の操作 |
-| 3 | `npm run android`（実機をUSBで接続） | ファイル保存・Git・共有など、ネイティブが要る部分 |
+| 3 | `pnpm run android`（実機をUSBで接続） | ファイル保存・Git・共有など、ネイティブが要る部分 |
 
-段階2のURLは `npm run dev` の出力の「Network:」に出る。`vite.config.ts` の `host: true` がこれを支えているので、外さないこと。
+段階2のURLは `pnpm run dev` の出力の「Network:」に出る。`vite.config.ts` の `host: true` がこれを支えているので、外さないこと。
 
 ---
 
 ## コマンド
 
+パッケージ管理は pnpm（lock は `pnpm-lock.yaml`）。npm の lock は使わない。`.npmrc` の `node-linker=hoisted` は、Capacitor が生成する Gradle のパスを `node_modules/@capacitor/...` の形に保つためのもので、外さないこと。
+
 ```
-npm run dev        開発サーバー（段階1・2）
-npm run build      型検査とビルド
-npm run typecheck  型検査だけ
-npm run test       テスト（Vitest。パソコン版と同じ）
-npm run sync       ビルドしてAndroidプロジェクトへ反映
-npm run apk        APKを作る（android/app/build/outputs/apk/debug/）
-npm run android    APKを作って実機で起動（段階3）
-npm run devices    つながっている端末を見る
+pnpm run dev        開発サーバー（段階1・2）
+pnpm run build      型検査とビルド
+pnpm run typecheck  型検査だけ
+pnpm run test       テスト（Vitest。パソコン版と同じ）
+pnpm run sync       ビルドしてAndroidプロジェクトへ反映
+pnpm run apk        APKを作る（android/app/build/outputs/apk/debug/）
+pnpm run android    APKを作って実機で起動（段階3）
+pnpm run devices    つながっている端末を見る
+pnpm run sync:ios   ビルドしてiOSプロジェクト（ios/）へ反映（Macだけ）
+pnpm run ios        iOSのシミュレーターで起動（Macだけ）
+pnpm run ios:open   XcodeでiOSプロジェクトを開く（Macだけ）
 ```
+
+### iOS（Mac）
+
+- 必要なもの：**フル版の Xcode**（App Store から。Command Line Tools だけでは `xcodebuild` が動かない）
+- 初回だけ、ターミナルで次を実行する（パスワードを聞かれる）：
+  ```
+  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+  sudo xcodebuild -license accept
+  sudo xcodebuild -runFirstLaunch
+  ```
+- `ios/` は `npx cap add ios` で生成済み。中身は Capacitor の土台で、手で書き換える場所ではない
+- CI（`.github/workflows/ci.yml` の `ios` ジョブ）は macOS で `pnpm run sync:ios` まで走らせる。署名が要るので Xcode のビルドはまだ CI に入れていない
+- 実機確認（縦書き入力・キーボード・safe-area）は [`docs/実機確認リスト.md`](docs/実機確認リスト.md) の iOS の節を見る
 
 ---
 
@@ -60,7 +78,7 @@ npm run devices    つながっている端末を見る
 | Command-line Tools | 23.0（`%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest`。`sdkmanager` は Android CLI `android.exe` に変わった）。2026-10-29 追加 |
 | エミュレーター | 37.1.11、端末 `Hello_API36`（Android 16 / API 36、Google APIs、x86_64、WHPX で加速）。2026-10-29 追加 |
 
-エミュレーターは `emulator -avd Hello_API36` で起こす。起きたら `npm run android` で実機と同じに入る。
+エミュレーターは `emulator -avd Hello_API36` で起こす。起きたら `pnpm run android` で実機と同じに入る。
 
 PowerShell から `sdkmanager.bat` / `avdmanager.bat` へ `system-images;android-36;...` を渡すと、
 cmd が `;` で割って失敗する。`android.exe sdk install system-images/android-36/google_apis/x86_64`（`/` 区切り）を使う。
@@ -86,7 +104,7 @@ Android Studio に同梱されているJDKは **25** で、これを `JAVA_HOME`
 2. 「設定 → システム → 開発者向けオプション → USBデバッグ」をON
 3. USBケーブルでパソコンにつなぐ（充電専用ケーブルでは映らない）
 4. スマホに出る「USBデバッグを許可しますか」で許可
-5. `npm run devices` で出てくれば成功
+5. `pnpm run devices` で出てくれば成功
 
 ---
 

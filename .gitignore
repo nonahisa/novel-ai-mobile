@@ -41,3 +41,6 @@ keystore.properties
 !.claude/skills/
 !.claude/settings.json
 !.claude/hooks/
+
+# 動作確認の画面キャプチャ（ローカルだけ）
+.playwright-mcp/

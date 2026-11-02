@@ -10,21 +10,35 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    # 手元と同じ Windows で走らせる。`npm run apk` が gradlew.bat を呼ぶため
+    # 手元と同じ Windows で走らせる。`pnpm run apk` が gradlew.bat を呼ぶため
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
       # JDK 25 では Gradle 8.14 が落ちる（README「JDK 25 では動かない」）。手元と同じ 21 にそろえる
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
       # 型の検査 → 画面のビルド → Android へ写す → APK のビルド
-      # テスト（npm run test）はテストのファイルを入れたときに足す。いまは0件で、走らせると失敗する
-      - run: npm run apk
+      # テスト（pnpm run test）はテストのファイルを入れたときに足す。いまは0件で、走らせると失敗する
+      - run: pnpm run apk
+  ios:
+    # iOS の土台（ios/）へ写せるかを見る。Xcode でのビルドは署名が要るので、ここでは行わない
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run sync:ios

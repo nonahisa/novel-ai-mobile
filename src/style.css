@@ -29,7 +29,7 @@
 
 body {
   margin: 0;
-  padding: max(12px, env(safe-area-inset-top)) 12px calc(24px + env(safe-area-inset-bottom));
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   background: var(--bg);
   color: var(--fg);
   font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
@@ -128,8 +128,8 @@ ruby rt {
 /* 傍点。縦書きでは右側に付くのが決まり */
 .bouten {
   font-style: normal;
-  text-emphasis: filled dot;
   -webkit-text-emphasis: filled dot;
+  text-emphasis: filled dot;
 }
 
 .count {

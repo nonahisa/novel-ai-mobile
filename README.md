@@ -1,8 +1,9 @@
-# 統合小説執筆環境 — Android版（移植作業中）
+# 統合小説執筆環境 — スマホ・タブレット版（Android を移植中。iOS も同じリポジトリで作る）
 
-パソコン版（`../novel-ai-assistant` のVSCode拡張機能）を Android へ移す作業場。
+パソコン版（`../novel-ai-assistant` のVSCode拡張機能）を Android と iOS へ移す作業場。iOS 版もこのリポジトリで作る（2026-11-02 作者「同じリポジトリで、iOS版まで開発します」）。Capacitor を使い、1つのプロジェクトから Android と iOS の両方を組み立てる。
 
-- GitHub：<https://github.com/nonahisa/novel-ai-android>（公開。拡張機能のリポジトリにならった）
+- GitHub：<https://github.com/nonahisa/novel-ai-mobile>（公開。拡張機能のリポジトリにならった）。2026-11-02 に `novel-ai-android` から改名した。古い URL は GitHub が新しい名前へ転送する。手元のフォルダー名は `novel-ai-android` のまま
+- iOS の組み立て：Mac（Xcode）か、GitHub Actions の macOS の機械が要る。**どちらにするかは作者がまだ決めていない**（詳細設計書 11章・12章）
 - ライセンス：MIT（`LICENSE`。拡張機能のコードを流用するので、著作権の行も拡張機能と同じにしている）
 - CI：`main` への push と PR のたびに、Windows で `npm run apk`（型の検査 → ビルド → APK）を走らせる（`.github/workflows/ci.yml`）
 

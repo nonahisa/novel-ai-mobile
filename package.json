@@ -1,12 +1,12 @@
 {
-  "name": "novel-ai-android",
+  "name": "novel-ai-mobile",
   "private": true,
   "version": "0.0.0",
   "description": "統合小説執筆環境の Android 版（移植作業中）",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nonahisa/novel-ai-android.git"
+    "url": "https://github.com/nonahisa/novel-ai-mobile.git"
   },
   "type": "module",
   "scripts": {

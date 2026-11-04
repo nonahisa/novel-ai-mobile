@@ -26,6 +26,8 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.0",
+    "@types/node": "^22.20.5",
+    "@types/path-browserify": "^1.0.3",
     "typescript": "~6.0.2",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
@@ -40,6 +42,8 @@
     "@capacitor/preferences": "^8.0.1",
     "@capacitor/share": "^8.0.1",
     "@capacitor/status-bar": "^8.0.3",
-    "isomorphic-git": "^1.41.9"
+    "isomorphic-git": "^1.41.9",
+    "novel-ai-assistant": "github:nonahisa/novel-ai-assistant#v0.126.2",
+    "path-browserify": "^1.0.1"
   }
 }

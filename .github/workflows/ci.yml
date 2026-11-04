@@ -26,8 +26,9 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: pnpm install --frozen-lockfile
+      # テスト（本体の部品を取り込めるか・端末に無いものを読んでいないか。androidReach.test.ts）
+      - run: pnpm run test
       # 型の検査 → 画面のビルド → Android へ写す → APK のビルド
-      # テスト（pnpm run test）はテストのファイルを入れたときに足す。いまは0件で、走らせると失敗する
       - run: pnpm run apk
   ios:
     # iOS の土台（ios/）へ写せるかを見る。Xcode でのビルドは署名が要るので、ここでは行わない

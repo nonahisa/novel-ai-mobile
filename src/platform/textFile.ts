@@ -5,7 +5,10 @@ import {
   hasConflictMarkers,
   type TextFileContent,
 } from "novel-ai-assistant/src/core/textDecode";
-import { encodePreservingFormat } from "novel-ai-assistant/src/core/textEncodePreserving";
+import {
+  encodePreservingFormat,
+  encodeTextFragment,
+} from "novel-ai-assistant/src/core/textEncodePreserving";
 import { FileExistsError, dirname, joinStorePath, normalizeStorePath, type FileStore } from "./fileStore";
 
 /**
@@ -122,6 +125,32 @@ export async function writeTextFilePreservingFormat(
 
   await pruneRecoveries(store, filePath);
   return { ok: true, recoveryPath };
+}
+
+/**
+ * 新しいファイルとして書き出すためのバイト列（本体の `encodeForNewFile` と同じ。競合で「両方残す」に使う）。
+ *
+ * 本体の関数は `vscode` に頼る `textFile.ts` の中にあるので借りられず、ここに同じものを置く。
+ * **元のファイルと同じ文字コード・改行で書く**（片方だけ UTF-8・LF になると、見比べたとき全行が違って見える）。
+ * Shift_JIS で表せない字があれば `undefined`（代わりの字に置き換えると本文が壊れる）。
+ */
+export function encodeForNewFile(
+  text: string,
+  original: Pick<TextFileContent, "encoding" | "eol" | "hasTrailingNewline">
+): Uint8Array | undefined {
+  let normalized = text.replace(/\r\n?/g, "\n");
+  if (original.hasTrailingNewline && !normalized.endsWith("\n")) {
+    normalized += "\n";
+  } else if (!original.hasTrailingNewline) {
+    normalized = normalized.replace(/\n+$/, "");
+  }
+  const body = encodeTextFragment(normalized.replace(/\n/g, original.eol), original.encoding);
+  if (!body) return undefined;
+  if (original.encoding !== "utf8-bom") return body;
+  const withBom = new Uint8Array(body.length + 3);
+  withBom.set([0xef, 0xbb, 0xbf]);
+  withBom.set(body, 3);
+  return withBom;
 }
 
 let recoverySequence = 0;

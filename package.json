@@ -43,7 +43,7 @@
     "@capacitor/share": "^8.0.1",
     "@capacitor/status-bar": "^8.0.3",
     "isomorphic-git": "^1.41.9",
-    "novel-ai-assistant": "github:nonahisa/novel-ai-assistant#v0.126.2",
+    "novel-ai-assistant": "github:nonahisa/novel-ai-assistant#v0.127.0",
     "path-browserify": "^1.0.1"
   }
 }

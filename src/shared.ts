@@ -14,6 +14,7 @@ export {
   type PostingLedger,
 } from "novel-ai-assistant/src/models/posting";
 export {
+  postingNotationTextHash,
   postingTextHash,
   postingBodyHash,
 } from "novel-ai-assistant/src/core/postingBodyHash";

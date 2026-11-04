@@ -1,7 +1,7 @@
 import "./style.css";
 import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
-import { SHARED_VERSION, postingTextHash } from "./shared";
+import { SHARED_VERSION, postingNotationTextHash } from "./shared";
 
 /**
  * Android版の動作確認ページ。
@@ -72,7 +72,8 @@ const platformName = (p: string): string => ({ android: "Android", ios: "iOS" })
  */
 const sharedPartsLine = (): string => {
   try {
-    const hash = postingTextHash("第1話", "本文");
+    // 記録に残す印（0.127.0 から `v3:`。ルビ・傍点の書き方を寄せてから取る）
+    const hash = postingNotationTextHash("第1話", "{本文|ほんぶん}");
     return `${SHARED_VERSION}（印を取れた：${hash.slice(0, 10)}…）`;
   } catch (error) {
     return `${SHARED_VERSION}（動かない：${String(error)}）`;

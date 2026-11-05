@@ -99,6 +99,7 @@ Android System WebView は端末ごとに版が違う。**動かす下限は Chr
 
 - 本体の `core/pathText.ts`・`core/paths.ts` は Node の `path` を読むので、`vite.config.ts` で `path-browserify` へ差し替える（本体のブラウザ版と同じ）
 - 本体の `core/runtime.ts` が `process` を（有無を確かめてから）読むので、型の検査に `@types/node` を入れる。端末で Node のものを読んでいないかは `androidReach.test.ts`（2.4）が見張る
+- 本体の `core/textEncodePreserving.ts` が `import iconv = require("iconv-lite")` と書くので、型の検査の `module` を `preserve` にし、`erasableSyntaxOnly` を外す（2026-11-05。画面のビルドはそのままで通る）
 - 取り込んだ版を画面に出す（動作確認ページの「本体の部品」の行。`vite.config.ts` が本体の `package.json` から版だけを埋める）
 
 弱みは、本体のリポジトリを丸ごと取ってくること（文書や画像を含め 93MB。取得に約35秒）。困るほどになったら、本体の側で配る物を絞る（`files`）ことを母艦へ相談する。

@@ -2,6 +2,8 @@ import "./style.css";
 import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { SHARED_VERSION, postingNotationTextHash } from "./shared";
+import { CapacitorFileStore } from "./platform/capacitorFileStore";
+import { readTextFile, writeTextFilePreservingFormat } from "./platform/textFile";
 
 /**
  * Android版の動作確認ページ。
@@ -59,6 +61,11 @@ app.innerHTML = `
     </p>
     <button id="save">保存して読み戻す</button>
     <pre id="fileResult" class="result">まだ試していません</pre>
+    <p class="note">
+      本体と同じ決まりで書き戻す（Shift_JIS・CRLF の原稿の1字を直し、文字コードと改行が保たれるか。退避も作る）。
+    </p>
+    <button id="saveShared">本体の決まりで書き戻す</button>
+    <pre id="sharedFileResult" class="result">まだ試していません</pre>
   </section>
 `;
 
@@ -167,6 +174,38 @@ document.querySelector<HTMLButtonElement>("#save")!.addEventListener("click", as
     ].join("\n");
   } catch (e) {
     fileResult.textContent = `❌ 失敗しました\n${e instanceof Error ? e.message : String(e)}`;
+  }
+});
+
+/**
+ * 本体の決まりで書き戻す（`src/platform/textFile.ts`）。端末の置き場の上で、
+ * Shift_JIS・CRLF の原稿を読み、1字直して書き戻し、読み直して形が保たれたかを見る。
+ */
+const sharedFileResult = document.querySelector<HTMLPreElement>("#sharedFileResult")!;
+const SJIS_CRLF_SAMPLE = new Uint8Array([
+  140, 225, 148, 121, 130, 205, 148, 76, 130, 197, 130, 160, 130, 233, 129, 66, 13, 10, 150, 188, 145,
+  79, 130, 205, 130, 220, 130, 190, 150, 179, 130, 162, 129, 66, 13, 10,
+]); // 「吾輩は猫である。（改行 CRLF）名前はまだ無い。（改行 CRLF）」の Shift_JIS
+document.querySelector<HTMLButtonElement>("#saveShared")!.addEventListener("click", async () => {
+  const store = new CapacitorFileStore();
+  const file = "確認_確認用/原稿/第1話.txt";
+  sharedFileResult.textContent = "試しています…";
+  try {
+    await store.createDirectory("確認_確認用/原稿");
+    await store.deleteFile(file).catch(() => undefined);
+    await store.writeFile(file, SJIS_CRLF_SAMPLE, { mode: "create" });
+    const read = await readTextFile(store, file);
+    const result = await writeTextFilePreservingFormat(store, file, read.text.replace("猫", "犬"), read, read.hash);
+    const back = await readTextFile(store, file);
+    const kept = back.encoding === read.encoding && back.eol === "\r\n" && back.text.startsWith("吾輩は犬である。");
+    sharedFileResult.textContent = [
+      result.ok && kept ? "✅ 文字コードと改行を保ったまま書き戻せました" : "❌ 形が変わった・書けなかった",
+      `読んだ形: ${read.encoding}・${JSON.stringify(read.eol)}`,
+      `書き戻した形: ${back.encoding}・${JSON.stringify(back.eol)}`,
+      result.ok ? `退避先: ${result.recoveryPath}` : `理由: ${result.reason} ${result.detail ?? ""}`,
+    ].join("\n");
+  } catch (e) {
+    sharedFileResult.textContent = `❌ 失敗しました\n${e instanceof Error ? e.message : String(e)}`;
   }
 });
 

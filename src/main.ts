@@ -78,6 +78,9 @@ app.innerHTML = `
     </p>
     <button id="aiPing">通信を試す</button>
     <pre id="aiResult" class="result">まだ試していません</pre>
+  </section>
+
+  <section class="card">
     <h2>6. git で取ってくる（isomorphic-git）</h2>
     <p class="note">
       公開のリポジトリ（モバイル版そのもの）を、最新の1版だけ端末へ取ってきます。
@@ -259,6 +262,8 @@ document.querySelector<HTMLButtonElement>("#aiPing")!.addEventListener("click", 
     lines.push(`${timedOut ? "✅" : "❌"} ${seconds}秒で返った：${describe(e)}`);
   }
   show();
+});
+
 /* ---------- 6. git で取ってくる ---------- */
 
 const gitResult = document.querySelector<HTMLPreElement>("#gitResult")!;

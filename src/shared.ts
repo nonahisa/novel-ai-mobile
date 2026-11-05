@@ -18,6 +18,12 @@ export {
   postingTextHash,
   postingBodyHash,
 } from "novel-ai-assistant/src/core/postingBodyHash";
+/*
+  AI への通信。本体の `fetchJson` をそのまま使う。中で読む `./fetchTimeouts` は、
+  組み立ての段でモバイル版の `src/platform/fetchTimeouts.ts` へ差し替わる（`substitutions.ts`）
+*/
+export { fetchJson, type JsonRequest } from "novel-ai-assistant/src/ai/httpClient";
+export { AIError } from "novel-ai-assistant/src/ai/types";
 
 /** 取り込んでいる本体の版（`vite.config.ts` が本体の package.json から埋める） */
 export const SHARED_VERSION: string = __SHARED_VERSION__;

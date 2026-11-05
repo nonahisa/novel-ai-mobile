@@ -84,6 +84,25 @@ Android System WebView は端末ごとに版が違う。**動かす下限は Chr
 
 **【決定】** 2026-11-04 作者の裁定：共有の部品は**いつも本体（拡張機能）と同じ版**で取り込み、本体の版が上がるたびに取り込み直してモバイル版を出し直す。`設定/` の台帳は同期で本体と共有するので、古い部品が台帳の新しい欄（例：0.123.0〜0.125.4 で投稿の台帳に増えた revisions・bodyHash など）を落として書き戻さないようにするためである。取り込みの段取りは `docs/引継ぎ書.md` 2章に書く。
 
+**【決定】** 2026-11-05 段0の試作で両方を試した結果（作者「試作で決める」2026-10-31 による）：**本体のタグを指す依存（版を固定したパッケージ）で取り込む。** `package.json` に `"novel-ai-assistant": "github:nonahisa/novel-ai-assistant#vX.Y.Z"` と書き（試作は v0.126.2 で行い、同じ日に v0.127.0 へ上げた）、画面のコードは `src/shared.ts` を通して `novel-ai-assistant/src/models/...`・`.../src/core/...` を読む。
+
+| | 本体のタグを指す依存（採った） | ワークスペース（本体をこのリポジトリの中に置く） |
+|---|---|---|
+| 取り込んだ版の記録 | `package.json` の `#vX.Y.Z` の1か所。lock が commit まで固定する | サブモジュールの commit。タグとの対応は別に書く必要がある |
+| 入る物 | 本体と、本体の実行時の依存（`buffer`・`diff`・`fflate`・`iconv-lite`・`path-browserify`・`undici`）だけ。`node_modules` 195MB・175個 | 本体の開発用の依存まで入る（229MB・374個）。本体の部品の組み立ての許可も求められる |
+| テスト | こちらのテストだけが走る | Vitest が本体のテスト 1,584 ファイルまで拾い、そのままでは終わらない（除外の設定が要る） |
+| CI | `pnpm install` だけ | サブモジュールの取得が要る |
+| 本体の版上げ | `pnpm add "novel-ai-assistant@github:nonahisa/novel-ai-assistant#vX.Y.Z"` の1行 | サブモジュールをタグへ動かし、`pnpm install` |
+| 写しを作らない・こちらで直さない | `node_modules` の下にあるので、こちらで直しても次の取り込みで消える（直さない決まりと合う） | 手元で本体のファイルを直せてしまう |
+
+どちらでも型の検査（`tsc`）・テスト・画面のビルドは通った。取り込みに要る手当ては次の3つで、どちらの方式でも同じ：
+
+- 本体の `core/pathText.ts`・`core/paths.ts` は Node の `path` を読むので、`vite.config.ts` で `path-browserify` へ差し替える（本体のブラウザ版と同じ）
+- 本体の `core/runtime.ts` が `process` を（有無を確かめてから）読むので、型の検査に `@types/node` を入れる。端末で Node のものを読んでいないかは `androidReach.test.ts`（2.4）が見張る
+- 取り込んだ版を画面に出す（動作確認ページの「本体の部品」の行。`vite.config.ts` が本体の `package.json` から版だけを埋める）
+
+弱みは、本体のリポジトリを丸ごと取ってくること（文書や画像を含め 93MB。取得に約35秒）。困るほどになったら、本体の側で配る物を絞る（`files`）ことを母艦へ相談する。
+
 依存の向きは拡張機能と同じにする：`画面` → `機能` → `core` → `models`。Android の画面のコードは `core` を呼ぶだけで、`core` の側に Android の事情を入れない。
 
 ### 2.3 差し替える部品
@@ -103,7 +122,7 @@ Android System WebView は端末ごとに版が違う。**動かす下限は Chr
 
 ### 2.4 端末で使えない部品の見張り
 
-**【踏襲】** 拡張機能の `test/unit/cross/browserReach.test.ts` と同じ形で、Android の入口から `import` を静的にたどり、`vscode`・`node:` で始まるもの・`undici` を取り込んでいないかを見張るテスト（`androidReach.test.ts`）を置く。静的な `import` は呼ばれなくても読み込まれ、端末では起動した瞬間に落ちるためである（拡張機能の CLAUDE.md の失敗6）。
+**【踏襲】** 拡張機能の `test/unit/cross/browserReach.test.ts` と同じ形で、Android の入口から `import` を静的にたどり、`vscode`・`node:` で始まるもの・`undici` を取り込んでいないかを見張るテスト（`androidReach.test.ts`）を置く。2026-11-05 に置いた（`test/androidReach.test.ts`）。入口は `src/main.ts` で、本体の部品（`node_modules/novel-ai-assistant/src/...`）の中までたどる。CI の Windows のジョブで毎回走る。静的な `import` は呼ばれなくても読み込まれ、端末では起動した瞬間に落ちるためである（拡張機能の CLAUDE.md の失敗6）。
 
 ## 3. 共通設計書7章の問いへの答え
 

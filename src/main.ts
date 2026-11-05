@@ -1,6 +1,7 @@
 import "./style.css";
 import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
+import { SHARED_VERSION, postingNotationTextHash } from "./shared";
 
 /**
  * Android版の動作確認ページ。
@@ -65,12 +66,26 @@ app.innerHTML = `
 
 const envEl = document.querySelector("#env")!;
 const platformName = (p: string): string => ({ android: "Android", ios: "iOS" })[p] ?? "ブラウザ";
+/**
+ * 本体と共有する部品が、この端末の WebView で動くか。
+ * 投稿の台帳の印（SHA-256。本体の自前の実装）を1つ取ってみる。
+ */
+const sharedPartsLine = (): string => {
+  try {
+    // 記録に残す印（0.127.0 から `v3:`。ルビ・傍点の書き方を寄せてから取る）
+    const hash = postingNotationTextHash("第1話", "{本文|ほんぶん}");
+    return `${SHARED_VERSION}（印を取れた：${hash.slice(0, 10)}…）`;
+  } catch (error) {
+    return `${SHARED_VERSION}（動かない：${String(error)}）`;
+  }
+};
 const renderEnv = () => {
   const platform = Capacitor.getPlatform();
   const viewport = window.visualViewport;
   const rows: [string, string][] = [
     ["土台", platform],
     ["ネイティブか", Capacitor.isNativePlatform() ? `はい（${platformName(platform)}）` : "いいえ（ブラウザ）"],
+    ["本体の部品", sharedPartsLine()],
     ["画面の大きさ", `${window.innerWidth} × ${window.innerHeight}`],
     ["見えている高さ", viewport ? `${Math.round(viewport.height)}` : "取得できない"],
     ["画面の細かさ", String(window.devicePixelRatio)],

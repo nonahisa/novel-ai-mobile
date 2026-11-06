@@ -102,6 +102,7 @@ function send(url: string, init: RequestInit, timeoutMs: number): Promise<Respon
  * **2026-11-06 に確かめた事実**（`Origin: https://localhost`＝端末の WebView の出どころで、
  * 下見の問い合わせ（OPTIONS）と、偽の鍵での本番の POST の両方を見た。
  * どれも断りの答え（401・400）にも許しの印が付き、知らせの中身まで読める）：
+ * （2026-11-07：iOS の WebView の出どころ `capacitor://localhost` でも、下の3つは許すと確かめた）
  *
  * - `api.anthropic.com`：許す（`*`）。本体の部品が `anthropic-dangerous-direct-browser-access` を
  *   付けるのは、`process` が無いとき（`isWebRuntime()`）。モバイル版の組み立ては `process` を作らない

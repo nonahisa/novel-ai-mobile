@@ -6,6 +6,9 @@ import { CapacitorFileStore } from "./platform/capacitorFileStore";
 import { readTextFile, writeTextFilePreservingFormat } from "./platform/textFile";
 import { removeTree, shallowClone } from "./platform/git";
 import { CapacitorGitFsBackend } from "./platform/gitFs";
+import { chooseTransport } from "./platform/fetchTimeouts";
+import { LedgerWriteGate } from "./platform/sharedVersionGate";
+import { DeviceSettings, capacitorPreferencesBackend } from "./platform/deviceSettings";
 
 /**
  * Android版の動作確認ページ。
@@ -88,6 +91,16 @@ app.innerHTML = `
     </p>
     <button id="gitClone">取ってくる</button>
     <pre id="gitResult" class="result">まだ試していません</pre>
+  </section>
+
+  <section class="card">
+    <h2>7. 中止で切れる道と、本体の版の関所</h2>
+    <p class="note">
+      偽の鍵で Claude の API へ投げ、「鍵が違う」と読めるか（WebView の fetch で投げたか）を見ます。
+      続けて、本体の最新のタグを GitHub で確かめ、設定の台帳を書いてよいかを出します。
+    </p>
+    <button id="abortRoute">試す</button>
+    <pre id="abortResult" class="result">まだ試していません</pre>
   </section>
 `;
 
@@ -291,3 +304,52 @@ document.querySelector<HTMLButtonElement>("#gitClone")!.addEventListener("click"
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 }
+
+/* ---------- 7. 中止で切れる道と、本体の版の関所 ---------- */
+
+const abortResult = document.querySelector<HTMLPreElement>("#abortResult")!;
+document.querySelector<HTMLButtonElement>("#abortRoute")!.addEventListener("click", async () => {
+  const lines: string[] = [];
+  const show = () => (abortResult.textContent = lines.join("\n"));
+  const describe = (e: unknown) => (e instanceof AIError ? `${e.kind}：${e.message}` : String(e));
+  const url = "https://api.anthropic.com/v1/messages";
+  lines.push(`道：${chooseTransport(url, Capacitor.isNativePlatform()) === "webview" ? "WebView の fetch" : "CapacitorHttp"}`);
+  show();
+  performance.clearResourceTimings();
+  try {
+    await fetchJson({
+      url,
+      headers: { "x-api-key": "sk-ant-dummy", "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+      body: { model: "claude-haiku-4-5", max_tokens: 1, messages: [{ role: "user", content: "a" }] },
+      timeoutMs: 30_000,
+      label: "Claude",
+    });
+    lines.push("❌ 偽の鍵なのに答えが来た");
+  } catch (e) {
+    const ok = e instanceof AIError && e.kind === "authentication_failed";
+    lines.push(`${ok ? "✅" : "❌"} ${describe(e)}`);
+  }
+  const seen = performance.getEntriesByType("resource").some((entry) => entry.name.startsWith(url));
+  lines.push(`${seen ? "✅ WebView の記録に残った（WebView の fetch で投げた）" : "❌ WebView の記録に無い"}`);
+  show();
+
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  setTimeout(() => controller.abort(), 20);
+  try {
+    await fetchJson({ url: "https://api.openai.com/v1/models", timeoutMs: 30_000, label: "OpenAI", signal: controller.signal });
+    lines.push("❌ 中止したのに答えが来た");
+  } catch (e) {
+    const aborted = e instanceof AIError && e.kind === "aborted";
+    lines.push(`${aborted ? "✅" : "❌"} 中止：${Date.now() - startedAt}ミリ秒で返った（${describe(e)}）`);
+  }
+  show();
+
+  const { settings } = await DeviceSettings.load(capacitorPreferencesBackend);
+  const gate = new LedgerWriteGate(SHARED_VERSION, settings);
+  const refreshed = await gate.refresh();
+  lines.push(refreshed.ok ? `本体の最新のタグ：${refreshed.latest.version}（取り込んだ版 ${SHARED_VERSION}）` : `❌ 確かめられない：${refreshed.detail}`);
+  const answer = gate.check();
+  lines.push(answer.allowed ? "✅ 設定の台帳を書けます" : `⛔ ${answer.message}`);
+  show();
+});

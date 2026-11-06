@@ -6,6 +6,8 @@ import { AIError, fetchJson } from "../src/shared";
 import * as mobile from "../src/platform/fetchTimeouts";
 import {
   NATIVE_TIMEOUT_MARGIN_MS,
+  allowsWebViewFetch,
+  chooseTransport,
   nativeFetch,
   setTransportForTests,
   type NativeRequest,
@@ -166,5 +168,38 @@ describe("端末の側（CapacitorHttp）で投げる", () => {
     const response = await nativeFetch("https://a.invalid/", {}, 1_000, () => ok("", 204));
     expect(response.status).toBe(204);
     expect(await response.text()).toBe("");
+  });
+});
+
+describe("投げ方は宛先で選ぶ（止められる所は止める）", () => {
+  test("CORS を許すと確かめたクラウドの AI は、端末でも WebView の fetch で投げる", () => {
+    for (const url of [
+      "https://api.anthropic.com/v1/messages",
+      "https://api.openai.com/v1/chat/completions",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+    ]) {
+      expect(chooseTransport(url, true)).toBe("webview");
+    }
+  });
+
+  test("さくらの AI・手元の AI・見知らぬ宛先は、端末では CapacitorHttp で投げる", () => {
+    for (const url of [
+      "https://api.ai.sakura.ad.jp/v1/chat/completions",
+      "http://100.64.0.1:11434/api/chat",
+      "https://api.anthropic.com.example.invalid/v1/messages",
+      "http://api.openai.com/v1/chat/completions",
+      "壊れた宛先",
+    ]) {
+      expect(chooseTransport(url, true)).toBe("native");
+    }
+  });
+
+  test("パソコンのブラウザでは、いつもふつうの fetch", () => {
+    expect(chooseTransport("https://api.ai.sakura.ad.jp/v1/chat/completions", false)).toBe("webview");
+  });
+
+  test("名前の大文字・小文字や道の違いは見ない（名前だけで照らす）", () => {
+    expect(allowsWebViewFetch("https://API.OpenAI.com/v1/models")).toBe(true);
+    expect(allowsWebViewFetch("https://api.anthropic.com:443/v1/messages?beta=true")).toBe(true);
   });
 });

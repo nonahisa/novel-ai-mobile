@@ -10,22 +10,26 @@ import { Capacitor, CapacitorHttp, type HttpResponse } from "@capacitor/core";
  * 外へ見せる名前と形は本体と同じにそろえる——そろっていないと、
  * 本体の部品が知らない名前を呼んで落ちる（`fetchTimeouts.test.ts` が見る）。
  *
- * ## 端末では `CapacitorHttp` で投げる
+ * ## 投げ方は宛先で選ぶ（2026-11-06 作者の裁定「止められる所は止める」）
  *
- * WebView の `fetch` から AI のサービスへ直に投げると、CORS（よそのサイトから
- * 読ませない決まり）で断られる相手がある。`CapacitorHttp` は端末の側
- * （Android・iOS のふつうの通信部品）で投げるので、この決まりに当たらない。
+ * - **CORS（よそのサイトから読ませない決まり）を許すと確かめたクラウドの AI**
+ *   （`WEBVIEW_FETCH_HOSTS`）は、**WebView のふつうの `fetch`** で投げる。
+ *   ［中止］や待ち時間切れで通信そのものが途中で切れる。
+ * - **それ以外**（さくらの AI・手元の AI・宛先を書き換えたもの）は `CapacitorHttp` で投げる。
+ *   端末の側（Android・iOS のふつうの通信部品）で投げるので CORS に当たらないが、
+ *   投げた通信を途中で切る口が無い。
  *
  * **WebView の `fetch` を丸ごと差し替える設定（`CapacitorHttp.enabled`）は使わない。**
  * 差し替えると、AI 以外の通信まで全部が端末の側を通り、どこで何が変わったのか
  * 追えなくなる。AI への通信だけを、ここで名指しで回す。
  *
- * ## 中止は「届いた答えを使わない」になる
+ * ## `CapacitorHttp` の中止は「届いた答えを使わない」になる
  *
- * `CapacitorHttp` には、投げた通信を途中で切る口が無い。［中止］や待ち時間切れでは、
- * **こちらはすぐに「中止した」として返り、あとで届いた答えは捨てる**。
- * 端末の側の通信はそのまま最後まで続くので、**クラウドの AI では料金が止まらない**
- * （設計書 3章 #7。中止の窓に書く。画面を作るときに忘れない）。
+ * ［中止］や待ち時間切れでは、**こちらはすぐに「中止した」として返り、あとで届いた答えは捨てる**。
+ * 端末の側の通信はそのまま最後まで続く。クラウドの AI でこの道を通るもの
+ * （さくらの AI など）は、**中止しても料金が止まらないことがある**（設計書 3章 #7）。
+ * WebView の `fetch` で切った場合も、相手が途中で生成をやめて料金を止めるかは
+ * 相手しだい（本体の担当がパソコンで確かめる。2026-11-06 母艦）。
  *
  * ## 待ち時間
  *
@@ -38,7 +42,7 @@ import { Capacitor, CapacitorHttp, type HttpResponse } from "@capacitor/core";
  *
  * `CapacitorHttp` は答えを全部受け取ってから返す。`body.getReader()` で読む
  * 部品（Ollama の流れで返す形など）にも、全部まとめて一度に渡る。
- * 途中経過は出ないが、答えそのものは同じになる。
+ * 途中経過は出ないが、答えそのものは同じになる（WebView の `fetch` の道は、少しずつ届く）。
  */
 
 /** 本体と同じ。`localFetch`・`cloudFetch` が受け取る形 */
@@ -88,9 +92,53 @@ export function cloudFetch(url: string, init: RequestInit, timeoutMs: number): P
 
 function send(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   if (transportForTests) return transportForTests(url, init, timeoutMs);
-  // パソコンのブラウザで画面を確かめるとき（`pnpm run dev`）は、ふつうの fetch
-  if (!Capacitor.isNativePlatform()) return globalThis.fetch(url, init);
+  if (chooseTransport(url, Capacitor.isNativePlatform()) === "webview") return globalThis.fetch(url, init);
   return nativeFetch(url, init, timeoutMs);
+}
+
+/**
+ * WebView の `fetch` で投げてよいと確かめた宛先（名前で照らす。道や鍵の違いは見ない）。
+ *
+ * **2026-11-06 に確かめた事実**（`Origin: https://localhost`＝端末の WebView の出どころで、
+ * 下見の問い合わせ（OPTIONS）と、偽の鍵での本番の POST の両方を見た。
+ * どれも断りの答え（401・400）にも許しの印が付き、知らせの中身まで読める）：
+ *
+ * - `api.anthropic.com`：許す（`*`）。本体の部品が `anthropic-dangerous-direct-browser-access` を
+ *   付けるのは、`process` が無いとき（`isWebRuntime()`）。モバイル版の組み立ては `process` を作らない
+ * - `api.openai.com`：許す
+ * - `generativelanguage.googleapis.com`（Gemini）：許す
+ * - `api.ai.sakura.ad.jp`（さくらの AI）：**許さない**（下見に許しの印が無い）。`CapacitorHttp` のまま
+ *
+ * 相手の決まりは変わりうる。断られるようになると「接続できない」と出る。
+ * そのときはここから外す（勝手に端末の側で投げ直さない——相手に届いてから
+ * 断られた場合、投げ直すと二度払うことになる）。
+ */
+export const WEBVIEW_FETCH_HOSTS: readonly string[] = [
+  "api.anthropic.com",
+  "api.openai.com",
+  "generativelanguage.googleapis.com",
+];
+
+/** 宛先が WebView の `fetch` で投げてよい相手か */
+export function allowsWebViewFetch(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "https:" && WEBVIEW_FETCH_HOSTS.includes(parsed.hostname);
+}
+
+/**
+ * どちらの道で投げるか。
+ *
+ * パソコンのブラウザで画面を確かめるとき（`pnpm run dev`）は、いつもふつうの fetch。
+ * 端末では、許すと確かめた宛先だけ WebView の fetch、ほかは `CapacitorHttp`。
+ */
+export function chooseTransport(url: string, isNative: boolean): "webview" | "native" {
+  if (!isNative) return "webview";
+  return allowsWebViewFetch(url) ? "webview" : "native";
 }
 
 /** `CapacitorHttp.request` の形（テストで差し替える） */

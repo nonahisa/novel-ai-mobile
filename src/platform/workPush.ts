@@ -9,6 +9,7 @@ import {
   type RepoRef,
 } from "./githubCommitApi";
 import { gitHttp } from "./gitHttp";
+import type { createGitFs } from "./gitFs";
 
 /**
  * 手元の作品（isomorphic-git のリポジトリ）を、GitHub の API で送る（原稿を持ち帰る道 A。引継ぎ書 11章）。
@@ -30,7 +31,7 @@ import { gitHttp } from "./gitHttp";
  */
 
 /** isomorphic-git の `fs` の形（`createGitFs` が返すもの） */
-type GitFs = Parameters<typeof git.statusMatrix>[0]["fs"];
+type GitFs = ReturnType<typeof createGitFs>;
 
 /** 手元の HEAD の版と、その中の道の中身の名前（無ければ undefined） */
 async function headBlobOid(fs: GitFs, dir: string, head: string, filepath: string): Promise<string | undefined> {
@@ -59,7 +60,8 @@ export async function collectChanges(fs: GitFs, dir: string, touched: readonly s
   const matrix = await git.statusMatrix({ fs, dir });
   const candidates = new Set<string>();
   for (const [path, headState, workdirState] of matrix) {
-    if (headState !== workdirState || workdirState === 2) candidates.add(path);
+    // 1 と 2 の違い＝書き換え、0 と 2＝新しい話、1 と 0＝消した話
+    if (headState !== workdirState) candidates.add(path);
   }
   for (const path of touched) candidates.add(path);
 

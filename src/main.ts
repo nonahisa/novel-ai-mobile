@@ -1,7 +1,7 @@
 import "./style.css";
 import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
-import { SHARED_VERSION, postingNotationTextHash } from "./shared";
+import { AIError, SHARED_VERSION, fetchJson, postingNotationTextHash } from "./shared";
 import { CapacitorFileStore } from "./platform/capacitorFileStore";
 import { readTextFile, writeTextFilePreservingFormat } from "./platform/textFile";
 
@@ -66,6 +66,16 @@ app.innerHTML = `
     </p>
     <button id="saveShared">本体の決まりで書き戻す</button>
     <pre id="sharedFileResult" class="result">まだ試していません</pre>
+  </section>
+
+  <section class="card">
+    <h2>5. AI への通信（本体の部品で投げる）</h2>
+    <p class="note">
+      本体の通信の部品（fetchJson）で、ネットの向こうへ1回投げます。続けて、答えが遅い相手に
+      3秒の待ち時間で投げ、「タイムアウト」と出るか（端末の側を待たずに返るか）を見ます。
+    </p>
+    <button id="aiPing">通信を試す</button>
+    <pre id="aiResult" class="result">まだ試していません</pre>
   </section>
 `;
 
@@ -207,6 +217,39 @@ document.querySelector<HTMLButtonElement>("#saveShared")!.addEventListener("clic
   } catch (e) {
     sharedFileResult.textContent = `❌ 失敗しました\n${e instanceof Error ? e.message : String(e)}`;
   }
+});
+
+/* ---------- 5. AI への通信 ---------- */
+
+const aiResult = document.querySelector<HTMLPreElement>("#aiResult")!;
+document.querySelector<HTMLButtonElement>("#aiPing")!.addEventListener("click", async () => {
+  aiResult.textContent = "試しています…";
+  const lines: string[] = [];
+  const show = () => (aiResult.textContent = lines.join("\n"));
+  const describe = (e: unknown) =>
+    e instanceof AIError ? `${e.kind}：${e.message}${e.detail ? `（${e.detail}）` : ""}` : String(e);
+  try {
+    const repo = await fetchJson<{ full_name?: string }>({
+      url: "https://api.github.com/repos/nonahisa/novel-ai-mobile",
+      headers: { Accept: "application/vnd.github+json" },
+      timeoutMs: 30_000,
+      label: "GitHub",
+    });
+    lines.push(`✅ 答えを読めました：${repo.full_name ?? "（名前なし）"}`);
+  } catch (e) {
+    lines.push(`❌ 1回目が失敗：${describe(e)}`);
+  }
+  show();
+  const startedAt = Date.now();
+  try {
+    await fetchJson({ url: "https://httpbin.org/delay/10", timeoutMs: 3_000, label: "遅い相手" });
+    lines.push("❌ 遅い相手から答えが来てしまった（待ち時間が効いていない）");
+  } catch (e) {
+    const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+    const timedOut = e instanceof AIError && e.kind === "timeout";
+    lines.push(`${timedOut ? "✅" : "❌"} ${seconds}秒で返った：${describe(e)}`);
+  }
+  show();
 });
 
 function escapeHtml(s: string): string {

@@ -1,5 +1,38 @@
 import { readFileSync } from "node:fs";
-import { defineConfig } from "vite";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { defineConfig, type Plugin } from "vite";
+import { SHARED_SUBSTITUTIONS } from "./substitutions.ts";
+
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const SHARED_ROOT = path.join(ROOT, "node_modules", "novel-ai-assistant");
+
+/**
+ * 本体の部品の中から読まれる一部のファイルを、モバイル版の部品へ差し替える
+ * （一覧と理由は `substitutions.ts`）。
+ *
+ * **本体の部品の中から読まれたときだけ**差し替える。名前（`./fetchTimeouts`）だけで
+ * 当てると、関係の無いファイルまで巻き込むため、読んだ側の場所と行き先の両方を見る。
+ */
+function substituteSharedParts(): Plugin {
+  const targets = new Map(
+    Object.entries(SHARED_SUBSTITUTIONS).map(([from, to]) => [
+      path.normalize(path.join(SHARED_ROOT, from)),
+      path.join(ROOT, to),
+    ])
+  );
+  return {
+    name: "novel-ai-mobile:substitute-shared-parts",
+    enforce: "pre",
+    resolveId(source, importer) {
+      if (!importer || !source.startsWith(".")) return null;
+      const from = path.normalize(importer.split("?")[0]);
+      if (!from.startsWith(path.normalize(SHARED_ROOT))) return null;
+      const target = path.normalize(path.resolve(path.dirname(from), source)).replace(/\.(js|ts)$/, "");
+      return targets.get(target) ?? null;
+    },
+  };
+}
 
 /**
  * 取り込んでいる本体の版。本体の package.json から読む（画面と動作確認ページに出す）。
@@ -22,6 +55,7 @@ const sharedVersion: string = JSON.parse(
  * スマホからは決してつながらない。
  */
 export default defineConfig({
+  plugins: [substituteSharedParts()],
   define: {
     __SHARED_VERSION__: JSON.stringify(sharedVersion),
   },

@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
+import { SHARED_SUBSTITUTIONS } from "../substitutions";
 
 /**
  * 端末（Android・iOS の WebView）で、起動した瞬間に落ちる形になっていないか
@@ -47,9 +48,28 @@ function resolveFile(base: string): string | undefined {
   return undefined;
 }
 
+/**
+ * 本体の部品の中から読まれたときに、モバイル版の部品へ差し替わるもの（`substitutions.ts`）。
+ * 組み立て（`vite.config.ts`）と同じ一覧で差し替えて歩く。そうしないと、
+ * 端末では読まれない本体の元の部品を見張ってしまう
+ */
+const SUBSTITUTED = new Map(
+  Object.entries(SHARED_SUBSTITUTIONS).map(([from, to]) => [
+    path.join(SHARED_ROOT, from),
+    path.join(ROOT, to),
+  ])
+);
+
 /** たどる相手のファイル。たどらないもの（Capacitor の部品など）は `undefined` */
 function resolveImport(fromFile: string, spec: string): string | undefined {
-  if (spec.startsWith(".")) return resolveFile(path.resolve(path.dirname(fromFile), spec));
+  if (spec.startsWith(".")) {
+    const target = path.resolve(path.dirname(fromFile), spec).replace(/\.(js|ts)$/, "");
+    if (fromFile.startsWith(SHARED_ROOT)) {
+      const substitute = SUBSTITUTED.get(target);
+      if (substitute) return substitute;
+    }
+    return resolveFile(target);
+  }
   if (spec.startsWith(`${SHARED_PACKAGE}/`)) {
     return resolveFile(path.join(SHARED_ROOT, spec.slice(SHARED_PACKAGE.length + 1)));
   }
@@ -116,6 +136,13 @@ describe("端末で起動した瞬間に落ちないか（androidReach）", () =
     expect(sharedFiles.map(name)).toContain(
       "node_modules/novel-ai-assistant/src/models/posting.ts"
     );
+  });
+
+  test("差し替えた部品の道を歩いている（AI への通信は本体の fetchTimeouts を読まない）", () => {
+    const names = [...reached.files].map(name);
+    expect(names).toContain("node_modules/novel-ai-assistant/src/ai/httpClient.ts");
+    expect(names).toContain("src/platform/fetchTimeouts.ts");
+    expect(names).not.toContain("node_modules/novel-ai-assistant/src/ai/fetchTimeouts.ts");
   });
 
   test("見張りが当たる（端末に無いものを読む本体の部品を、実際に咎める）", () => {

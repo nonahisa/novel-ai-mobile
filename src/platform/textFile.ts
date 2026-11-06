@@ -1,5 +1,6 @@
 import { hashBytes, sha256Text } from "novel-ai-assistant/src/core/hash";
 import { randomUuid } from "novel-ai-assistant/src/core/runtime";
+import { notifyWorkRecordWritten } from "novel-ai-assistant/src/core/workRecordSignal";
 import {
   decodeBytes,
   hasConflictMarkers,
@@ -124,6 +125,9 @@ export async function writeTextFilePreservingFormat(
   }
 
   await pruneRecoveries(store, filePath);
+  // 本体 0.130 から：退避の写しが1つ増えたことを知らせる（本体ではタイムラインの欄が聞く。
+  // モバイル版にはまだ聞き手がいないが、手順は本体とそろえる。引継ぎ書 2章の7）
+  notifyWorkRecordWritten(filePath);
   return { ok: true, recoveryPath };
 }
 

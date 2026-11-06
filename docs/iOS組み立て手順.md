@@ -1,12 +1,13 @@
 # iOS の組み立て手順（Mac 側のセッションへ渡す）
 
-モバイル版（このリポジトリ）を、作者の Mac で iOS のシミュレーターに出すまでの手順（2026-11-06 作成）。
+モバイル版（このリポジトリ）を、作者の Mac で iOS のシミュレーターに出すまでの手順（2026-11-06 作成、11-07 直した）。
 **受け持ち**：組み立ての中身と手順はモバイル版の担当が書く。Mac の上で手を動かすのは Mac 側のセッション（「MAC実機確認」）で、作者の了解を取ってから入れる。作者を通して、この文書を Mac 側へ渡す。
 
 ## 作者の Mac（2026-11-06、Mac 側の調べ）
 
 - Apple M1、メモリ 8GB、macOS 27.2、空き 290GB
-- ほぼ初期状態。Xcode・Homebrew・Node・git（Command Line Tools）は入っていない
+- ほぼ初期状態。Node・git（Command Line Tools）は入っていない
+- 2026-11-07 未明：作者が Mac のアカウントを管理者に切り替え、App Store で Xcode を入れ始めた。Homebrew は別の確かめのために入っている（`/opt/homebrew`）
 
 メモリ 8GB は、Xcode とシミュレーターを同時に動かすと重いが、組み立てには足りる。ほかのアプリは閉じておく。
 
@@ -16,10 +17,10 @@
 | --- | --- | --- |
 | Xcode | App Store で「Xcode」を探して入れる（数十 GB。時間がかかる）。入れたら一度開き、使用許諾に同意し、出てきた選択で **iOS** の部品（シミュレーター）も入れる | `xcodebuild -version` |
 | Command Line Tools | Xcode を開いたあと、ターミナルで `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`。git もここに入る | `git --version` |
-| Node 22 | nodejs.org の「LTS」の macOS 用の入れ物（.pkg）。CI と同じ 22 系にする（`.github/workflows/ci.yml`） | `node -v` が v22 |
+| Node 22 | Homebrew が入っているので `brew install node@22`。node@22 は自動で道（PATH）に載らないので、続けて `echo 'export PATH="/opt/homebrew/opt/node@22/bin:$PATH"' >> ~/.zprofile` を打ち、ターミナルを開き直す。CI と同じ 22 系にする（`.github/workflows/ci.yml`）。nodejs.org の LTS の入れ物（.pkg）でもよいが、どちらか片方だけにする | `node -v` が v22 |
 | pnpm 10.34.9 | `npm install -g pnpm@10.34.9`（`package.json` の `packageManager` と同じ版。**npm で `node_modules` を入れ直さない**） | `pnpm -v` |
 
-Homebrew は要らない。CocoaPods も要らない（`ios/App/CapApp-SPM`：Swift Package Manager の作り）。
+CocoaPods は要らない（`ios/App/CapApp-SPM`：Swift Package Manager の作り）。`brew install cocoapods` はしない。
 
 ## 2. 取ってきて、組み立てる
 
@@ -36,7 +37,7 @@ pnpm run ios:open
 - Xcode の上の帯の真ん中で、行き先を「iPhone 17」などのシミュレーターに選び、左上の ▶（Run）を押す。初回は署名を訊かれることがある：左の列の「App」→「Signing & Capabilities」→「Team」で作者の Apple ID（「Add an Account…」）を選ぶ。シミュレーターだけなら無料の Apple ID で足りる
 - ターミナルから直に出すなら `pnpm run ios`（シミュレーターを選ぶ問いが出る）
 
-**枝**：まずは `main` で組み立てる。新しい部品（AI への通信・git の取得・中止で切る道）は PR #5〜#7 の枝にあり、まだ main に入っていない。確かめたい枝があるときは、モバイル版の担当がこの文書に書き足す。
+**枝**：`main` で組み立てる。PR #5〜#7（AI への通信・git の取得・中止で切る道・本体の版の関所）は 2026-11-06 夜に main に入った。ほかの枝を確かめたいときは、モバイル版の担当がこの文書に書き足す。
 
 ## 3. 出たら確かめること（Mac 側から、作者を通してモバイル版へ返す）
 
@@ -44,7 +45,9 @@ pnpm run ios:open
 
 1. 「1. いま動いている場所」の行（`ios` と出るか、本体の部品の版）
 2. 2〜4 のボタン（端末へのファイルの読み書き、本文の書き戻し）
-3. 5〜7 は、PR の枝で組み立てたときだけ（main には無い）
+3. 5〜7 のボタン（ネットが要る）：5 は AI への通信と待ち時間、6 は git で取ってくる（時間とファイルの数）、7 は中止で切れる道と本体の版の関所。7 の最後の行は「台帳を書きません」と出るのが正しい（取り込んだ本体の部品が古いため）
+
+iOS の WebView は出どころが `capacitor://localhost` で、Android（`https://localhost`）と違う。7 で使う相手（Claude・OpenAI・Gemini・GitHub）は、この出どころも許すと 2026-11-07 に確かめた。7 の1〜2行目が ❌ なら、それが iOS だけの違いなので、そのまま写して返す
 
 うまく行かないときは、Xcode の下の欄（記録）の赤い行と、ターミナルの最後の20行を写して返す。
 

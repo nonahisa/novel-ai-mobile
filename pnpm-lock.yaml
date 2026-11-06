@@ -35,6 +35,9 @@ importers:
       '@capacitor/status-bar':
         specifier: ^8.0.3
         version: 8.0.3(@capacitor/core@8.5.0)
+      buffer:
+        specifier: ^6.0.3
+        version: 6.0.3
       isomorphic-git:
         specifier: ^1.41.9
         version: 1.41.9
@@ -755,7 +758,7 @@ packages:
     hasBin: true
 
   novel-ai-assistant@https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/57eb7add3d4401cbc4b2c45c0fc62793f5ba4019:
-    resolution: {gitHosted: true, integrity: sha512-FDfG7peTkGMdIxvrdyjaV6zAyLYxX0GiADhvJr2cLpFrxG3iLKzkxJafZub/pGfBZbi9q9pP/aquwNAuudIaoA==, tarball: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/57eb7add3d4401cbc4b2c45c0fc62793f5ba4019}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/57eb7add3d4401cbc4b2c45c0fc62793f5ba4019}
     version: 0.127.0
     engines: {vscode: ^1.90.0}
 

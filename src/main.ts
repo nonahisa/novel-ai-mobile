@@ -4,6 +4,8 @@ import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { AIError, SHARED_VERSION, fetchJson, postingNotationTextHash } from "./shared";
 import { CapacitorFileStore } from "./platform/capacitorFileStore";
 import { readTextFile, writeTextFilePreservingFormat } from "./platform/textFile";
+import { removeTree, shallowClone } from "./platform/git";
+import { CapacitorGitFsBackend } from "./platform/gitFs";
 
 /**
  * Android版の動作確認ページ。
@@ -76,6 +78,16 @@ app.innerHTML = `
     </p>
     <button id="aiPing">通信を試す</button>
     <pre id="aiResult" class="result">まだ試していません</pre>
+  </section>
+
+  <section class="card">
+    <h2>6. git で取ってくる（isomorphic-git）</h2>
+    <p class="note">
+      公開のリポジトリ（モバイル版そのもの）を、最新の1版だけ端末へ取ってきます。
+      かかった時間と、出てきたファイルの数を見ます。
+    </p>
+    <button id="gitClone">取ってくる</button>
+    <pre id="gitResult" class="result">まだ試していません</pre>
   </section>
 `;
 
@@ -250,6 +262,30 @@ document.querySelector<HTMLButtonElement>("#aiPing")!.addEventListener("click", 
     lines.push(`${timedOut ? "✅" : "❌"} ${seconds}秒で返った：${describe(e)}`);
   }
   show();
+});
+
+/* ---------- 6. git で取ってくる ---------- */
+
+const gitResult = document.querySelector<HTMLPreElement>("#gitResult")!;
+document.querySelector<HTMLButtonElement>("#gitClone")!.addEventListener("click", async () => {
+  const backend = new CapacitorGitFsBackend();
+  const dir = "/確認_git/novel-ai-mobile";
+  gitResult.textContent = "前の試しを消しています…";
+  try {
+    await removeTree(backend, "/確認_git");
+    await backend.mkdir("/確認_git");
+    const result = await shallowClone("https://github.com/nonahisa/novel-ai-mobile.git", dir, backend, (phase, loaded, total) => {
+      gitResult.textContent = `${phase} ${loaded}${total ? ` / ${total}` : ""}`;
+    });
+    gitResult.textContent = [
+      "✅ 取ってこられました",
+      `版: ${result.head.slice(0, 7)}（${result.message.split("\n")[0]}）`,
+      `ファイルの数: ${result.fileCount}`,
+      `かかった時間: ${(result.elapsedMs / 1000).toFixed(1)}秒`,
+    ].join("\n");
+  } catch (e) {
+    gitResult.textContent = `❌ 失敗しました\n${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`;
+  }
 });
 
 function escapeHtml(s: string): string {

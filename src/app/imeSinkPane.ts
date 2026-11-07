@@ -1,3 +1,4 @@
+import { revealCaret, watchVisibleBand } from "./caretVisible";
 import { editAtCaret, type Orientation } from "./editContextModel";
 import type { EditContextPane } from "./editContextPane";
 import {
@@ -67,6 +68,7 @@ export function mountImeSinkPane(
   const render = () => {
     view.innerHTML = renderSinkHtml(state);
     placeSink();
+    if (document.activeElement === sink) revealCaret(view.querySelector(".caret"));
   };
   const changed = () => {
     render();
@@ -134,22 +136,45 @@ export function mountImeSinkPane(
   sink.addEventListener("focus", () => {
     element.classList.add("has-focus");
     if (!state.composing) resetSink();
+    revealCaret(view.querySelector(".caret"));
+  });
+  // キーボードが出て見える範囲が縮んだら、カーソルを見える所へ送る（iOS では欄がキーボードの下に隠れた）
+  const stopWatching = watchVisibleBand(() => {
+    if (document.activeElement === sink) {
+      placeSink();
+      revealCaret(view.querySelector(".caret"));
+    }
   });
   sink.addEventListener("blur", () => element.classList.remove("has-focus"));
 
-  const onClick = (e: MouseEvent) => {
-    if (e.target === sink) return;
-    // 何よりも先に、同期で焦点を移す（iOS がキーボードを出す条件）
-    sink.focus({ preventScroll: true });
-    if (state.composing) return;
+  /** 押した点の下の字から、カーソルを置く位置を読む */
+  const caretFromPoint = (e: MouseEvent): number | undefined => {
     const span = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-i]") : null;
-    if (!span) return;
+    if (!span) return undefined;
     const i = Number(span.dataset.i);
     const n = Number(span.dataset.n ?? "1");
     const r = span.getBoundingClientRect();
     const after = element.classList.contains("vertical") ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
-    moveCaret(after ? i + n : i);
+    return after ? i + n : i;
   };
+  /**
+   * 押した位置は、押し始め（pointerdown）で読んでおく。焦点を移すとキーボードが出始めて欄の位置が変わるので、
+   * そのあとで読むと、押した字とずれる（2026-11-07 Mac：「猫」のあたりを押したのに「輩」のうしろに入った）
+   */
+  let pendingCaret: number | undefined;
+  const onPointerDown = (e: PointerEvent) => {
+    pendingCaret = e.target === sink || state.composing ? undefined : caretFromPoint(e);
+  };
+  const onClick = (e: MouseEvent) => {
+    if (e.target === sink) return;
+    // 何よりも先に、同期で焦点を移す（iOS がキーボードを出す条件）
+    sink.focus({ preventScroll: true });
+    const to = pendingCaret;
+    pendingCaret = undefined;
+    if (state.composing || to === undefined) return;
+    moveCaret(to);
+  };
+  element.addEventListener("pointerdown", onPointerDown);
   element.addEventListener("click", onClick);
   element.addEventListener("scroll", placeSink);
   window.addEventListener("resize", placeSink);
@@ -173,6 +198,8 @@ export function mountImeSinkPane(
     focus: () => sink.focus({ preventScroll: true }),
     destroy() {
       element.removeEventListener("click", onClick);
+      element.removeEventListener("pointerdown", onPointerDown);
+      stopWatching();
       element.removeEventListener("scroll", placeSink);
       window.removeEventListener("resize", placeSink);
       element.classList.remove("sink-pane", "has-focus");

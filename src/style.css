@@ -173,7 +173,8 @@ button {
 .appbar {
   position: sticky;
   top: 0;
-  z-index: 2;
+  /* 動作確認ページの中身（位置を持つ要素）より上に。送っても帯が残るように */
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 8px;

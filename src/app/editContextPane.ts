@@ -1,4 +1,5 @@
 import { revealCaret, watchVisibleBand } from "./caretVisible";
+import { caretFromPoint, readCharBoxes } from "./tapCaret";
 import type { TermSpan } from "./termHighlight";
 import {
   applyTextUpdate,
@@ -86,13 +87,14 @@ export function mountEditContextPane(
     // 変換中の字も含めた今の本文で探す（確定する前から色が付く。位置がずれない）
     element.innerHTML = renderPaneHtml(state, findTerms(state.text));
     reportBounds();
-    if (document.activeElement === element) revealCaret(element.querySelector(".caret"));
+    // 変換中はページを送らない（見えない受け口と同じ。確定の描き直しで送る）
+    if (document.activeElement === element && !state.composing) revealCaret(element.querySelector(".caret"));
   };
   // キーボードが出て見える範囲が縮んだら、カーソルを見える所へ送る
   const stopWatching = watchVisibleBand(() => {
     if (document.activeElement === element) {
       reportBounds();
-      revealCaret(element.querySelector(".caret"));
+      if (!state.composing) revealCaret(element.querySelector(".caret"));
     }
   });
   const changed = () => {
@@ -162,13 +164,9 @@ export function mountEditContextPane(
     e.preventDefault();
   };
   const onPointerDown = (e: PointerEvent) => {
-    const span = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-i]") : null;
-    if (!span) return;
-    const i = Number(span.dataset.i);
-    const n = Number(span.dataset.n ?? "1");
-    const r = span.getBoundingClientRect();
-    const after = element.classList.contains("vertical") ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
-    moveCaret(after ? i + n : i);
+    // 字の無い所（列の下の端の先など）を押しても、いちばん近い列のその位置へ置く（`tapCaret.ts`）
+    const to = caretFromPoint(readCharBoxes(element), e.clientX, e.clientY, element.classList.contains("vertical"));
+    if (to !== undefined) moveCaret(to);
   };
   element.addEventListener("keydown", onKeyDown);
   element.addEventListener("pointerdown", onPointerDown);

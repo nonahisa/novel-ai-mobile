@@ -19,7 +19,18 @@ import {
 } from "./termHighlight";
 import { TABS, buildActionList, hiddenActions, searchActions, type PlannedTab } from "./menuPlan";
 import { escapeHtml, renderActionRows, renderTab, renderTabBar } from "./menuScreen";
-import { SAMPLE_TEXT, countLabel, loadDraft, previewHtml, saveDraft, saveFailureMessage } from "./tategakiDraft";
+import {
+  SAMPLE_TEXT,
+  TRIAL_PREFS_KEY,
+  countLabel,
+  loadDraft,
+  parseTrialPrefs,
+  previewHtml,
+  saveDraft,
+  saveFailureMessage,
+  type TrialPrefs,
+} from "./tategakiDraft";
+import { askChoice } from "./dialog";
 
 /**
  * アプリの外枠（下のタブ4つと、画面の切り替え）。設計書 4.3 の狭い段。
@@ -60,8 +71,12 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   const tabbar = root.querySelector<HTMLElement>("#tabbar")!;
   const toastEl = root.querySelector<HTMLElement>("#toast")!;
   let toastTimer: number | undefined;
-  /** 離れる前に確かめること（縦書きの試しの未保存） */
-  let leaveGuard: (() => boolean) | undefined;
+  /** 離れる前に確かめること（縦書きの試しの未保存）と、離れるときの後片付け */
+  let leaveGuard: LeaveGuard | undefined;
+  /** 「保存しないで戻る」と答えたあとの1回の移動は、確かめずに通す */
+  let leaveConfirmed = false;
+  /** いちばん最近に開いた下のタブ（［←］はここへ戻る） */
+  let lastTabHash = "#/works";
 
   const toast = (text: string) => {
     toastEl.textContent = text;
@@ -83,18 +98,31 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       return;
     }
     if (target.dataset.back !== undefined) {
-      if (history.length > 1) history.back();
-      else location.hash = "#/works";
+      /*
+        ［←］は、開いていた下のタブへ「移る」（履歴を戻らない）。history.back() で戻ると、iOS は
+        scrollRestoration を manual にしても前の送り位置を戻し、［ほか］が前の位置のままだった
+        （2026-11-07 Mac H3。すべての機能から戻っても、動作確認ページから戻っても）。
+        location.replace なので履歴は増えない
+      */
+      location.replace(lastTabHash);
     }
   });
 
   let currentHash = location.hash;
   const render = () => {
-    if (leaveGuard && !leaveGuard()) {
-      // 離れない：URL を元に戻す（描き直さない）
+    if (leaveGuard && leaveGuard.isDirty() && !leaveConfirmed) {
+      // いったん URL を元に戻し（描き直さない）、画面の中の日本語のボタンで訊く
+      const target = location.hash;
       history.replaceState(null, "", currentHash || "#/works");
+      void askChoice("保存していない書き換えがあります。保存しないで戻りますか？", "保存しないで戻る", "とどまる").then((go) => {
+        if (!go) return;
+        leaveConfirmed = true;
+        location.hash = target;
+      });
       return;
     }
+    leaveConfirmed = false;
+    leaveGuard?.destroy();
     leaveGuard = undefined;
     currentHash = location.hash;
     // 前の画面の知らせを次の画面へ持ち越さない
@@ -112,6 +140,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     requestAnimationFrame(() => window.scrollTo(0, 0));
     switch (route.kind) {
       case "tab":
+        lastTabHash = `#/${route.tab.id}`;
         screen.innerHTML = renderTab(route.tab, `モバイル版 ${__APP_VERSION__}（本体の部品 ${SHARED_VERSION}）`);
         return;
       case "all":
@@ -165,8 +194,32 @@ const MODE_NOTES = {
   sink: "B：右傍線の形（見えない受け口）。カーソルの位置に重ねた透明な欄で日本語入力を受け、字と変換中の線をこの画面が描きます（縦書きでは右、横書きでは下）。線は変換中の字全体に1本で、文節ごとの太い線・細い線は出ません。入力欄の中ではルビ・傍点は記法の字のまま出ます。選択・元に戻すはまだありません。",
 } as const;
 
-/** 描いて、離れてよいかを返す関数を渡す */
-function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
+/** 画面を離れる前に確かめること */
+interface LeaveGuard {
+  /** 保存していない書き換えがあるか */
+  isDirty(): boolean;
+  /** 離れるときの後片付け */
+  destroy(): void;
+}
+
+/** 選び方を端末の中から読む・書く（読めなくても書けなくても、試しは動く） */
+function readTrialPrefs(editContextOk: boolean): TrialPrefs {
+  try {
+    return parseTrialPrefs(window.localStorage.getItem(TRIAL_PREFS_KEY), editContextOk);
+  } catch {
+    return parseTrialPrefs(null, editContextOk);
+  }
+}
+function writeTrialPrefs(prefs: TrialPrefs): void {
+  try {
+    window.localStorage.setItem(TRIAL_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* 覚えられなくても、試しは動く */
+  }
+}
+
+/** 描いて、離れる前に確かめることを返す */
+function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   const support = editContextSupport(window, Capacitor.getPlatform());
   screen.innerHTML = `
     <header class="appbar"><button class="appbar-back" data-back aria-label="戻る">←</button><span class="appbar-title">縦書き・横書きの試し</span></header>
@@ -212,11 +265,13 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
   let loaded: TextFileContent | undefined;
   let savedText: string | undefined;
   let text = "";
-  let orientation: Orientation = "vertical";
-  let mode: "A" | "B" = "A";
+  // 前に選んでいた形で開く（2026-11-07 Mac：入り直すと A に戻っていた）
+  const prefs = readTrialPrefs(support.ok);
+  let orientation: Orientation = prefs.orientation;
+  let mode: "A" | "B" = prefs.mode;
   let pane: (EditContextPane & { setShowSink?(show: boolean): void }) | undefined;
   /** B の受け口。EditContext が無ければ（iOS など）見えない受け口だけ */
-  let sinkKind: "ec" | "sink" = support.ok ? "ec" : "sink";
+  let sinkKind: "ec" | "sink" = prefs.sinkKind;
   const sinkSeg = screen.querySelector<HTMLElement>("#sinkSeg")!;
   const sinkWhy = screen.querySelector<HTMLElement>("#sinkWhy");
   const showSink = screen.querySelector<HTMLInputElement>("#showSink")!;
@@ -235,6 +290,7 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
     update();
   };
   const applyLayout = () => {
+    writeTrialPrefs({ orientation, mode, sinkKind });
     for (const el of [input, paneEl, preview]) {
       el.classList.toggle("vertical", orientation === "vertical");
       el.classList.toggle("horizontal", orientation === "horizontal");
@@ -368,19 +424,21 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
     }
   });
   screen.querySelector<HTMLButtonElement>("#draftReload")!.addEventListener("click", () => {
-    if (text !== (savedText ?? SAMPLE_TEXT) && !window.confirm("保存していない書き換えを捨てて、読み直しますか？")) return;
-    void load();
+    void (async () => {
+      if (text !== (savedText ?? SAMPLE_TEXT) && !(await askChoice("保存していない書き換えを捨てて、読み直しますか？", "捨てて読み直す", "やめる"))) return;
+      await load();
+    })();
   });
 
+  if (mode === "B") mountPane();
   applyLayout();
   void load();
-  return () => {
-    const ok = text === (savedText ?? SAMPLE_TEXT) || window.confirm("保存していない書き換えがあります。保存しないで戻りますか？");
-    if (ok) {
+  return {
+    isDirty: () => text !== (savedText ?? SAMPLE_TEXT),
+    destroy() {
       pane?.destroy();
       editable.destroy();
-    }
-    return ok;
+    },
   };
 }
 

@@ -278,7 +278,7 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
 
   const log = (line: string) => {
     const time = new Date().toLocaleTimeString("ja-JP", { hour12: false });
-    logEl.textContent = `${time} ${line}\n${logEl.textContent ?? ""}`.slice(0, 3000);
+    logEl.textContent = `${time} ${line}\n${logEl.textContent ?? ""}`.slice(0, 12000);
   };
   const update = () => {
     countEl.textContent = countLabel(text);

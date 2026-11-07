@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { caretFromPoint, type CharBox } from "../src/app/tapCaret";
-import { caretPlacement, isPlainShape, replaceRange } from "../src/app/editableText";
+import { caretPlacement, clampCaretToPane, isPlainShape, replaceRange } from "../src/app/editableText";
 
 /**
  * 縦書きの見本：右の列「猫です\n」（x 80〜100）、左の列「犬」（x 50〜70）。字の高さは 20。
@@ -76,5 +76,20 @@ describe("A：欄の中身をいつも素直な形に保つ（2026-11-07 Mac G2a
   test("Enter は選んだ所を改行に替え、カーソルはそのうしろ", () => {
     expect(replaceRange("猫です", 1, 1, "\n")).toEqual({ text: "猫\nです", caret: 2 });
     expect(replaceRange("猫です", 1, 3, "\n")).toEqual({ text: "猫\n", caret: 2 });
+  });
+});
+
+describe("A：ページを送るカーソルの位置を欄の中に収める（2026-11-07 Mac #19 I1：最後の列で Enter → ページが下へ送られた）", () => {
+  const pane = { top: 100, bottom: 400, left: 0, right: 300 };
+  test("欄と重なっていれば、重なっている所", () => {
+    expect(clampCaretToPane({ top: 120, bottom: 140, left: 10, right: 30 }, pane, true)).toEqual({ top: 120, bottom: 140, left: 10, right: 30 });
+    expect(clampCaretToPane({ top: 390, bottom: 420, left: 10, right: 30 }, pane, true)).toMatchObject({ top: 390, bottom: 400 });
+  });
+  test("縦書きで欄の下の外と測られたら、列の頭", () => {
+    expect(clampCaretToPane({ top: 450, bottom: 470, left: 10, right: 30 }, pane, true)).toMatchObject({ top: 100, bottom: 120 });
+  });
+  test("横書きで欄の外なら、近いほうの端", () => {
+    expect(clampCaretToPane({ top: 450, bottom: 470, left: 10, right: 30 }, pane, false)).toMatchObject({ top: 380, bottom: 400 });
+    expect(clampCaretToPane({ top: 50, bottom: 70, left: 10, right: 30 }, pane, false)).toMatchObject({ top: 100, bottom: 120 });
   });
 });

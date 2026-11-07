@@ -1,6 +1,15 @@
-import { revealCaret, watchVisibleBand } from "./caretVisible";
+import { caretScrollDelta, revealCaret, watchVisibleBand } from "./caretVisible";
 import type { TermFinder } from "./editContextPane";
-import { type EditableSegment, locateOffset, segmentsText, trailingBreakNeeded } from "./editableText";
+import {
+  type EditableChildKind,
+  type EditableSegment,
+  caretPlacement,
+  isPlainShape,
+  locateOffset,
+  replaceRange,
+  segmentsText,
+  trailingBreakNeeded,
+} from "./editableText";
 import { TERM_KINDS } from "./termHighlight";
 
 /**
@@ -11,8 +20,12 @@ import { TERM_KINDS } from "./termHighlight";
  * **CSS Custom Highlight API** で置き、DOM は書き換えない（書き換えると変換中の字とカーソルが飛ぶ）。
  *
  * - `contenteditable="plaintext-only"`（太字などの飾りを入れない）。使えなければ `true`
- * - 改行（Enter）はこちらで「`\n` の字」として入れる。ブラウザに任せると `<div>`・`<br>` ができ、
- *   ブラウザごとに中身の形が変わる（`editableText.ts` はどちらも読めるが、形は少ないほうがずれにくい）
+ * - 欄の中身は**いつも素直な形**（字の節1つ。本文が改行で終わるなら、うしろに支えの `<br>`）に保つ。
+ *   Enter はこちらで本文に `\n` を入れて作り直す。打ったあとに形が崩れていたら（iOS の ⌫ が空の要素を
+ *   残したなど）、**変換していないときに**本文から作り直し、カーソルを同じ字の位置へ戻す
+ *   （2026-11-07 Mac G2a・G3。`editableText.ts` の `isPlainShape`・`caretPlacement`）
+ * - Enter のあとはページも欄も自分で送る（カーソルが見える所へ。ブラウザに任せると、iOS ではページが
+ *   保存のボタンのあたりへ飛び、欄も横へ送られた）
  * - 色は1コマに1回まとめて置き直す（打鍵のたびに範囲を作り直さない）
  * - 色付けの仕組みが無い WebView では、色が出ないだけで入力は動く
  */
@@ -23,7 +36,8 @@ export interface EditablePane {
   destroy(): void;
 }
 
-function collectSegments(root: HTMLElement): EditableSegment<Node>[] {
+/** 欄（または写し）の中の、字の節と改行の並び。`ignoreTrailingBreak` なら欄のいちばん後ろの支えの <br> を数えない */
+function collectSegments(root: Node, ignoreTrailingBreak = true): EditableSegment<Node>[] {
   const out: EditableSegment<Node>[] = [];
   let soFar = "";
   const push = (segment: EditableSegment<Node>) => {
@@ -34,11 +48,10 @@ function collectSegments(root: HTMLElement): EditableSegment<Node>[] {
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType === Node.TEXT_NODE) {
         push({ kind: "text", node: child, text: child.nodeValue ?? "" });
-      } else if (child instanceof HTMLBRElement) {
-        // 欄のいちばん後ろの <br> は支え（数えない）
-        if (!(child.parentNode === root && child === root.lastChild)) push({ kind: "newline", node: child });
-      } else if (child instanceof HTMLElement) {
-        const block = child.tagName === "DIV" || child.tagName === "P";
+      } else if (child.nodeName === "BR") {
+        if (!(ignoreTrailingBreak && child.parentNode === root && child === root.lastChild)) push({ kind: "newline", node: child });
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const block = child.nodeName === "DIV" || child.nodeName === "P";
         if (block && soFar !== "" && !soFar.endsWith("\n")) push({ kind: "newline", node: child });
         walk(child);
       }
@@ -46,6 +59,10 @@ function collectSegments(root: HTMLElement): EditableSegment<Node>[] {
   };
   walk(root);
   return out;
+}
+
+function childKinds(element: HTMLElement): EditableChildKind[] {
+  return Array.from(element.childNodes).map((n) => (n.nodeType === Node.TEXT_NODE ? "text" : n.nodeName === "BR" ? "br" : "other"));
 }
 
 export function mountEditablePane(
@@ -68,12 +85,75 @@ export function mountEditablePane(
 
   let findTerms: TermFinder = () => [];
   let current = text;
+  let composing = false;
   const highlightsUsable = typeof CSS !== "undefined" && "highlights" in CSS && typeof Highlight !== "undefined";
 
+  /** 欄を素直な形で書き直す */
   const write = (next: string) => {
     element.textContent = next;
     if (trailingBreakNeeded(next)) element.appendChild(document.createElement("br"));
     current = next;
+  };
+
+  /** 欄の頭から (container, offset) までの字の数 */
+  const offsetOf = (container: Node, offset: number): number => {
+    const range = document.createRange();
+    range.setStart(element, 0);
+    range.setEnd(container, offset);
+    const holder = document.createElement("div");
+    holder.appendChild(range.cloneContents());
+    return segmentsText(collectSegments(holder, false)).length;
+  };
+  /** いまの選択（本文の字の位置）。欄の外なら undefined */
+  const selectionOffsets = (): { start: number; end: number } | undefined => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return undefined;
+    const range = selection.getRangeAt(0);
+    if (!element.contains(range.startContainer) || !element.contains(range.endContainer)) return undefined;
+    return { start: offsetOf(range.startContainer, range.startOffset), end: offsetOf(range.endContainer, range.endOffset) };
+  };
+  /** 素直な形の欄で、本文の offset 字目にカーソルを置く */
+  const placeCaret = (offset: number) => {
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    const at = caretPlacement(current, offset);
+    const textNode = element.firstChild;
+    if (at.kind === "beforeBreak" || !textNode || textNode.nodeType !== Node.TEXT_NODE) {
+      const br = element.lastChild;
+      if (br && br.nodeName === "BR") range.setStartBefore(br);
+      else range.setStart(element, element.childNodes.length);
+    } else {
+      range.setStart(textNode, at.kind === "text" ? at.offset : 0);
+    }
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
+
+  /** カーソルを、欄の中でもページでも見える所へ送る（縦書きは欄を横へ、横書きは欄を縦へ。そのあとページ） */
+  const revealSelection = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    let rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      // 空の行の頭などは大きさ0で返る。支えの <br> か、カーソルの前の字の節で測り直す
+      const host = range.startContainer.nodeType === Node.ELEMENT_NODE ? (range.startContainer.childNodes[range.startOffset] as Element | undefined) : undefined;
+      const fallback = host && host.nodeType === Node.ELEMENT_NODE ? host : range.startContainer.parentElement;
+      if (!fallback) return;
+      rect = fallback.getBoundingClientRect();
+    }
+    const box = element.getBoundingClientRect();
+    if (element.classList.contains("vertical")) {
+      const margin = 24;
+      if (rect.left < box.left + margin) element.scrollLeft -= box.left + margin - rect.left;
+      else if (rect.right > box.right - margin) element.scrollLeft += rect.right - (box.right - margin);
+    } else {
+      const delta = caretScrollDelta(rect, { top: box.top, height: box.height }, { top: 8, bottom: 8 });
+      if (delta !== 0) element.scrollTop += delta;
+    }
+    revealCaret(range);
   };
 
   const clearHighlights = () => {
@@ -116,41 +196,44 @@ export function mountEditablePane(
 
   const readBack = () => {
     current = segmentsText(collectSegments(element));
+    // 形が崩れていたら、変換していないときに作り直す（変換中に書き換えると、変換中の字が確定してしまう）
+    if (!composing && !isPlainShape(childKinds(element), current)) {
+      const caret = selectionOffsets()?.start ?? current.length;
+      write(current);
+      placeCaret(caret);
+      log("欄の形を整えました（空の要素や割れた字の節を、本文から作り直した）");
+    }
     onChange(current);
     scheduleHighlights();
   };
 
-  /** カーソルの所へ字を入れる（改行用）。ブラウザに任せると <div>・<br> ができる */
-  const insertAtSelection = (inserted: string) => {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    const range = selection.getRangeAt(0);
-    if (!element.contains(range.commonAncestorContainer)) return;
-    range.deleteContents();
-    const node = document.createTextNode(inserted);
-    range.insertNode(node);
-    // 支えの <br> を付け直す（本文の終わりが改行なら要る、そうでなければ要らない）
-    const last = element.lastChild;
-    if (last instanceof HTMLBRElement) last.remove();
-    if (trailingBreakNeeded(segmentsText(collectSegments(element)))) element.appendChild(document.createElement("br"));
-    const after = document.createRange();
-    after.setStartAfter(node);
-    after.collapse(true);
-    selection.removeAllRanges();
-    selection.addRange(after);
-    readBack();
-  };
-
   const onBeforeInput = (e: InputEvent) => {
-    if (e.isComposing) return;
+    if (e.isComposing || composing) return;
     if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") {
       e.preventDefault();
-      insertAtSelection("\n");
+      const sel = selectionOffsets();
+      if (!sel) return;
+      const done = replaceRange(current, sel.start, sel.end, "\n");
+      write(done.text);
+      placeCaret(done.caret);
+      onChange(current);
+      scheduleHighlights();
+      revealSelection();
     }
   };
   const onInput = () => readBack();
-  const onCompStart = () => log("A 変換の始まり");
-  const onCompEnd = (e: CompositionEvent) => log(`A 確定「${e.data}」`);
+  const onCompStart = () => {
+    composing = true;
+    log("A 変換の始まり");
+  };
+  const onCompEnd = (e: CompositionEvent) => {
+    composing = false;
+    log(`A 確定「${e.data}」`);
+    // 確定の字が入りきってから形を見る（端末によって compositionend と input の順が違う）
+    window.setTimeout(() => {
+      if (!composing) readBack();
+    }, 0);
+  };
   /** キーボードが出て見える範囲が縮んだら、カーソルを見える所へ（iOS で欄が隠れた。2026-11-07 Mac） */
   const stopWatching = watchVisibleBand(() => {
     if (document.activeElement !== element) return;

@@ -1,4 +1,5 @@
 import { revealCaret, watchVisibleBand } from "./caretVisible";
+import { caretFromPoint, readCharBoxes } from "./tapCaret";
 import type { TermSpan } from "./termHighlight";
 import {
   applyTextUpdate,
@@ -162,13 +163,9 @@ export function mountEditContextPane(
     e.preventDefault();
   };
   const onPointerDown = (e: PointerEvent) => {
-    const span = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-i]") : null;
-    if (!span) return;
-    const i = Number(span.dataset.i);
-    const n = Number(span.dataset.n ?? "1");
-    const r = span.getBoundingClientRect();
-    const after = element.classList.contains("vertical") ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
-    moveCaret(after ? i + n : i);
+    // 字の無い所（列の下の端の先など）を押しても、いちばん近い列のその位置へ置く（`tapCaret.ts`）
+    const to = caretFromPoint(readCharBoxes(element), e.clientX, e.clientY, element.classList.contains("vertical"));
+    if (to !== undefined) moveCaret(to);
   };
   element.addEventListener("keydown", onKeyDown);
   element.addEventListener("pointerdown", onPointerDown);

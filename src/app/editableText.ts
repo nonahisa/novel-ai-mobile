@@ -46,3 +46,35 @@ export function locateOffset<N>(
 export function trailingBreakNeeded(text: string): boolean {
   return text.endsWith("\n");
 }
+
+/** 欄の子の種類（字の節・改行・そのほかの要素） */
+export type EditableChildKind = "text" | "br" | "other";
+
+/**
+ * 欄の中身が、こちらの決めた素直な形か：字の節1つ（本文が改行で終わるなら、うしろに支えの `<br>`）。
+ * 素直でない形（字の節が割れている・空の節や `<br>`・`<div>` が残っている）は、変換していないときに
+ * 本文から作り直す（2026-11-07 Mac G2a：iOS で Enter → ⌫ と戻すと、消した改行の跡が1字ぶんのすき間で残った）
+ */
+export function isPlainShape(children: readonly EditableChildKind[], text: string): boolean {
+  if (text === "") return children.length === 0;
+  const expected: EditableChildKind[] = trailingBreakNeeded(text) ? ["text", "br"] : ["text"];
+  return children.length === expected.length && children.every((kind, i) => kind === expected[i]);
+}
+
+/**
+ * 本文の `offset` 字目にカーソルを置くとき、素直な形の欄のどこに置くか。
+ * 本文が改行で終わり、カーソルがその後ろ（最後の空の行）なら、支えの `<br>` の前に置く
+ * （字の節の終わりの `\n` の後ろに置くと、iOS ではカーソルが見えず、ページが飛んだ。2026-11-07 Mac G3）
+ */
+export function caretPlacement(text: string, offset: number): { kind: "text"; offset: number } | { kind: "beforeBreak" } {
+  const at = Math.min(Math.max(offset, 0), text.length);
+  if (trailingBreakNeeded(text) && at === text.length) return { kind: "beforeBreak" };
+  return { kind: "text", offset: at };
+}
+
+/** 本文の [start, end) を `inserted` に替える（Enter で改行を入れるとき） */
+export function replaceRange(text: string, start: number, end: number, inserted: string): { text: string; caret: number } {
+  const s = Math.min(Math.max(start, 0), text.length);
+  const e = Math.min(Math.max(end, s), text.length);
+  return { text: text.slice(0, s) + inserted + text.slice(e), caret: s + inserted.length };
+}

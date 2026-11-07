@@ -1,4 +1,5 @@
 import { revealCaret, watchVisibleBand } from "./caretVisible";
+import { caretFromPoint, readCharBoxes } from "./tapCaret";
 import { editAtCaret, type Orientation } from "./editContextModel";
 import type { EditContextPane, TermFinder } from "./editContextPane";
 import {
@@ -174,23 +175,16 @@ export function mountImeSinkPane(
   });
   sink.addEventListener("blur", () => element.classList.remove("has-focus"));
 
-  /** 押した点の下の字から、カーソルを置く位置を読む */
-  const caretFromPoint = (e: MouseEvent): number | undefined => {
-    const span = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-i]") : null;
-    if (!span) return undefined;
-    const i = Number(span.dataset.i);
-    const n = Number(span.dataset.n ?? "1");
-    const r = span.getBoundingClientRect();
-    const after = element.classList.contains("vertical") ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
-    return after ? i + n : i;
-  };
+  /** 押した点から、カーソルを置く位置を読む（字の無い所なら、いちばん近い列のその位置。`tapCaret.ts`） */
+  const caretAt = (e: MouseEvent): number | undefined =>
+    caretFromPoint(readCharBoxes(view), e.clientX, e.clientY, element.classList.contains("vertical"));
   /**
    * 押した位置は、押し始め（pointerdown）で読んでおく。焦点を移すとキーボードが出始めて欄の位置が変わるので、
    * そのあとで読むと、押した字とずれる（2026-11-07 Mac：「猫」のあたりを押したのに「輩」のうしろに入った）
    */
   let pendingCaret: number | undefined;
   const onPointerDown = (e: PointerEvent) => {
-    pendingCaret = e.target === sink || state.composing ? undefined : caretFromPoint(e);
+    pendingCaret = e.target === sink || state.composing ? undefined : caretAt(e);
   };
   const onClick = (e: MouseEvent) => {
     if (e.target === sink) return;

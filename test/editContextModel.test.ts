@@ -94,12 +94,12 @@ describe("B を使えるか", () => {
   test("EditContext があれば使える", () => {
     expect(editContextSupport({ EditContext: class {} }, "android")).toEqual({ ok: true });
   });
-  test("iOS で無ければ、押せなくして理由を出す（自前で線を描く作りが要る）", () => {
+  test("iOS で無ければ、見えない受け口の形で動くと理由を出す", () => {
     const answer = editContextSupport({}, "ios");
     expect(answer.ok).toBe(false);
-    if (!answer.ok) expect(answer.reason).toContain("WKWebView");
+    if (!answer.ok) expect(answer.reason).toMatch(/WKWebView.*見えない受け口/);
   });
-  test("ほかで無ければ、部品の版が足りないと出す", () => {
+  test("ほかで無ければ、同じく見えない受け口の形で動くと出す", () => {
     const answer = editContextSupport({}, "android");
     expect(answer.ok).toBe(false);
     if (!answer.ok) expect(answer.reason).toContain("EditContext");

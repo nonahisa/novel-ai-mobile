@@ -125,15 +125,18 @@ export function renderPaneHtml(state: PaneState): string {
   return html;
 }
 
-/** B を使えるか。使えなければ作者へ出す理由 */
+/**
+ * EditContext の形を使えるか。使えなければ作者へ出す理由。
+ * 使えないときも B は押せる（見えない受け口の形 `imeSinkModel.ts` になる。作者の答え 2026-11-07「iPhone にも足す」）
+ */
 export function editContextSupport(win: object, platform: string): { ok: true } | { ok: false; reason: string } {
   if ("EditContext" in win) return { ok: true };
   if (platform === "ios") {
     return {
       ok: false,
       reason:
-        "iOS の WebView（WKWebView）には EditContext が無いので、B は使えません。iOS で線を右に出すには、線を自前で描く別の作りが要ります（作るかは作者に訊きます）。",
+        "iOS の WebView（WKWebView）には EditContext が無いので、B は「見えない受け口」の形で動きます。",
     };
   }
-  return { ok: false, reason: "この画面の部品（WebView）には EditContext が無いので、B は使えません（Chrome・Edge 121 以降の部品が要ります）。" };
+  return { ok: false, reason: "この画面の部品（WebView）には EditContext が無いので、B は「見えない受け口」の形で動きます。" };
 }

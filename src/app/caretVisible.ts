@@ -29,7 +29,7 @@ export function caretScrollDelta(
 }
 
 /** カーソルの印を見える所へ送る */
-export function revealCaret(caret: Element | null): void {
+export function revealCaret(caret: Pick<Element, "getBoundingClientRect"> | null): void {
   if (!caret) return;
   const vv = window.visualViewport;
   const band = vv ? { top: vv.offsetTop, height: vv.height } : { top: 0, height: window.innerHeight };

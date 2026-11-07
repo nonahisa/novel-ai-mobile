@@ -7,6 +7,16 @@ import { mountCheckPage } from "./checkPage";
 import { editContextSupport, type Orientation } from "./editContextModel";
 import { mountEditContextPane, type EditContextPane } from "./editContextPane";
 import { mountImeSinkPane } from "./imeSinkPane";
+import { mountEditablePane } from "./editablePane";
+import {
+  SAMPLE_TERM_INPUT,
+  TERM_KINDS,
+  TERM_KIND_LABELS,
+  buildTermIndex,
+  findTermSpans,
+  termColorCss,
+  type TermInput,
+} from "./termHighlight";
 import { TABS, buildActionList, hiddenActions, searchActions, type PlannedTab } from "./menuPlan";
 import { escapeHtml, renderActionRows, renderTab, renderTabBar } from "./menuScreen";
 import { SAMPLE_TEXT, countLabel, loadDraft, previewHtml, saveDraft, saveFailureMessage } from "./tategakiDraft";
@@ -147,7 +157,7 @@ function mountAllActions(screen: HTMLElement): void {
 /* ---------- 縦書き・横書きの試し（A：いまの形・B：右傍線） ---------- */
 
 const MODE_NOTES = {
-  A: "A：いまの形。入力欄はブラウザのもので、変換中の線もブラウザが描きます（縦書きでは行の左に出ます）。候補の窓は縦になります。",
+  A: "A：いまの形。入力欄はブラウザのもの（本体の原稿エディターと同じ contenteditable）で、変換中の線もブラウザが描きます（縦書きでは行の左に出ます）。候補の窓は縦になります。",
   B: "B：右傍線の形（EditContext）。字と変換中の線をこの画面が描きます（縦書きでは右、横書きでは下）。文節ごとの太い線・細い線も出ます。入力欄の中ではルビ・傍点は記法の字のまま出ます（下の表示で見られます）。選択・元に戻すはまだありません。",
   sink: "B：右傍線の形（見えない受け口）。カーソルの位置に重ねた透明な欄で日本語入力を受け、字と変換中の線をこの画面が描きます（縦書きでは右、横書きでは下）。線は変換中の字全体に1本で、文節ごとの太い線・細い線は出ません。入力欄の中ではルビ・傍点は記法の字のまま出ます。選択・元に戻すはまだありません。",
 } as const;
@@ -171,7 +181,7 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
     </div>
     ${support.ok ? "" : `<p class="menu-how" id="sinkWhy" hidden>${escapeHtml(support.reason)}</p>`}
     <p class="menu-lead" id="modeNote"></p>
-    <textarea class="draft-input vertical" id="draftInput" lang="ja" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="原稿"></textarea>
+    <div class="draft-input vertical" id="draftInput" lang="ja" aria-label="原稿"></div>
     <div class="draft-input vertical" id="draftPane" lang="ja" aria-label="原稿（右傍線の形）" hidden></div>
     <p class="count" id="draftCount"></p>
     <div class="draft-actions">
@@ -179,13 +189,17 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
       <button id="draftReload">読み直す</button>
     </div>
     <p class="draft-result" id="draftResult" role="status"></p>
+    <details class="menu-hidden term-box" open><summary>色を付ける語（人物・場所・能力・組織）</summary>
+      <p class="menu-how">語を読点（、）で区切って打つと、上の欄の中のその語に色が付きます。「名・姓」のように中黒で区切った名前は、片方だけでも色が付きます（本体と同じ）。作品を開けるようになったら、設定資料の語を使います。</p>
+      ${TERM_KINDS.map((k) => `<label class="term-row"><span class="term-${k}">${TERM_KIND_LABELS[k]}</span><input class="term-input" data-term="${k}" type="text" lang="ja" autocomplete="off" /></label>`).join("")}
+    </details>
     <h2 class="draft-h">ルビと傍点の表示</h2>
     <p class="menu-how">ルビは {漢字|かんじ}、傍点は {{語}} と打ちます。字数は本体と同じ数え方（改行とルビの読みは数えない）です。</p>
     <div class="tategaki-view draft-preview vertical" id="draftPreview"></div>
     <details class="menu-hidden"><summary>変換の知らせの記録</summary>
       <label class="sink-show"><input type="checkbox" id="showSink" /> 見えない受け口を薄い赤で見せる（位置が合っているかを見る）</label>
       <pre class="ime-log" id="imeLog"></pre></details>`;
-  const input = screen.querySelector<HTMLTextAreaElement>("#draftInput")!;
+  const input = screen.querySelector<HTMLElement>("#draftInput")!;
   const paneEl = screen.querySelector<HTMLElement>("#draftPane")!;
   const countEl = screen.querySelector<HTMLElement>("#draftCount")!;
   const preview = screen.querySelector<HTMLElement>("#draftPreview")!;
@@ -213,7 +227,7 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
     preview.innerHTML = previewHtml(text);
   };
   const showText = () => {
-    if (mode === "A") input.value = text;
+    if (mode === "A") editable.setText(text);
     else pane?.setText(text);
     update();
   };
@@ -239,12 +253,35 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
       .forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
   };
 
-  input.addEventListener("input", () => {
-    text = input.value;
-    update();
+  const editable = mountEditablePane(
+    input,
+    text,
+    (changed) => {
+      text = changed;
+      update();
+    },
+    log
+  );
+
+  /* 用語の色付け（作者の答え 2026-11-07「両方」）。語を打ち直したら、A・B の両方の探し方を替える */
+  ensureTermColorStyle();
+  const termInput: TermInput = { ...SAMPLE_TERM_INPUT };
+  let findTerms = (_: string) => [] as ReturnType<typeof findTermSpans>;
+  const applyTerms = () => {
+    const index = buildTermIndex(termInput);
+    findTerms = (body: string) => findTermSpans(index, body);
+    editable.setTerms(findTerms);
+    pane?.setTerms(findTerms);
+  };
+  screen.querySelectorAll<HTMLInputElement>("[data-term]").forEach((field) => {
+    const kind = field.dataset.term as keyof TermInput;
+    field.value = termInput[kind];
+    field.addEventListener("input", () => {
+      termInput[kind] = field.value;
+      applyTerms();
+    });
   });
-  input.addEventListener("compositionstart", () => log("A 変換の始まり"));
-  input.addEventListener("compositionend", (e) => log(`A 確定「${e.data}」`));
+  applyTerms();
 
   screen.querySelectorAll<HTMLButtonElement>("[data-orient]").forEach((button) =>
     button.addEventListener("click", () => {
@@ -289,6 +326,7 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
         ? mountEditContextPane(paneEl, text, orientation, onPaneChange, log)
         : mountImeSinkPane(paneEl, text, orientation, onPaneChange, log);
     pane.setShowSink?.(showSink.checked);
+    pane.setTerms(findTerms);
   }
 
   const load = async () => {
@@ -335,7 +373,19 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
   void load();
   return () => {
     const ok = text === (savedText ?? SAMPLE_TEXT) || window.confirm("保存していない書き換えがあります。保存しないで戻りますか？");
-    if (ok) pane?.destroy();
+    if (ok) {
+      pane?.destroy();
+      editable.destroy();
+    }
     return ok;
   };
+}
+
+/** 用語の色（本体の TERM_COLORS から作る CSS）を1回だけ頁に入れる */
+function ensureTermColorStyle(): void {
+  if (document.getElementById("termColors")) return;
+  const style = document.createElement("style");
+  style.id = "termColors";
+  style.textContent = termColorCss();
+  document.head.appendChild(style);
 }

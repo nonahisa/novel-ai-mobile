@@ -46,3 +46,15 @@ export {
   INTERNAL_EMPHASIS_SOURCE,
 } from "novel-ai-assistant/src/core/ruby";
 export { countChars, formatCount } from "novel-ai-assistant/src/core/charCount";
+/*
+  用語の色付け：索引（Aho-Corasick）・名前の広げ方・種類ごとの色は本体と同じものを使う
+  （本体の決まり「画面ごとに違う色にしない」「索引の作り方を2つに分けない」）
+*/
+export {
+  TermIndex,
+  expandNameVariants,
+  type TermEntry,
+  type TermKind,
+  type TermMatch,
+} from "novel-ai-assistant/src/core/termIndex";
+export { TERM_COLORS, type TermColorPair } from "novel-ai-assistant/src/core/termColors";

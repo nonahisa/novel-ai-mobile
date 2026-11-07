@@ -477,6 +477,10 @@ button {
 .sink-view {
   white-space: pre-wrap;
   min-block-size: 100%;
+  /* 押したときに描く所の字が選ばれないように（焦点は受け口へ移す） */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 /* 受け口：カーソルの位置に重ねる透明な欄。字の大きさは 16px より大きく（iOS が画面を拡大しないように） */
 .ime-sink {

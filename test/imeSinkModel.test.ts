@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { commitSinkValue, initialSinkState, pageEditFor, renderSinkHtml, sinkDisplayState } from "../src/app/imeSinkModel";
+import {
+  SINK_SENTINEL,
+  commitSinkValue,
+  initialSinkState,
+  pageEditFor,
+  readSinkValue,
+  renderSinkHtml,
+  sinkDisplayState,
+} from "../src/app/imeSinkModel";
 
 /**
  * B の「見えない受け口」の形（iOS 向け。作者の答え 2026-11-07「iPhone にも足す」）。
@@ -39,16 +47,25 @@ describe("確定して本文へ移す", () => {
   });
 });
 
-describe("消す・改行はページが受け持つ（受け口が空で、変換していないとき）", () => {
-  test("後ろへ消す・前へ消す・改行", () => {
-    expect(pageEditFor("deleteContentBackward", "", false)).toBe("backspace");
-    expect(pageEditFor("deleteContentForward", "", false)).toBe("delete");
-    expect(pageEditFor("insertLineBreak", "", false)).toBe("newline");
-    expect(pageEditFor("insertParagraph", "", false)).toBe("newline");
+describe("消す・改行はページが受け持つ", () => {
+  test("後ろへ消すは、受け口の見えない字が消えたことで読む（iOS は空の受け口で ⌫ の知らせを出さない）", () => {
+    expect(readSinkValue("")).toEqual({ backspace: true, inserted: "" });
+    expect(readSinkValue(SINK_SENTINEL)).toEqual({ backspace: false, inserted: "" });
+  });
+  test("見えない字のうしろの字は確定した字。本文に見えない字は入らない", () => {
+    expect(readSinkValue(`${SINK_SENTINEL}今日`)).toEqual({ backspace: false, inserted: "今日" });
+    // 見えない字が消えて字が入った（選んで打ち替えたなど）：消す1回と字
+    expect(readSinkValue("a")).toEqual({ backspace: true, inserted: "a" });
+  });
+  test("改行と前へ消すは beforeinput で受ける。後ろへ消すは beforeinput では扱わない", () => {
+    expect(pageEditFor("insertLineBreak", SINK_SENTINEL, false)).toBe("newline");
+    expect(pageEditFor("insertParagraph", SINK_SENTINEL, false)).toBe("newline");
+    expect(pageEditFor("deleteContentForward", SINK_SENTINEL, false)).toBe("delete");
+    expect(pageEditFor("deleteContentBackward", SINK_SENTINEL, false)).toBeUndefined();
   });
   test("変換中・受け口に字があるときは、受け口（IME）に任せる", () => {
-    expect(pageEditFor("deleteContentBackward", "", true)).toBeUndefined();
-    expect(pageEditFor("deleteContentBackward", "き", false)).toBeUndefined();
-    expect(pageEditFor("insertText", "", false)).toBeUndefined();
+    expect(pageEditFor("insertLineBreak", SINK_SENTINEL, true)).toBeUndefined();
+    expect(pageEditFor("deleteContentForward", `${SINK_SENTINEL}き`, false)).toBeUndefined();
+    expect(pageEditFor("insertText", SINK_SENTINEL, false)).toBeUndefined();
   });
 });

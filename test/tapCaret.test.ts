@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { caretFromPoint, type CharBox } from "../src/app/tapCaret";
-import { caretPlacement, clampCaretToPane, isPlainShape, replaceRange } from "../src/app/editableText";
+import { caretPlacement, clampCaretToPane, isPlainShape, plainValue, replaceRange, stripSupport } from "../src/app/editableText";
 
 /**
  * 縦書きの見本：右の列「猫です\n」（x 80〜100）、左の列「犬」（x 50〜70）。字の高さは 20。
@@ -56,19 +56,26 @@ describe("B：押した点からカーソルの位置を決める（2026-11-07 M
 });
 
 describe("A：欄の中身をいつも素直な形に保つ（2026-11-07 Mac G2a・G3）", () => {
-  test("字の節1つ（改行で終わるなら支えの <br>）だけが素直な形", () => {
-    expect(isPlainShape(["text"], "猫")).toBe(true);
-    expect(isPlainShape(["text", "br"], "猫\n")).toBe(true);
+  test("字の節1つ（改行で終わるなら末に支えの見えない字）だけが素直な形", () => {
+    expect(isPlainShape(["text"], "猫", "猫")).toBe(true);
+    expect(isPlainShape(["text"], "猫\n", "猫\n​")).toBe(true);
     expect(isPlainShape([], "")).toBe(true);
     // Enter → ⌫ のあとに残った空の節や <br>、割れた字の節は作り直す
-    expect(isPlainShape(["text", "text"], "猫です")).toBe(false);
-    expect(isPlainShape(["text", "br", "text"], "猫です")).toBe(false);
-    expect(isPlainShape(["text", "other"], "猫")).toBe(false);
-    expect(isPlainShape(["text"], "猫\n")).toBe(false);
+    expect(isPlainShape(["text", "text"], "猫です", "猫")).toBe(false);
+    expect(isPlainShape(["text", "br", "text"], "猫です", "猫")).toBe(false);
+    expect(isPlainShape(["text", "other"], "猫", "猫")).toBe(false);
+    // 支えの字が無い・支えの字のうしろに字が入った
+    expect(isPlainShape(["text"], "猫\n", "猫\n")).toBe(false);
+    expect(isPlainShape(["text"], "猫\nね", "猫\n​ね")).toBe(false);
+    // 以前の支えの <br> も作り直す（iOS は <br> の前のカーソルを 0〜0 と返した。2026-11-07 Mac #23）
+    expect(isPlainShape(["text", "br"], "猫\n", "猫\n")).toBe(false);
   });
 
-  test("最後の空の行のカーソルは、支えの <br> の前に置く", () => {
-    expect(caretPlacement("猫\n", 2)).toEqual({ kind: "beforeBreak" });
+  test("最後の空の行のカーソルも、字の節の中（支えの字の前）に置く", () => {
+    expect(plainValue("猫\n")).toBe("猫\n​");
+    expect(plainValue("猫")).toBe("猫");
+    expect(stripSupport("猫\n​")).toBe("猫\n");
+    expect(caretPlacement("猫\n", 2)).toEqual({ kind: "text", offset: 2 });
     expect(caretPlacement("猫\nです", 2)).toEqual({ kind: "text", offset: 2 });
     expect(caretPlacement("猫", 9)).toEqual({ kind: "text", offset: 1 });
   });

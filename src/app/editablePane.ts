@@ -4,12 +4,14 @@ import {
   type EditableChildKind,
   type EditableSegment,
   caretPlacement,
+  plainValue,
+  stripSupport,
+  LINE_SUPPORT,
   clampCaretToPane,
   isPlainShape,
   locateOffset,
   replaceRange,
   segmentsText,
-  trailingBreakNeeded,
 } from "./editableText";
 import { TERM_KINDS } from "./termHighlight";
 
@@ -48,7 +50,7 @@ function collectSegments(root: Node, ignoreTrailingBreak = true): EditableSegmen
   const walk = (node: Node) => {
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType === Node.TEXT_NODE) {
-        push({ kind: "text", node: child, text: child.nodeValue ?? "" });
+        push({ kind: "text", node: child, text: stripSupport(child.nodeValue ?? "") });
       } else if (child.nodeName === "BR") {
         if (!(ignoreTrailingBreak && child.parentNode === root && child === root.lastChild)) push({ kind: "newline", node: child });
       } else if (child.nodeType === Node.ELEMENT_NODE) {
@@ -91,8 +93,7 @@ export function mountEditablePane(
 
   /** 欄を素直な形で書き直す */
   const write = (next: string) => {
-    element.textContent = next;
-    if (trailingBreakNeeded(next)) element.appendChild(document.createElement("br"));
+    element.textContent = plainValue(next);
     current = next;
   };
 
@@ -120,21 +121,9 @@ export function mountEditablePane(
     const range = document.createRange();
     const at = caretPlacement(current, offset);
     const textNode = element.firstChild;
-    if (at.kind === "beforeBreak" && textNode && textNode.nodeType === Node.TEXT_NODE) {
-      /*
-        最後の空の列は、**字の節の末（改行の字のうしろ）**に置く。支えの <br> の前（欄そのものの位置）に置くと、
-        iOS（WebKit）は縦書きでそのカーソルの位置を 0〜0 と返し、印も描かず、自分で見当違いの所へ送った
-        （2026-11-07 Mac #20 K2・#21 L1・#22 M1：Enter のたびに欄の中身が1列ずつ右へずれた。「ねこ」と打って
-        カーソルが字の節の中に入ると、印が出た）
-      */
-      range.setStart(textNode, (textNode.nodeValue ?? "").length);
-    } else if (at.kind === "beforeBreak" || !textNode || textNode.nodeType !== Node.TEXT_NODE) {
-      const br = element.lastChild;
-      if (br && br.nodeName === "BR") range.setStartBefore(br);
-      else range.setStart(element, element.childNodes.length);
-    } else {
-      range.setStart(textNode, at.kind === "text" ? at.offset : 0);
-    }
+    // 最後の空の行でも、字の節の中（支えの字の前）に置く（`editableText.ts` の LINE_SUPPORT）
+    if (textNode && textNode.nodeType === Node.TEXT_NODE) range.setStart(textNode, at.offset);
+    else range.setStart(element, 0);
     range.collapse(true);
     selection.removeAllRanges();
     selection.addRange(range);
@@ -228,7 +217,7 @@ export function mountEditablePane(
   const readBack = () => {
     current = segmentsText(collectSegments(element));
     // 形が崩れていたら、変換していないときに作り直す（変換中に書き換えると、変換中の字が確定してしまう）
-    if (!composing && !isPlainShape(childKinds(element), current)) {
+    if (!composing && !isPlainShape(childKinds(element), current, element.firstChild?.nodeType === Node.TEXT_NODE ? element.firstChild.nodeValue : null)) {
       const caret = selectionOffsets()?.start ?? current.length;
       write(current);
       placeCaret(caret);
@@ -266,7 +255,6 @@ export function mountEditablePane(
       requestAnimationFrame(() => {
         restore();
         revealSelection(done.caret);
-        holdLeft = element.scrollLeft;
       });
       // 欄の中身がどう動くかを、Enter の直後と少しあとで記録に残す（Mac の確かめで、何が動いたかを見るため）
       dumpGeometry("Enter 0ms");
@@ -274,30 +262,17 @@ export function mountEditablePane(
     }
   };
   /**
-   * **Enter のあとに、カーソルが隠れる向きへ欄が横に送られたら、こちらで送った位置へ戻す**（縦書き）。
-   * iOS は Enter のあと、キーボードが出ているあいだ、欄の中身を右へ送った（1列目が欄の外へ切れ、カーソルの印も
-   * 見えなくなった。キーボードを閉じると戻った。2026-11-07 Mac #21 L1）。こちらの送り（revealSelection）の
-   * あとで起きているので、iOS が自分でカーソルの所へ送っているとみる。
-   * - カーソルが欄の中に見えたまま（測れて、欄の左右に収まっている）なら、その送りは受け入れる
-   * - 指で欄に触れたら見張りをやめる（自分で送るのを止めない）
+   * カーソルが支えの字のうしろ（字の節の末）に来たら、支えの字の前へ戻す（そのまま打つと支えの字のうしろに
+   * 字が入る。⌫ では見えない支えの字が消えるだけになる）
    */
-  let holdLeft: number | undefined;
-  const onPaneScroll = () => {
-    if (holdLeft === undefined || !element.classList.contains("vertical")) return;
-    if (element.scrollLeft === holdLeft) return;
+  const onSelectionChange = () => {
+    if (composing) return;
     const selection = window.getSelection();
-    const r = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).getBoundingClientRect() : undefined;
-    const box = element.getBoundingClientRect();
-    const visible = r && (r.width > 0 || r.height > 0) && r.left >= box.left && r.right <= box.right;
-    if (visible) {
-      holdLeft = element.scrollLeft;
-      return;
-    }
-    log(`A 欄の横送りを戻した（${Math.round(element.scrollLeft)} → ${Math.round(holdLeft)}。カーソルが欄の外になるため）`);
-    element.scrollLeft = holdLeft;
-  };
-  const releaseHold = () => {
-    holdLeft = undefined;
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return;
+    const node = selection.anchorNode;
+    if (!node || node !== element.firstChild || node.nodeType !== Node.TEXT_NODE) return;
+    const value = node.nodeValue ?? "";
+    if (value.endsWith(LINE_SUPPORT) && selection.anchorOffset === value.length) selection.collapse(node, value.length - 1);
   };
   const onInput = () => readBack();
   const onCompStart = () => {
@@ -368,8 +343,7 @@ export function mountEditablePane(
   element.addEventListener("input", onInput);
   element.addEventListener("compositionstart", onCompStart);
   element.addEventListener("compositionend", onCompEnd);
-  element.addEventListener("scroll", onPaneScroll);
-  element.addEventListener("pointerdown", releaseHold);
+  document.addEventListener("selectionchange", onSelectionChange);
   write(text);
   scheduleHighlights();
 
@@ -388,8 +362,7 @@ export function mountEditablePane(
       element.removeEventListener("input", onInput);
       element.removeEventListener("compositionstart", onCompStart);
       element.removeEventListener("compositionend", onCompEnd);
-      element.removeEventListener("scroll", onPaneScroll);
-      element.removeEventListener("pointerdown", releaseHold);
+      document.removeEventListener("selectionchange", onSelectionChange);
       stopWatching();
       window.visualViewport?.removeEventListener("scroll", onViewportPan);
       window.visualViewport?.removeEventListener("resize", onViewportPan);

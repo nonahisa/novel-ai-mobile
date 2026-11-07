@@ -77,19 +77,28 @@ export function mountImeSinkPane(
     render();
     onChange(state.text);
   };
+  /**
+   * 受け口の中の字のうち、もう本文へ移した数（`readSinkValue`）。
+   * **変換しているあいだは受け口の中身に触らない**（iOS は、変換中に中身や選択を書き換えると、変換中の字を
+   * そのまま確定してしまう。2026-11-07 Mac：押してすぐ「kyou⏎⏎」と速く打つと、確定のあとに受け口を
+   * 空にするのが次の字の変換の途中に当たり、「ｋｙ」が全角の英字で確定し、そのあと変換中の字が残った）
+   */
+  let consumed = 0;
   /** 受け口を「見えない字が1つ」の状態に戻し、カーソルをそのうしろへ */
   const resetSink = () => {
     sink.value = SINK_SENTINEL;
+    consumed = 0;
     if (document.activeElement === sink) sink.setSelectionRange(1, 1);
   };
-  /** 受け口の中身を読んで本文に当てる（後ろへ消す・確定した字） */
+  /** 受け口の中身を読んで、まだ当てていないことを本文に当て、受け口を空にする（変換していないときだけ） */
   const commit = () => {
-    const { backspace, inserted } = readSinkValue(sink.value);
+    if (state.composing) return;
+    const { backspaces, inserted } = readSinkValue(sink.value, consumed);
     resetSink();
-    if (backspace) {
+    for (let n = 0; n < backspaces; n++) {
       const done = editAtCaret({ text: state.text, selection: state.selection, composing: false, formats: [] }, "backspace");
       if (done) state = { ...state, text: done.state.text, selection: done.state.selection };
-      log("後ろへ消す（受け口の見えない字が消えた）");
+      log("後ろへ消す（受け口の字が減った）");
     }
     state = commitSinkValue(state, inserted);
     if (inserted) log(`確定「${inserted}」（受け口）`);
@@ -104,12 +113,19 @@ export function mountImeSinkPane(
     state = { ...state, compText: e.data ?? "" };
     render();
   });
-  sink.addEventListener("compositionend", () => {
-    // 確定の字が受け口へ入りきるのを待ってから移す（端末によって compositionend と input の順が違う）
-    window.setTimeout(() => {
-      state = { ...state, composing: false, compText: "" };
-      commit();
-    }, 0);
+  sink.addEventListener("compositionend", (e) => {
+    // 確定の字は、その場で data から本文へ移す。受け口を空にするのは、次の変換が始まっていないときだけ
+    // （端末によって compositionend と input の順が違うので、少し待ってから受け口の残りを読む）
+    const data = e.data ?? "";
+    state = commitSinkValue({ ...state, composing: false, compText: "" }, data);
+    consumed += data.length;
+    if (data) log(`確定「${data}」（受け口）`);
+    changed();
+    if (revealAfterComposition) {
+      revealAfterComposition = false;
+      revealCaret(view.querySelector(".caret"));
+    }
+    window.setTimeout(commit, 0);
   });
   sink.addEventListener("input", (e) => {
     if (!state.composing && !(e as InputEvent).isComposing) commit();
@@ -141,12 +157,20 @@ export function mountImeSinkPane(
     if (!state.composing) resetSink();
     revealCaret(view.querySelector(".caret"));
   });
-  // キーボードが出て見える範囲が縮んだら、カーソルを見える所へ送る（iOS では欄がキーボードの下に隠れた）
+  /**
+   * キーボードが出て見える範囲が縮んだら、カーソルを見える所へ送る（iOS では欄がキーボードの下に隠れた）。
+   * **変換中なら確定まで待つ**（押してすぐ打ち始めると、キーボードが出きる前に変換が始まる。そこでページを
+   * 送ると変換が切れるおそれがある）
+   */
+  let revealAfterComposition = false;
   const stopWatching = watchVisibleBand(() => {
-    if (document.activeElement === sink) {
-      placeSink();
-      revealCaret(view.querySelector(".caret"));
+    if (document.activeElement !== sink) return;
+    if (state.composing) {
+      revealAfterComposition = true;
+      return;
     }
+    placeSink();
+    revealCaret(view.querySelector(".caret"));
   });
   sink.addEventListener("blur", () => element.classList.remove("has-focus"));
 

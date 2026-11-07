@@ -68,14 +68,21 @@ export function commitSinkValue(state: SinkState, value: string): SinkState {
 export const SINK_SENTINEL = "\u200B";
 
 /**
- * 受け口の今の中身から、何が起きたかを読む（変換していないときの `input` で使う）。
+ * 受け口の今の中身から、まだ本文に当てていないことを読む（変換していないときの `input` と、確定のあと）。
+ *
+ * `consumed` は、受け口の中の字のうち**もう本文へ移した数**。確定（`compositionend`）の字はその場で
+ * `data` から本文へ移し、受け口は変換が止まってから空にする（`imeSinkPane.ts`）。そのあいだ受け口には
+ * 移した字が残っているので、それを二度入れないために数えておく。
+ *
  * - 頭の見えない字が消えていれば「後ろへ消す」が1回
- * - 見えない字のほかに字があれば、それを確定した字として本文へ入れる
+ * - 移した字より短くなっていれば、減った数だけ「後ろへ消す」（移したあと、空にする前に ⌫ を押した）
+ * - 移した字のうしろの字は、確定した字として本文へ入れる
  */
-export function readSinkValue(value: string): { backspace: boolean; inserted: string } {
-  const backspace = !value.startsWith(SINK_SENTINEL);
-  const inserted = value.split(SINK_SENTINEL).join("");
-  return { backspace, inserted };
+export function readSinkValue(value: string, consumed = 0): { backspaces: number; inserted: string } {
+  const sentinelGone = !value.startsWith(SINK_SENTINEL);
+  const body = value.split(SINK_SENTINEL).join("");
+  const shrunk = Math.max(0, consumed - body.length);
+  return { backspaces: shrunk + (sentinelGone ? 1 : 0), inserted: body.slice(consumed) };
 }
 
 /**

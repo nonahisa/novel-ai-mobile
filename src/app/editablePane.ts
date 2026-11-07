@@ -36,6 +36,8 @@ export interface EditablePane {
   getText(): string;
   setText(text: string): void;
   setTerms(find: TermFinder): void;
+  /** Enter をブラウザに任せるか（試しの画面で比べる。iOS の印の確かめ） */
+  setNativeEnter(native: boolean): void;
   destroy(): void;
 }
 
@@ -217,7 +219,24 @@ export function mountEditablePane(
   const readBack = () => {
     current = segmentsText(collectSegments(element));
     // 形が崩れていたら、変換していないときに作り直す（変換中に書き換えると、変換中の字が確定してしまう）
-    if (!composing && !isPlainShape(childKinds(element), current, element.firstChild?.nodeType === Node.TEXT_NODE ? element.firstChild.nodeValue : null)) {
+    // 字の節が割れただけなら、つなぎ合わせる（作り直さない。カーソルはそのまま残る。エミュレーター：ブラウザに
+    // 任せた Enter は、改行を別の字の節として差し込み、字の節を3つに割った）
+    if (!composing && element.childNodes.length > 1 && Array.from(element.childNodes).every((n) => n.nodeType === Node.TEXT_NODE)) {
+      element.normalize();
+    }
+    const first = element.firstChild;
+    const raw = first?.nodeType === Node.TEXT_NODE ? first.nodeValue : null;
+    const supportOnly =
+      !composing && first !== null && raw !== null && element.childNodes.length === 1 && raw !== plainValue(current) &&
+      (raw === current || raw === current + LINE_SUPPORT);
+    if (supportOnly) {
+      // 支えの字が足りない・余っているだけなら、字の節はそのままで足し引きする（作り直さない。
+      // 作り直すと、iOS がカーソルの印を描かなくなる見込み。2026-11-07 Mac #24 P1）
+      const node = first as Text;
+      if (raw === current) node.appendData(LINE_SUPPORT);
+      else node.deleteData(raw.length - LINE_SUPPORT.length, LINE_SUPPORT.length);
+      log("A 支えの字を足し引きした（欄は作り直さない）");
+    } else if (!composing && !isPlainShape(childKinds(element), current, raw)) {
       const caret = selectionOffsets()?.start ?? current.length;
       write(current);
       placeCaret(caret);
@@ -230,6 +249,16 @@ export function mountEditablePane(
   const onBeforeInput = (e: InputEvent) => {
     if (e.isComposing || composing) return;
     if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") {
+      if (nativeEnter) {
+        // ブラウザに任せる。改行が入ったあと（input）で、形を見て位置を記録する。
+        // 本文の末で改行させると、ブラウザは最後の空の行を見せるために改行をもう1つ足す（エミュレーター：
+        // 「猫です」の末で Enter →「猫です\n\n」）。先に支えの字を足しておき、その前に改行を入れさせる
+        const first = element.firstChild;
+        if (first && first.nodeType === Node.TEXT_NODE && !(first.nodeValue ?? "").endsWith(LINE_SUPPORT)) {
+          (first as Text).appendData(LINE_SUPPORT);
+        }
+        return;
+      }
       e.preventDefault();
       const sel = selectionOffsets();
       if (!sel) return;
@@ -274,7 +303,21 @@ export function mountEditablePane(
     const value = node.nodeValue ?? "";
     if (value.endsWith(LINE_SUPPORT) && selection.anchorOffset === value.length) selection.collapse(node, value.length - 1);
   };
-  const onInput = () => readBack();
+  /**
+   * **Enter をブラウザに任せる形**（試しの画面の切り替え。2026-11-07 Mac #24：こちらで欄を書き直して
+   * カーソルを置くと、iOS は最後の空の列のカーソルの印を、支えが `<br>` でも見えない字でも描かなかった。
+   * 印は iOS 自身が描くもので、こちらが中身を書き換えると、次に打つまで描かないのかもしれない。ブラウザに
+   * 改行を入れさせて比べる）
+   */
+  let nativeEnter = false;
+  const onInput = (e: Event) => {
+    readBack();
+    const type = (e as InputEvent).inputType;
+    if (nativeEnter && (type === "insertParagraph" || type === "insertLineBreak")) {
+      dumpGeometry("Enter（ブラウザ） 0ms");
+      for (const ms of [100, 500, 1500]) window.setTimeout(() => dumpGeometry(`Enter（ブラウザ） ${ms}ms`), ms);
+    }
+  };
   const onCompStart = () => {
     composing = true;
     log("A 変換の始まり");
@@ -352,6 +395,10 @@ export function mountEditablePane(
     setText(next) {
       write(next);
       scheduleHighlights();
+    },
+    setNativeEnter(native) {
+      nativeEnter = native;
+      log(native ? "A の Enter をブラウザに任せる" : "A の Enter をこちらで入れる");
     },
     setTerms(find) {
       findTerms = find;

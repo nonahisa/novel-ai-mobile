@@ -254,6 +254,7 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
     <div class="tategaki-view draft-preview vertical" id="draftPreview"></div>
     <details class="menu-hidden"><summary>変換の知らせの記録</summary>
       <label class="sink-show"><input type="checkbox" id="showSink" /> 見えない受け口を薄い赤で見せる（位置が合っているかを見る）</label>
+      <label class="sink-show"><input type="checkbox" id="nativeEnter" /> A の Enter をブラウザに任せる（iPhone でカーソルの印が出るかを比べる）</label>
       <pre class="ime-log" id="imeLog"></pre></details>`;
   const input = screen.querySelector<HTMLElement>("#draftInput")!;
   const paneEl = screen.querySelector<HTMLElement>("#draftPane")!;
@@ -371,6 +372,8 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
     })
   );
   showSink.addEventListener("change", () => pane?.setShowSink?.(showSink.checked));
+  const nativeEnterBox = screen.querySelector<HTMLInputElement>("#nativeEnter")!;
+  nativeEnterBox.addEventListener("change", () => editable.setNativeEnter(nativeEnterBox.checked));
 
   /** B の入力欄を、選んでいる受け口で作る */
   function mountPane(): void {

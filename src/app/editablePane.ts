@@ -151,6 +151,53 @@ export function mountEditablePane(
   };
 
   /**
+   * **ブラウザが描かないカーソルの印を、こちらで描く**（2026-11-07 Mac #20〜#25：iOS のシミュレーターでは、
+   * 縦書きの最後の空の列のカーソルを、支えが `<br>` でも見えない字でも、Enter をブラウザに任せても描かず、
+   * 位置も 0〜0 で返した。字を打てば描かれる）。
+   * ブラウザがカーソルの位置を 0〜0 と返したときだけ、見えない字の印で測った所に、点滅する印を重ねる
+   * （Android はふつうに描くので出ない）。打つ・押す・カーソルが動く・焦点が外れると消す
+   */
+  let ownCaret: HTMLElement | undefined;
+  let ownState: { offset: number; x: number; y: number; bx: number; by: number; sl: number; st: number } | undefined;
+  const placeOwnCaret = () => {
+    if (!ownCaret || !ownState) return;
+    const box = element.getBoundingClientRect();
+    const x = box.left + (ownState.x - ownState.bx) - (element.scrollLeft - ownState.sl);
+    const y = box.top + (ownState.y - ownState.by) - (element.scrollTop - ownState.st);
+    ownCaret.style.left = `${x}px`;
+    ownCaret.style.top = `${y}px`;
+  };
+  const hideOwnCaret = () => {
+    ownCaret?.remove();
+    ownCaret = undefined;
+    ownState = undefined;
+  };
+  const showOwnCaret = (at: DOMRect, offset: number) => {
+    hideOwnCaret();
+    const vertical = element.classList.contains("vertical");
+    const lineHeight = parseFloat(getComputedStyle(element).fontSize) || 20;
+    const box = element.getBoundingClientRect();
+    ownCaret = document.createElement("div");
+    ownCaret.className = "own-caret";
+    ownCaret.setAttribute("aria-hidden", "true");
+    // 縦書きは横の棒（列の太さ）、横書きは縦の棒（行の高さ）
+    ownCaret.style.width = vertical ? `${Math.max(at.width, lineHeight)}px` : "2px";
+    ownCaret.style.height = vertical ? "2px" : `${Math.max(at.height, lineHeight)}px`;
+    ownState = {
+      offset,
+      x: vertical ? at.left : at.left - 1,
+      y: vertical ? at.top - 1 : at.top,
+      bx: box.left,
+      by: box.top,
+      sl: element.scrollLeft,
+      st: element.scrollTop,
+    };
+    document.body.appendChild(ownCaret);
+    placeOwnCaret();
+    log("A カーソルの印をこちらで描いた（ブラウザが位置を 0〜0 と返したため）");
+  };
+
+  /**
    * カーソルを、欄の中でもページでも見える所へ送る（縦書きは欄を横へ、横書きは欄を縦へ。そのあとページ）。
    * **測れなかったら何も送らない**（0〜0 のまま送ると、欄が右へずれ、ページが下へ送られた。2026-11-07 Mac #20 K2）
    */
@@ -176,6 +223,13 @@ export function mountEditablePane(
     const caret = clampCaretToPane(moved, after, vertical);
     log(`A Enter のあとのカーソル（上下 ${Math.round(moved.top)}〜${Math.round(moved.bottom)}、左右 ${Math.round(moved.left)}〜${Math.round(moved.right)}、欄 ${Math.round(after.top)}〜${Math.round(after.bottom)}）`);
     revealCaret({ getBoundingClientRect: () => caret as DOMRect });
+    // ブラウザがカーソルの位置を測れない（＝描いていない）なら、こちらで印を描く
+    const selection = window.getSelection();
+    const real = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).getBoundingClientRect() : undefined;
+    if (real && real.width === 0 && real.height === 0) {
+      const now = measureCaret(offset);
+      if (now) showOwnCaret(now, offset);
+    }
   };
 
   const clearHighlights = () => {
@@ -295,6 +349,11 @@ export function mountEditablePane(
    * 字が入る。⌫ では見えない支えの字が消えるだけになる）
    */
   const onSelectionChange = () => {
+    // カーソルが動いたら、こちらで描いた印を消す（測るときに置き直した同じ位置なら残す）
+    if (ownState) {
+      const sel = selectionOffsets();
+      if (!sel || sel.start !== ownState.offset || sel.end !== ownState.offset) hideOwnCaret();
+    }
     if (composing) return;
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return;
@@ -311,6 +370,7 @@ export function mountEditablePane(
    */
   let nativeEnter = false;
   const onInput = (e: Event) => {
+    hideOwnCaret();
     readBack();
     const type = (e as InputEvent).inputType;
     if (nativeEnter && (type === "insertParagraph" || type === "insertLineBreak")) {
@@ -319,6 +379,7 @@ export function mountEditablePane(
     }
   };
   const onCompStart = () => {
+    hideOwnCaret();
     composing = true;
     log("A 変換の始まり");
   };
@@ -384,6 +445,12 @@ export function mountEditablePane(
 
   element.addEventListener("beforeinput", onBeforeInput);
   element.addEventListener("input", onInput);
+  element.addEventListener("blur", hideOwnCaret);
+  element.addEventListener("pointerdown", hideOwnCaret);
+  element.addEventListener("scroll", placeOwnCaret);
+  window.addEventListener("scroll", placeOwnCaret);
+  window.visualViewport?.addEventListener("scroll", placeOwnCaret);
+  window.visualViewport?.addEventListener("resize", placeOwnCaret);
   element.addEventListener("compositionstart", onCompStart);
   element.addEventListener("compositionend", onCompEnd);
   document.addEventListener("selectionchange", onSelectionChange);
@@ -407,6 +474,13 @@ export function mountEditablePane(
     destroy() {
       element.removeEventListener("beforeinput", onBeforeInput);
       element.removeEventListener("input", onInput);
+      element.removeEventListener("blur", hideOwnCaret);
+      element.removeEventListener("pointerdown", hideOwnCaret);
+      element.removeEventListener("scroll", placeOwnCaret);
+      window.removeEventListener("scroll", placeOwnCaret);
+      window.visualViewport?.removeEventListener("scroll", placeOwnCaret);
+      window.visualViewport?.removeEventListener("resize", placeOwnCaret);
+      hideOwnCaret();
       element.removeEventListener("compositionstart", onCompStart);
       element.removeEventListener("compositionend", onCompEnd);
       document.removeEventListener("selectionchange", onSelectionChange);

@@ -418,6 +418,19 @@ button {
 #draftInput:focus {
   border-color: var(--accent);
 }
+/* ブラウザが描かないカーソルの印を、こちらで描く（editablePane.ts の showOwnCaret。iOS の縦書きの最後の空の列） */
+.own-caret {
+  position: fixed;
+  z-index: 5;
+  background: var(--accent);
+  pointer-events: none;
+  animation: own-caret-blink 1s steps(1) infinite;
+}
+@keyframes own-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
 .term-box .term-row {
   display: flex;
   align-items: center;

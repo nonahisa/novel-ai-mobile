@@ -49,13 +49,21 @@ describe("確定して本文へ移す", () => {
 
 describe("消す・改行はページが受け持つ", () => {
   test("後ろへ消すは、受け口の見えない字が消えたことで読む（iOS は空の受け口で ⌫ の知らせを出さない）", () => {
-    expect(readSinkValue("")).toEqual({ backspace: true, inserted: "" });
-    expect(readSinkValue(SINK_SENTINEL)).toEqual({ backspace: false, inserted: "" });
+    expect(readSinkValue("")).toEqual({ backspaces: 1, inserted: "" });
+    expect(readSinkValue(SINK_SENTINEL)).toEqual({ backspaces: 0, inserted: "" });
   });
   test("見えない字のうしろの字は確定した字。本文に見えない字は入らない", () => {
-    expect(readSinkValue(`${SINK_SENTINEL}今日`)).toEqual({ backspace: false, inserted: "今日" });
+    expect(readSinkValue(`${SINK_SENTINEL}今日`)).toEqual({ backspaces: 0, inserted: "今日" });
     // 見えない字が消えて字が入った（選んで打ち替えたなど）：消す1回と字
-    expect(readSinkValue("a")).toEqual({ backspace: true, inserted: "a" });
+    expect(readSinkValue("a")).toEqual({ backspaces: 1, inserted: "a" });
+  });
+  test("確定でもう本文へ移した字は、二度入れない（2026-11-07 Mac：押してすぐ速く打つと崩れた）", () => {
+    // 「今日」を確定で移し、受け口を空にする前に読んだ
+    expect(readSinkValue(`${SINK_SENTINEL}今日`, 2)).toEqual({ backspaces: 0, inserted: "" });
+    // 移したあとに続けて字が入った（次の確定の字や、変換を通らない字）
+    expect(readSinkValue(`${SINK_SENTINEL}今日。`, 2)).toEqual({ backspaces: 0, inserted: "。" });
+    // 移したあと、空にする前に ⌫ で1字減った
+    expect(readSinkValue(`${SINK_SENTINEL}今`, 2)).toEqual({ backspaces: 1, inserted: "" });
   });
   test("改行と前へ消すは beforeinput で受ける。後ろへ消すは beforeinput では扱わない", () => {
     expect(pageEditFor("insertLineBreak", SINK_SENTINEL, false)).toBe("newline");

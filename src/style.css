@@ -178,9 +178,14 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 52px;
-  padding: 0 12px;
-  margin: 0 -12px 8px;
+  /*
+    送って帯が頭に貼り付いたとき、ボタンが iOS のステータスバーの所（画面の頭からおよそ 50pt）に来ないように、
+    帯そのものはステータスバーの裏まで伸ばし、中身は safe-area の内側に置く。ステータスバーの所を押すと、
+    iOS は「ページの頭へ送る」をするので、← の1回目が戻らなかった（2026-11-07 Mac。押した位置は 30pt 付近）
+  */
+  min-height: calc(52px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 12px 0;
+  margin: calc(-1 * env(safe-area-inset-top)) -12px 8px;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }

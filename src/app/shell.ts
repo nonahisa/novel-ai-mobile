@@ -44,6 +44,8 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       <nav class="tabbar" id="tabbar" aria-label="下のタブ"></nav>
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </div>`;
+  // 戻る（history.back）でブラウザが前の送り位置を戻さないように。画面を移るたびに頭から開く（2026-11-07 Mac）
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   const screen = root.querySelector<HTMLElement>("#screen")!;
   const tabbar = root.querySelector<HTMLElement>("#tabbar")!;
   const toastEl = root.querySelector<HTMLElement>("#toast")!;

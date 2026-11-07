@@ -1,3 +1,4 @@
+import { revealCaret, watchVisibleBand } from "./caretVisible";
 import {
   applyTextUpdate,
   editAtCaret,
@@ -77,7 +78,15 @@ export function mountEditContextPane(
   const render = () => {
     element.innerHTML = renderPaneHtml(state);
     reportBounds();
+    if (document.activeElement === element) revealCaret(element.querySelector(".caret"));
   };
+  // キーボードが出て見える範囲が縮んだら、カーソルを見える所へ送る
+  const stopWatching = watchVisibleBand(() => {
+    if (document.activeElement === element) {
+      reportBounds();
+      revealCaret(element.querySelector(".caret"));
+    }
+  });
   const changed = () => {
     render();
     onChange(state.text);
@@ -177,6 +186,7 @@ export function mountEditContextPane(
       element.removeEventListener("pointerdown", onPointerDown);
       element.removeEventListener("scroll", reportBounds);
       window.removeEventListener("resize", reportBounds);
+      stopWatching();
       (element as unknown as { editContext: EditContextLike | null }).editContext = null;
       element.innerHTML = "";
     },

@@ -93,6 +93,8 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const currentTab = route.kind === "tab" ? route.tab.id : route.kind === "all" ? "other" : undefined;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
     screen.scrollTop = 0;
+    // 送っているのはページ（body）なので、移るたびに頭へ戻す（前の画面の送り位置が残っていた。2026-11-07 Mac）
+    window.scrollTo(0, 0);
     switch (route.kind) {
       case "tab":
         screen.innerHTML = renderTab(route.tab, `モバイル版 ${__APP_VERSION__}（本体の部品 ${SHARED_VERSION}）`);

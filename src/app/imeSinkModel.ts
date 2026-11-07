@@ -58,14 +58,33 @@ export function commitSinkValue(state: SinkState, value: string): SinkState {
 }
 
 /**
- * 受け口の `beforeinput` のうち、ページが受け持つもの（受け口が空で、変換していないとき）。
- * 受け口は空なので、消す・改行は受け口の中では起きない。本文に当てる。
+ * **受け口にいつも入れておく見えない字**（幅のない空白 U+200B）。
+ *
+ * iOS の WebView は、受け口が空のとき、消すキー（⌫）を押しても何の知らせも出さない
+ * （keydown も beforeinput も来ない。2026-11-07 Mac の iOS シミュレーター）。そこで受け口に
+ * この字を1つ置いておき、**それが消えたことで「後ろへ消す」を読む**。本文には入れない。
  */
-export function pageEditFor(inputType: string, sinkValue: string, composing: boolean): "backspace" | "delete" | "newline" | undefined {
+export const SINK_SENTINEL = "\u200B";
+
+/**
+ * 受け口の今の中身から、何が起きたかを読む（変換していないときの `input` で使う）。
+ * - 頭の見えない字が消えていれば「後ろへ消す」が1回
+ * - 見えない字のほかに字があれば、それを確定した字として本文へ入れる
+ */
+export function readSinkValue(value: string): { backspace: boolean; inserted: string } {
+  const backspace = !value.startsWith(SINK_SENTINEL);
+  const inserted = value.split(SINK_SENTINEL).join("");
+  return { backspace, inserted };
+}
+
+/**
+ * 受け口の `beforeinput` のうち、ページが受け持つもの（変換していないとき）。
+ * 改行と、受け口に見えない字しか無いときの「前へ消す」。
+ * 「後ろへ消す」はここで扱わない（iOS では来ないので、見えない字が消えたことで読む。`readSinkValue`）
+ */
+export function pageEditFor(inputType: string, sinkValue: string, composing: boolean): "delete" | "newline" | undefined {
   if (composing) return undefined;
   if (inputType === "insertLineBreak" || inputType === "insertParagraph") return "newline";
-  if (sinkValue !== "") return undefined;
-  if (inputType === "deleteContentBackward") return "backspace";
-  if (inputType === "deleteContentForward") return "delete";
+  if (inputType === "deleteContentForward" && sinkValue.split(SINK_SENTINEL).join("") === "") return "delete";
   return undefined;
 }

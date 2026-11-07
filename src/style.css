@@ -108,7 +108,8 @@ dd {
   writing-mode: horizontal-tb;
   width: 100%;
   font-family: inherit;
-  font-size: 0.9rem;
+  /* 16px 未満の欄に焦点が入ると、iOS がページを拡大する */
+  font-size: 16px;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -283,6 +284,8 @@ button {
   background: var(--card);
   color: var(--fg);
   font: inherit;
+  /* 16px 未満の欄に焦点が入ると、iOS がページを拡大して左端が切れる（2026-11-07 Mac の iOS シミュレーター） */
+  font-size: 16px;
 }
 .menu-hidden {
   margin-top: 16px;
@@ -477,6 +480,10 @@ button {
 .sink-view {
   white-space: pre-wrap;
   min-block-size: 100%;
+  /* 押したときに描く所の字が選ばれないように（焦点は受け口へ移す） */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 /* 受け口：カーソルの位置に重ねる透明な欄。字の大きさは 16px より大きく（iOS が画面を拡大しないように） */
 .ime-sink {
@@ -504,6 +511,15 @@ button {
 }
 .sink-pane.horizontal .ime-sink {
   writing-mode: horizontal-tb;
+}
+/*
+  見せないときは受け口を1点の大きさにする。iOS では、ほぼ透明でも縦書きの受け口が描く所の字の上に
+  かぶさると、変換中の字も右の線も見えなくなった（2026-11-07 Mac の iOS シミュレーター 18 番。横書きは見えた）。
+  候補はキーボードの上の帯に出るので、受け口の大きさは入力に関係しない
+*/
+.ime-sink:not(.show) {
+  inline-size: 1px;
+  block-size: 1px;
 }
 .ime-sink.show {
   opacity: 0.45;

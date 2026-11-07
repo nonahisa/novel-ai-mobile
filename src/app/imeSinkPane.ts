@@ -1,6 +1,14 @@
 import { editAtCaret, type Orientation } from "./editContextModel";
 import type { EditContextPane } from "./editContextPane";
-import { commitSinkValue, initialSinkState, pageEditFor, renderSinkHtml, type SinkState } from "./imeSinkModel";
+import {
+  SINK_SENTINEL,
+  commitSinkValue,
+  initialSinkState,
+  pageEditFor,
+  readSinkValue,
+  renderSinkHtml,
+  type SinkState,
+} from "./imeSinkModel";
 
 /**
  * B（右傍線）の「見えない受け口」の形。iOS（EditContext が無い）で使う。Android でも選べる（比べるため）。
@@ -10,8 +18,12 @@ import { commitSinkValue, initialSinkState, pageEditFor, renderSinkHtml, type Si
  * - 受け口は 16px より大きい字にする（iOS は 16px 未満の欄に焦点が入ると画面を拡大するため）
  * - 受け口は**ほぼ透明**（opacity 0.01）。iOS が自分で描く変換中の色・下線、選択のつまみを見せないため。
  *   ［受け口を見せる］で薄い赤にでき、位置が合っているかを確かめられる
- * - 字を押したら、そこへカーソルを置いて受け口へ焦点を移す（押した操作の中で焦点を移すので、iOS でもキーボードが出る見込み）
- * - 改行・後ろへ消す・前へ消すは、受け口が空のときの `beforeinput` で受けて本文に当てる
+ * - **字を押したら、`click` の処理の中で、何よりも先に同期で受け口へ焦点を移す**。そのあとでカーソルと受け口を動かす。
+ *   iOS は、人の操作（タッチの終わり・click）のうちに同期で `focus()` しないとキーボードを出さない。
+ *   はじめは `pointerdown` で既定の動きを止めてから焦点を移していて、iOS ではキーボードが出なかった
+ *   （2026-11-07 Mac の iOS シミュレーター。動いた受け口そのものを押すと出た）
+ * - 受け口にはいつも見えない字（`SINK_SENTINEL`）を1つ入れておき、それが消えたことで「後ろへ消す」を読む
+ *   （iOS は受け口が空だと ⌫ の知らせを出さないため）。改行と前へ消すは `beforeinput` で受ける
  */
 export function mountImeSinkPane(
   element: HTMLElement,
@@ -60,11 +72,22 @@ export function mountImeSinkPane(
     render();
     onChange(state.text);
   };
+  /** 受け口を「見えない字が1つ」の状態に戻し、カーソルをそのうしろへ */
+  const resetSink = () => {
+    sink.value = SINK_SENTINEL;
+    if (document.activeElement === sink) sink.setSelectionRange(1, 1);
+  };
+  /** 受け口の中身を読んで本文に当てる（後ろへ消す・確定した字） */
   const commit = () => {
-    const value = sink.value;
-    sink.value = "";
-    state = commitSinkValue(state, value);
-    if (value) log(`確定「${value}」（受け口）`);
+    const { backspace, inserted } = readSinkValue(sink.value);
+    resetSink();
+    if (backspace) {
+      const done = editAtCaret({ text: state.text, selection: state.selection, composing: false, formats: [] }, "backspace");
+      if (done) state = { ...state, text: done.state.text, selection: done.state.selection };
+      log("後ろへ消す（受け口の見えない字が消えた）");
+    }
+    state = commitSinkValue(state, inserted);
+    if (inserted) log(`確定「${inserted}」（受け口）`);
     changed();
   };
 
@@ -90,6 +113,7 @@ export function mountImeSinkPane(
     const kind = pageEditFor(e.inputType, sink.value, state.composing || e.isComposing);
     if (!kind) return;
     e.preventDefault();
+    resetSink();
     const done = editAtCaret({ text: state.text, selection: state.selection, composing: false, formats: [] }, kind);
     if (!done) return;
     state = { ...state, text: done.state.text, selection: done.state.selection };
@@ -100,41 +124,42 @@ export function mountImeSinkPane(
     render();
   };
   sink.addEventListener("keydown", (e) => {
-    if (e.isComposing || e.keyCode === 229 || sink.value !== "") return;
+    if (e.isComposing || e.keyCode === 229 || sink.value !== SINK_SENTINEL) return;
     const vertical = element.classList.contains("vertical");
     if (e.key === (vertical ? "ArrowUp" : "ArrowLeft")) moveCaret(state.selection - 1);
     else if (e.key === (vertical ? "ArrowDown" : "ArrowRight")) moveCaret(state.selection + 1);
     else return;
     e.preventDefault();
   });
-  sink.addEventListener("focus", () => element.classList.add("has-focus"));
+  sink.addEventListener("focus", () => {
+    element.classList.add("has-focus");
+    if (!state.composing) resetSink();
+  });
   sink.addEventListener("blur", () => element.classList.remove("has-focus"));
 
-  const onPointerDown = (e: PointerEvent) => {
+  const onClick = (e: MouseEvent) => {
     if (e.target === sink) return;
-    if (!state.composing) {
-      const span = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-i]") : null;
-      if (span) {
-        const i = Number(span.dataset.i);
-        const n = Number(span.dataset.n ?? "1");
-        const r = span.getBoundingClientRect();
-        const after = element.classList.contains("vertical") ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
-        moveCaret(after ? i + n : i);
-      }
-    }
+    // 何よりも先に、同期で焦点を移す（iOS がキーボードを出す条件）
     sink.focus({ preventScroll: true });
-    // 焦点の既定の動き（描く所の選択）を起こさない
-    e.preventDefault();
+    if (state.composing) return;
+    const span = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-i]") : null;
+    if (!span) return;
+    const i = Number(span.dataset.i);
+    const n = Number(span.dataset.n ?? "1");
+    const r = span.getBoundingClientRect();
+    const after = element.classList.contains("vertical") ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
+    moveCaret(after ? i + n : i);
   };
-  element.addEventListener("pointerdown", onPointerDown);
+  element.addEventListener("click", onClick);
   element.addEventListener("scroll", placeSink);
   window.addEventListener("resize", placeSink);
+  resetSink();
   render();
 
   return {
     getText: () => state.text,
     setText(next: string) {
-      sink.value = "";
+      resetSink();
       state = initialSinkState(next);
       render();
     },
@@ -147,7 +172,7 @@ export function mountImeSinkPane(
     },
     focus: () => sink.focus({ preventScroll: true }),
     destroy() {
-      element.removeEventListener("pointerdown", onPointerDown);
+      element.removeEventListener("click", onClick);
       element.removeEventListener("scroll", placeSink);
       window.removeEventListener("resize", placeSink);
       element.classList.remove("sink-pane", "has-focus");

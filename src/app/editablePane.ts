@@ -120,7 +120,15 @@ export function mountEditablePane(
     const range = document.createRange();
     const at = caretPlacement(current, offset);
     const textNode = element.firstChild;
-    if (at.kind === "beforeBreak" || !textNode || textNode.nodeType !== Node.TEXT_NODE) {
+    if (at.kind === "beforeBreak" && textNode && textNode.nodeType === Node.TEXT_NODE) {
+      /*
+        最後の空の列は、**字の節の末（改行の字のうしろ）**に置く。支えの <br> の前（欄そのものの位置）に置くと、
+        iOS（WebKit）は縦書きでそのカーソルの位置を 0〜0 と返し、印も描かず、自分で見当違いの所へ送った
+        （2026-11-07 Mac #20 K2・#21 L1・#22 M1：Enter のたびに欄の中身が1列ずつ右へずれた。「ねこ」と打って
+        カーソルが字の節の中に入ると、印が出た）
+      */
+      range.setStart(textNode, (textNode.nodeValue ?? "").length);
+    } else if (at.kind === "beforeBreak" || !textNode || textNode.nodeType !== Node.TEXT_NODE) {
       const br = element.lastChild;
       if (br && br.nodeName === "BR") range.setStartBefore(br);
       else range.setStart(element, element.childNodes.length);
@@ -260,6 +268,9 @@ export function mountEditablePane(
         revealSelection(done.caret);
         holdLeft = element.scrollLeft;
       });
+      // 欄の中身がどう動くかを、Enter の直後と少しあとで記録に残す（Mac の確かめで、何が動いたかを見るため）
+      dumpGeometry("Enter 0ms");
+      for (const ms of [100, 500, 1500]) window.setTimeout(() => dumpGeometry(`Enter ${ms}ms`), ms);
     }
   };
   /**
@@ -301,6 +312,47 @@ export function mountEditablePane(
       if (!composing) readBack();
     }, 0);
   };
+  /**
+   * **欄とページの位置を1行で記録に残す**（2026-11-07 Mac #22 M1：Enter のあと欄の中身が右へずれたが、
+   * 欄の横送り（scrollLeft）は動いていなかった。ページの横の位置・見える範囲の横の位置・拡大を見る）。
+   * sl＝欄の横送り、欄＝欄の左右、頭＝本文の1字目の左右、印＝カーソルの左右と上下、
+   * 頁＝ページの横の送り、vv＝見える範囲の左（offsetLeft／pageLeft）・幅・拡大
+   */
+  const dumpGeometry = (label: string) => {
+    const round = (n: number) => Math.round(n);
+    const box = element.getBoundingClientRect();
+    let head = "-";
+    const textNode = element.firstChild;
+    if (textNode && textNode.nodeType === Node.TEXT_NODE && (textNode.nodeValue ?? "").length > 0) {
+      const r = document.createRange();
+      r.setStart(textNode, 0);
+      r.setEnd(textNode, 1);
+      const h = r.getBoundingClientRect();
+      head = `${round(h.left)}〜${round(h.right)}`;
+    }
+    let caret = "-";
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && element.contains(selection.getRangeAt(0).startContainer)) {
+      const c = selection.getRangeAt(0).getBoundingClientRect();
+      caret = `${round(c.left)}〜${round(c.right)}/${round(c.top)}〜${round(c.bottom)}`;
+    }
+    const vv = window.visualViewport;
+    const v = vv ? `${round(vv.offsetLeft)}/${round(vv.pageLeft)}・幅${round(vv.width)}・拡大${vv.scale.toFixed(2)}` : "-";
+    log(`A 位置 ${label}：sl${round(element.scrollLeft)} 欄${round(box.left)}〜${round(box.right)} 頭${head} 印${caret} 頁${round(window.scrollX)} vv${v}`);
+  };
+  /** 見える範囲が横へ動いたら記録する（同じ値はくり返さない） */
+  let lastPan = "";
+  const onViewportPan = () => {
+    const vv = window.visualViewport;
+    if (!vv || document.activeElement !== element) return;
+    const pan = `${Math.round(vv.offsetLeft)}/${Math.round(vv.pageLeft)}/${vv.scale.toFixed(2)}/${Math.round(window.scrollX)}`;
+    if (pan === lastPan) return;
+    lastPan = pan;
+    dumpGeometry("見える範囲が動いた");
+  };
+  window.visualViewport?.addEventListener("scroll", onViewportPan);
+  window.visualViewport?.addEventListener("resize", onViewportPan);
+
   /** キーボードが出て見える範囲が縮んだら、カーソルを見える所へ（iOS で欄が隠れた。2026-11-07 Mac） */
   const stopWatching = watchVisibleBand(() => {
     if (document.activeElement !== element) return;
@@ -339,6 +391,8 @@ export function mountEditablePane(
       element.removeEventListener("scroll", onPaneScroll);
       element.removeEventListener("pointerdown", releaseHold);
       stopWatching();
+      window.visualViewport?.removeEventListener("scroll", onViewportPan);
+      window.visualViewport?.removeEventListener("resize", onViewportPan);
       if (frame !== undefined) cancelAnimationFrame(frame);
       clearHighlights();
     },

@@ -134,3 +134,30 @@ export function saveFailureMessage(reason: WriteTextFailureReason | "cannot_enco
       return "置き場の名前がほかのものと重なっています。保存を止めました。";
   }
 }
+
+/**
+ * **試しの画面の選び方を覚える**（2026-11-07 Mac：試しへ入り直すと A に戻り、B を選んでいたことを
+ * 覚えていなかった）。向き・A／B・B の受け口を、端末の中（localStorage）に置く。
+ * 読めない・壊れている・この端末で使えない受け口（EditContext が無い）なら、初めの形に戻す。
+ */
+export interface TrialPrefs {
+  orientation: "vertical" | "horizontal";
+  mode: "A" | "B";
+  sinkKind: "ec" | "sink";
+}
+
+export const TRIAL_PREFS_KEY = "novelai.tategakiTrial";
+
+export function parseTrialPrefs(raw: string | null, editContextOk: boolean): TrialPrefs {
+  const fallback: TrialPrefs = { orientation: "vertical", mode: "A", sinkKind: editContextOk ? "ec" : "sink" };
+  if (!raw) return fallback;
+  try {
+    const value = JSON.parse(raw) as Partial<Record<keyof TrialPrefs, unknown>>;
+    const orientation = value.orientation === "horizontal" || value.orientation === "vertical" ? value.orientation : fallback.orientation;
+    const mode = value.mode === "A" || value.mode === "B" ? value.mode : fallback.mode;
+    const sinkKind = value.sinkKind === "sink" ? "sink" : value.sinkKind === "ec" && editContextOk ? "ec" : fallback.sinkKind;
+    return { orientation, mode, sinkKind };
+  } catch {
+    return fallback;
+  }
+}

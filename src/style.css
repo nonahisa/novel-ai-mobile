@@ -573,3 +573,44 @@ button {
   margin: 6px 0;
   font-size: 0.85rem;
 }
+
+/* 画面の中の確認（日本語のボタン。`dialog.ts`） */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.4);
+}
+.dialog {
+  inline-size: 100%;
+  max-inline-size: 360px;
+  padding: 18px 16px 12px;
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--fg);
+}
+.dialog-message {
+  margin: 0 0 14px;
+}
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+}
+.dialog-actions button {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+}
+.dialog-actions .danger {
+  border-color: #b3261e;
+  color: #b3261e;
+  font-weight: 600;
+}

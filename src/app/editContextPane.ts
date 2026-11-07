@@ -87,13 +87,14 @@ export function mountEditContextPane(
     // 変換中の字も含めた今の本文で探す（確定する前から色が付く。位置がずれない）
     element.innerHTML = renderPaneHtml(state, findTerms(state.text));
     reportBounds();
-    if (document.activeElement === element) revealCaret(element.querySelector(".caret"));
+    // 変換中はページを送らない（見えない受け口と同じ。確定の描き直しで送る）
+    if (document.activeElement === element && !state.composing) revealCaret(element.querySelector(".caret"));
   };
   // キーボードが出て見える範囲が縮んだら、カーソルを見える所へ送る
   const stopWatching = watchVisibleBand(() => {
     if (document.activeElement === element) {
       reportBounds();
-      revealCaret(element.querySelector(".caret"));
+      if (!state.composing) revealCaret(element.querySelector(".caret"));
     }
   });
   const changed = () => {

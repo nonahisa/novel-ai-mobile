@@ -68,11 +68,22 @@ export function mountImeSinkPane(
       sink.style.top = `${c.top + c.height / 2 - lineHeight / 2 - y0}px`;
     }
   };
+  /**
+   * **変換しているあいだは、ページを送らない**（確定してから送る）。
+   * 押してすぐ打ち始めると、キーボードが出てくる途中で見える範囲が縮み、変換中の字を描くたびにカーソルが
+   * 見える範囲の外になって、ページを送っていた。iOS は変換中にページが送られると、変換中の字（「ｋｙ」）を
+   * そのまま確定してしまう見込み（2026-11-07 Mac H1：押して1秒たってから打てば崩れなかった）
+   */
+  const revealWhenSafe = () => {
+    // 変換中なら何もしない。確定（compositionend）の描き直しでここへ来るので、そのときに送る
+    if (document.activeElement !== sink || state.composing) return;
+    revealCaret(view.querySelector(".caret"));
+  };
   const render = () => {
     // 描くのは変換中の字を挟んだ仮の本文なので、用語もその本文で探す
     view.innerHTML = renderSinkHtml(state, findTerms(sinkDisplayState(state).text));
     placeSink();
-    if (document.activeElement === sink) revealCaret(view.querySelector(".caret"));
+    revealWhenSafe();
   };
   const changed = () => {
     render();
@@ -87,9 +98,11 @@ export function mountImeSinkPane(
   let consumed = 0;
   /** 受け口を「見えない字が1つ」の状態に戻し、カーソルをそのうしろへ */
   const resetSink = () => {
-    sink.value = SINK_SENTINEL;
+    // 同じなら書かない（焦点が入った直後に中身や選択を書き換えると、キーボードがつなぎ直し、
+    // その間に打った字が変換に入らない。2026-11-07 エミュレーター：押してすぐ打つと「k」だけ英字で入った）
+    if (sink.value !== SINK_SENTINEL) sink.value = SINK_SENTINEL;
     consumed = 0;
-    if (document.activeElement === sink) sink.setSelectionRange(1, 1);
+    if (sink.selectionStart !== 1 || sink.selectionEnd !== 1) sink.setSelectionRange(1, 1);
   };
   /** 受け口の中身を読んで、まだ当てていないことを本文に当て、受け口を空にする（変換していないときだけ） */
   const commit = () => {
@@ -121,11 +134,8 @@ export function mountImeSinkPane(
     state = commitSinkValue({ ...state, composing: false, compText: "" }, data);
     consumed += data.length;
     if (data) log(`確定「${data}」（受け口）`);
+    // 描き直しの中で、待たせていたカーソル送りもする（変換が終わったので）
     changed();
-    if (revealAfterComposition) {
-      revealAfterComposition = false;
-      revealCaret(view.querySelector(".caret"));
-    }
     window.setTimeout(commit, 0);
   });
   sink.addEventListener("input", (e) => {
@@ -156,22 +166,17 @@ export function mountImeSinkPane(
   sink.addEventListener("focus", () => {
     element.classList.add("has-focus");
     if (!state.composing) resetSink();
-    revealCaret(view.querySelector(".caret"));
+    revealWhenSafe();
   });
   /**
    * キーボードが出て見える範囲が縮んだら、カーソルを見える所へ送る（iOS では欄がキーボードの下に隠れた）。
    * **変換中なら確定まで待つ**（押してすぐ打ち始めると、キーボードが出きる前に変換が始まる。そこでページを
    * 送ると変換が切れるおそれがある）
    */
-  let revealAfterComposition = false;
   const stopWatching = watchVisibleBand(() => {
     if (document.activeElement !== sink) return;
-    if (state.composing) {
-      revealAfterComposition = true;
-      return;
-    }
     placeSink();
-    revealCaret(view.querySelector(".caret"));
+    revealWhenSafe();
   });
   sink.addEventListener("blur", () => element.classList.remove("has-focus"));
 
@@ -188,12 +193,19 @@ export function mountImeSinkPane(
   };
   const onClick = (e: MouseEvent) => {
     if (e.target === sink) return;
-    // 何よりも先に、同期で焦点を移す（iOS がキーボードを出す条件）
-    sink.focus({ preventScroll: true });
     const to = pendingCaret;
     pendingCaret = undefined;
-    if (state.composing || to === undefined) return;
-    moveCaret(to);
+    /*
+      カーソルと受け口を動かし、受け口を空にしてから、**最後に**同期で焦点を移す（click の処理の中で
+      同期に focus() すれば、iOS もキーボードを出す）。焦点が入ったあとで受け口を動かしたり中身を
+      書き換えたりすると、押してすぐ打った字が変換に入らなかった（2026-11-07 Mac H1「ｋｙ」が英字で確定。
+      エミュレーターでも、押してすぐハードのキーで打つと「k」だけ英字で入った）
+    */
+    if (!state.composing) {
+      if (to !== undefined) moveCaret(to);
+      resetSink();
+    }
+    sink.focus({ preventScroll: true });
   };
   element.addEventListener("pointerdown", onPointerDown);
   element.addEventListener("click", onClick);

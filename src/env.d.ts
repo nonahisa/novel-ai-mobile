@@ -1,5 +1,7 @@
 /** 取り込んでいる本体の版。`vite.config.ts` の `define` が埋める */
 declare const __SHARED_VERSION__: string;
+/** モバイル版の版（`package.json`）。`vite.config.ts` の `define` が埋める */
+declare const __APP_VERSION__: string;
 
 /**
  * VS Code の型 `Thenable`（`PromiseLike` と同じもの）。本体の vscode に頼らない部品

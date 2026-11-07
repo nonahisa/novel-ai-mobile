@@ -42,6 +42,9 @@ const sharedVersion: string = JSON.parse(
   readFileSync(new URL("./node_modules/novel-ai-assistant/package.json", import.meta.url), "utf8")
 ).version;
 
+/** モバイル版そのものの版（`package.json`。Android・iOS の版の名前とそろえる） */
+const appVersion: string = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version;
+
 /**
  * 開発中の3段階の確かめ方（設計メモ「テストの3段階」）を、この設定で支える。
  *
@@ -58,6 +61,7 @@ export default defineConfig({
   plugins: [substituteSharedParts()],
   define: {
     __SHARED_VERSION__: JSON.stringify(sharedVersion),
+    __APP_VERSION__: JSON.stringify(appVersion),
   },
   resolve: {
     alias: [

@@ -27,3 +27,22 @@ export { AIError } from "novel-ai-assistant/src/ai/types";
 
 /** 取り込んでいる本体の版（`vite.config.ts` が本体の package.json から埋める） */
 export const SHARED_VERSION: string = __SHARED_VERSION__;
+
+/*
+  メニューの予定（設計書 4.4.1〜4.4.2）。「すべての機能」の名前は本体の詳細メニューと同じ字にする
+  （相談の AI が名前で案内するため）ので、本体の木をそのまま読む
+*/
+export {
+  ACTION_TREE,
+  isItemShownInActionList,
+  type ActionGroup,
+  type ActionItem,
+  type ActionSection,
+} from "novel-ai-assistant/src/core/actionTree";
+/* 縦書きの試し：ルビ・傍点の表示と字数は本体と同じ決まりで */
+export {
+  rubyToHtml,
+  INTERNAL_RUBY_SOURCE,
+  INTERNAL_EMPHASIS_SOURCE,
+} from "novel-ai-assistant/src/core/ruby";
+export { countChars, formatCount } from "novel-ai-assistant/src/core/charCount";

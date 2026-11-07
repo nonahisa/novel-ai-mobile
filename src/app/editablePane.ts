@@ -4,6 +4,7 @@ import {
   type EditableChildKind,
   type EditableSegment,
   caretPlacement,
+  clampCaretToPane,
   isPlainShape,
   locateOffset,
   replaceRange,
@@ -145,7 +146,8 @@ export function mountEditablePane(
       rect = fallback.getBoundingClientRect();
     }
     const box = element.getBoundingClientRect();
-    if (element.classList.contains("vertical")) {
+    const vertical = element.classList.contains("vertical");
+    if (vertical) {
       const margin = 24;
       if (rect.left < box.left + margin) element.scrollLeft -= box.left + margin - rect.left;
       else if (rect.right > box.right - margin) element.scrollLeft += rect.right - (box.right - margin);
@@ -153,7 +155,15 @@ export function mountEditablePane(
       const delta = caretScrollDelta(rect, { top: box.top, height: box.height }, { top: 8, bottom: 8 });
       if (delta !== 0) element.scrollTop += delta;
     }
-    revealCaret(range);
+    // ページは、欄の中に収めたカーソルの位置で送る（`clampCaretToPane`。iOS は最後の空の列の
+    // カーソルを欄の下の外と測ることがある。2026-11-07 Mac #19 I1）
+    const after = element.getBoundingClientRect();
+    const measured = range.getBoundingClientRect();
+    const caret = clampCaretToPane(measured.width === 0 && measured.height === 0 ? rect : measured, after, vertical);
+    if (caret.top !== measured.top || caret.bottom !== measured.bottom) {
+      log(`A カーソルの位置を欄の中に収めた（測った上下 ${Math.round(measured.top)}〜${Math.round(measured.bottom)}、欄 ${Math.round(after.top)}〜${Math.round(after.bottom)}）`);
+    }
+    revealCaret({ getBoundingClientRect: () => caret as DOMRect });
   };
 
   const clearHighlights = () => {
@@ -214,8 +224,17 @@ export function mountEditablePane(
       const sel = selectionOffsets();
       if (!sel) return;
       const done = replaceRange(current, sel.start, sel.end, "\n");
+      // 書き直してカーソルを置くと、ブラウザが自分でカーソルの所へページと欄を送ることがある。
+      // iOS は最後の空の列のカーソルの位置を欄の下の外と測り、ページを下へ送って欄の上側が隠れた
+      // （2026-11-07 Mac #19 I1）。送り位置をいったん元へ戻し、送るのはこちら（revealSelection）だけにする
+      const pageY = window.scrollY;
+      const paneX = element.scrollLeft;
+      const paneY = element.scrollTop;
       write(done.text);
       placeCaret(done.caret);
+      if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
+      element.scrollLeft = paneX;
+      element.scrollTop = paneY;
       onChange(current);
       scheduleHighlights();
       revealSelection();
@@ -238,7 +257,11 @@ export function mountEditablePane(
   const stopWatching = watchVisibleBand(() => {
     if (document.activeElement !== element) return;
     const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) revealCaret(selection.getRangeAt(0));
+    if (!selection || selection.rangeCount === 0) return;
+    const r = selection.getRangeAt(0).getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return;
+    const caret = clampCaretToPane(r, element.getBoundingClientRect(), element.classList.contains("vertical"));
+    revealCaret({ getBoundingClientRect: () => caret as DOMRect });
   });
 
   element.addEventListener("beforeinput", onBeforeInput);

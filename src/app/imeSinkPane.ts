@@ -163,10 +163,12 @@ export function mountImeSinkPane(
     else return;
     e.preventDefault();
   });
+  /** 字を押して焦点を移している最中（焦点の知らせの中では、カーソルを送らない） */
+  let focusingFromTap = false;
   sink.addEventListener("focus", () => {
     element.classList.add("has-focus");
     if (!state.composing) resetSink();
-    revealWhenSafe();
+    if (!focusingFromTap) revealWhenSafe();
   });
   /**
    * キーボードが出て見える範囲が縮んだら、カーソルを見える所へ送る（iOS では欄がキーボードの下に隠れた）。
@@ -195,17 +197,28 @@ export function mountImeSinkPane(
     if (e.target === sink) return;
     const to = pendingCaret;
     pendingCaret = undefined;
+    if (document.activeElement !== sink) {
+      /*
+        **まだ焦点が無いとき（キーボードが出ていないとき）は、何よりも先に同期で焦点を移す**。
+        先に字を描き直して受け口を動かしてから焦点を移すと、iOS は1回目の押しでキーボードを出さず、
+        打った字も入らなかった（2026-11-07 Mac #19 I3。焦点を先にしていた #18 では出ていた）。
+        焦点の知らせの中のカーソル送りは止める（まだ前のカーソルの所なので、本文の末へ送ってしまう）
+      */
+      focusingFromTap = true;
+      sink.focus({ preventScroll: true });
+      focusingFromTap = false;
+      if (!state.composing && to !== undefined) moveCaret(to);
+      return;
+    }
     /*
-      カーソルと受け口を動かし、受け口を空にしてから、**最後に**同期で焦点を移す（click の処理の中で
-      同期に focus() すれば、iOS もキーボードを出す）。焦点が入ったあとで受け口を動かしたり中身を
-      書き換えたりすると、押してすぐ打った字が変換に入らなかった（2026-11-07 Mac H1「ｋｙ」が英字で確定。
-      エミュレーターでも、押してすぐハードのキーで打つと「k」だけ英字で入った）
+      もう焦点があるとき（キーボードが出ているとき）は、焦点を移し直さない。カーソルと受け口を動かすだけ。
+      受け口の中身と選択は、同じなら書かない（`resetSink`。書き換えると押してすぐ打った字が変換に入らない。
+      2026-11-07 Mac H1）
     */
     if (!state.composing) {
       if (to !== undefined) moveCaret(to);
       resetSink();
     }
-    sink.focus({ preventScroll: true });
   };
   element.addEventListener("pointerdown", onPointerDown);
   element.addEventListener("click", onClick);

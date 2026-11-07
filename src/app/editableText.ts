@@ -78,3 +78,28 @@ export function replaceRange(text: string, start: number, end: number, inserted:
   const e = Math.min(Math.max(end, s), text.length);
   return { text: text.slice(0, s) + inserted + text.slice(e), caret: s + inserted.length };
 }
+
+export interface CaretBox {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+/**
+ * **ページを送るときに使うカーソルの位置を、欄の中に収める**（上下だけ）。
+ * iOS（WebKit）は縦書きの欄の最後の空の列のカーソルを、欄の下の枠の外と測ることがある。
+ * その位置のままページを送ると、ページが下へ送られて欄の上側が見えなくなった（2026-11-07 Mac #19 I1）。
+ *
+ * - 欄と重なっていれば、重なっている所
+ * - 縦書きで欄の外なら、列の頭（欄の上の端）。新しい列のカーソルは列の頭にある
+ * - 横書きで欄の外なら、近いほうの端
+ */
+export function clampCaretToPane(caret: CaretBox, pane: CaretBox, vertical: boolean): CaretBox {
+  const height = Math.max(1, Math.min(caret.bottom - caret.top || 20, pane.bottom - pane.top));
+  const top = Math.max(caret.top, pane.top);
+  const bottom = Math.min(caret.bottom, pane.bottom);
+  if (bottom > top) return { ...caret, top, bottom };
+  if (vertical || caret.bottom <= pane.top) return { ...caret, top: pane.top, bottom: pane.top + height };
+  return { ...caret, top: pane.bottom - height, bottom: pane.bottom };
+}

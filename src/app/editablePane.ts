@@ -258,8 +258,35 @@ export function mountEditablePane(
       requestAnimationFrame(() => {
         restore();
         revealSelection(done.caret);
+        holdLeft = element.scrollLeft;
       });
     }
+  };
+  /**
+   * **Enter のあとに、カーソルが隠れる向きへ欄が横に送られたら、こちらで送った位置へ戻す**（縦書き）。
+   * iOS は Enter のあと、キーボードが出ているあいだ、欄の中身を右へ送った（1列目が欄の外へ切れ、カーソルの印も
+   * 見えなくなった。キーボードを閉じると戻った。2026-11-07 Mac #21 L1）。こちらの送り（revealSelection）の
+   * あとで起きているので、iOS が自分でカーソルの所へ送っているとみる。
+   * - カーソルが欄の中に見えたまま（測れて、欄の左右に収まっている）なら、その送りは受け入れる
+   * - 指で欄に触れたら見張りをやめる（自分で送るのを止めない）
+   */
+  let holdLeft: number | undefined;
+  const onPaneScroll = () => {
+    if (holdLeft === undefined || !element.classList.contains("vertical")) return;
+    if (element.scrollLeft === holdLeft) return;
+    const selection = window.getSelection();
+    const r = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).getBoundingClientRect() : undefined;
+    const box = element.getBoundingClientRect();
+    const visible = r && (r.width > 0 || r.height > 0) && r.left >= box.left && r.right <= box.right;
+    if (visible) {
+      holdLeft = element.scrollLeft;
+      return;
+    }
+    log(`A 欄の横送りを戻した（${Math.round(element.scrollLeft)} → ${Math.round(holdLeft)}。カーソルが欄の外になるため）`);
+    element.scrollLeft = holdLeft;
+  };
+  const releaseHold = () => {
+    holdLeft = undefined;
   };
   const onInput = () => readBack();
   const onCompStart = () => {
@@ -289,6 +316,8 @@ export function mountEditablePane(
   element.addEventListener("input", onInput);
   element.addEventListener("compositionstart", onCompStart);
   element.addEventListener("compositionend", onCompEnd);
+  element.addEventListener("scroll", onPaneScroll);
+  element.addEventListener("pointerdown", releaseHold);
   write(text);
   scheduleHighlights();
 
@@ -307,6 +336,8 @@ export function mountEditablePane(
       element.removeEventListener("input", onInput);
       element.removeEventListener("compositionstart", onCompStart);
       element.removeEventListener("compositionend", onCompEnd);
+      element.removeEventListener("scroll", onPaneScroll);
+      element.removeEventListener("pointerdown", releaseHold);
       stopWatching();
       if (frame !== undefined) cancelAnimationFrame(frame);
       clearHighlights();

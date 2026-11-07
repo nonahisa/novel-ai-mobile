@@ -178,6 +178,7 @@ export function mountEditContextPane(
       element.removeEventListener("scroll", reportBounds);
       window.removeEventListener("resize", reportBounds);
       (element as unknown as { editContext: EditContextLike | null }).editContext = null;
+      element.innerHTML = "";
     },
   };
 }

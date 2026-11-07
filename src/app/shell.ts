@@ -6,6 +6,7 @@ import type { TextFileContent } from "../platform/textFile";
 import { mountCheckPage } from "./checkPage";
 import { editContextSupport, type Orientation } from "./editContextModel";
 import { mountEditContextPane, type EditContextPane } from "./editContextPane";
+import { mountImeSinkPane } from "./imeSinkPane";
 import { TABS, buildActionList, hiddenActions, searchActions, type PlannedTab } from "./menuPlan";
 import { escapeHtml, renderActionRows, renderTab, renderTabBar } from "./menuScreen";
 import { SAMPLE_TEXT, countLabel, loadDraft, previewHtml, saveDraft, saveFailureMessage } from "./tategakiDraft";
@@ -143,7 +144,8 @@ function mountAllActions(screen: HTMLElement): void {
 
 const MODE_NOTES = {
   A: "A：いまの形。入力欄はブラウザのもので、変換中の線もブラウザが描きます（縦書きでは行の左に出ます）。候補の窓は縦になります。",
-  B: "B：右傍線の形（EditContext）。字と変換中の線をこの画面が描きます（縦書きでは右、横書きでは下）。候補の窓は横書きになります。入力欄の中ではルビ・傍点は記法の字のまま出ます（下の表示で見られます）。選択・元に戻すはまだありません。",
+  B: "B：右傍線の形（EditContext）。字と変換中の線をこの画面が描きます（縦書きでは右、横書きでは下）。文節ごとの太い線・細い線も出ます。入力欄の中ではルビ・傍点は記法の字のまま出ます（下の表示で見られます）。選択・元に戻すはまだありません。",
+  sink: "B：右傍線の形（見えない受け口）。カーソルの位置に重ねた透明な欄で日本語入力を受け、字と変換中の線をこの画面が描きます（縦書きでは右、横書きでは下）。線は変換中の字全体に1本で、文節ごとの太い線・細い線は出ません。入力欄の中ではルビ・傍点は記法の字のまま出ます。選択・元に戻すはまだありません。",
 } as const;
 
 /** 描いて、離れてよいかを返す関数を渡す */
@@ -157,9 +159,13 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
     </div>
     <div class="seg" role="group" aria-label="入力の形">
       <button data-mode="A" aria-pressed="true">A いまの形（線は左）</button>
-      <button data-mode="B" aria-pressed="false"${support.ok ? "" : " disabled"}>B 右傍線</button>
+      <button data-mode="B" aria-pressed="false">B 右傍線</button>
     </div>
-    ${support.ok ? "" : `<p class="menu-how warn">${escapeHtml(support.reason)}</p>`}
+    <div class="seg" role="group" aria-label="B の受け口" id="sinkSeg" hidden>
+      <button data-sink="ec" aria-pressed="true"${support.ok ? "" : " disabled"}>EditContext</button>
+      <button data-sink="sink" aria-pressed="false">見えない受け口</button>
+    </div>
+    ${support.ok ? "" : `<p class="menu-how" id="sinkWhy" hidden>${escapeHtml(support.reason)}</p>`}
     <p class="menu-lead" id="modeNote"></p>
     <textarea class="draft-input vertical" id="draftInput" lang="ja" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="原稿"></textarea>
     <div class="draft-input vertical" id="draftPane" lang="ja" aria-label="原稿（右傍線の形）" hidden></div>
@@ -172,7 +178,9 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
     <h2 class="draft-h">ルビと傍点の表示</h2>
     <p class="menu-how">ルビは {漢字|かんじ}、傍点は {{語}} と打ちます。字数は本体と同じ数え方（改行とルビの読みは数えない）です。</p>
     <div class="tategaki-view draft-preview vertical" id="draftPreview"></div>
-    <details class="menu-hidden"><summary>変換の知らせの記録</summary><pre class="ime-log" id="imeLog"></pre></details>`;
+    <details class="menu-hidden"><summary>変換の知らせの記録</summary>
+      <label class="sink-show"><input type="checkbox" id="showSink" /> 見えない受け口を薄い赤で見せる（位置が合っているかを見る）</label>
+      <pre class="ime-log" id="imeLog"></pre></details>`;
   const input = screen.querySelector<HTMLTextAreaElement>("#draftInput")!;
   const paneEl = screen.querySelector<HTMLElement>("#draftPane")!;
   const countEl = screen.querySelector<HTMLElement>("#draftCount")!;
@@ -185,7 +193,12 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
   let text = "";
   let orientation: Orientation = "vertical";
   let mode: "A" | "B" = "A";
-  let pane: EditContextPane | undefined;
+  let pane: (EditContextPane & { setShowSink?(show: boolean): void }) | undefined;
+  /** B の受け口。EditContext が無ければ（iOS など）見えない受け口だけ */
+  let sinkKind: "ec" | "sink" = support.ok ? "ec" : "sink";
+  const sinkSeg = screen.querySelector<HTMLElement>("#sinkSeg")!;
+  const sinkWhy = screen.querySelector<HTMLElement>("#sinkWhy");
+  const showSink = screen.querySelector<HTMLInputElement>("#showSink")!;
 
   const log = (line: string) => {
     const time = new Date().toLocaleTimeString("ja-JP", { hour12: false });
@@ -208,7 +221,12 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
     pane?.setOrientation(orientation);
     input.hidden = mode !== "A";
     paneEl.hidden = mode !== "B";
-    noteEl.textContent = MODE_NOTES[mode];
+    noteEl.textContent = mode === "A" ? MODE_NOTES.A : sinkKind === "ec" ? MODE_NOTES.B : MODE_NOTES.sink;
+    sinkSeg.hidden = mode !== "B";
+    if (sinkWhy) sinkWhy.hidden = mode !== "B";
+    screen
+      .querySelectorAll<HTMLButtonElement>("[data-sink]")
+      .forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.sink === sinkKind)));
     screen
       .querySelectorAll<HTMLButtonElement>("[data-orient]")
       .forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.orient === orientation)));
@@ -233,24 +251,41 @@ function mountTategaki(screen: HTMLElement, store: FileStore): () => boolean {
   screen.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((button) =>
     button.addEventListener("click", () => {
       const next = button.dataset.mode as "A" | "B";
-      if (next === mode || (next === "B" && !support.ok)) return;
+      if (next === mode) return;
       mode = next;
-      if (mode === "B" && !pane) {
-        pane = mountEditContextPane(
-          paneEl,
-          text,
-          orientation,
-          (changed) => {
-            text = changed;
-            update();
-          },
-          log
-        );
-      }
+      if (mode === "B" && !pane) mountPane();
       applyLayout();
       showText();
     })
   );
+  screen.querySelectorAll<HTMLButtonElement>("[data-sink]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const next = button.dataset.sink as "ec" | "sink";
+      if (next === sinkKind || (next === "ec" && !support.ok)) return;
+      sinkKind = next;
+      pane?.destroy();
+      pane = undefined;
+      mountPane();
+      applyLayout();
+      showText();
+    })
+  );
+  showSink.addEventListener("change", () => pane?.setShowSink?.(showSink.checked));
+
+  /** B の入力欄を、選んでいる受け口で作る */
+  function mountPane(): void {
+    paneEl.className = `draft-input ${orientation}`;
+    paneEl.innerHTML = "";
+    const onPaneChange = (changed: string) => {
+      text = changed;
+      update();
+    };
+    pane =
+      sinkKind === "ec"
+        ? mountEditContextPane(paneEl, text, orientation, onPaneChange, log)
+        : mountImeSinkPane(paneEl, text, orientation, onPaneChange, log);
+    pane.setShowSink?.(showSink.checked);
+  }
 
   const load = async () => {
     try {

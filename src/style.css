@@ -468,3 +468,54 @@ button {
   max-height: 160px;
   overflow: auto;
 }
+
+/* ---------- B の見えない受け口（iOS 向け。Android でも選べる） ---------- */
+
+.sink-pane {
+  position: relative;
+}
+.sink-view {
+  white-space: pre-wrap;
+  min-block-size: 100%;
+}
+/* 受け口：カーソルの位置に重ねる透明な欄。字の大きさは 16px より大きく（iOS が画面を拡大しないように） */
+.ime-sink {
+  position: absolute;
+  inline-size: 8em;
+  block-size: 1.9em;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  opacity: 0.01;
+  font: inherit;
+  font-size: 18px;
+  line-height: inherit;
+  white-space: pre;
+  z-index: 2;
+}
+.sink-pane.vertical .ime-sink {
+  writing-mode: vertical-rl;
+}
+.sink-pane.horizontal .ime-sink {
+  writing-mode: horizontal-tb;
+}
+.ime-sink.show {
+  opacity: 0.45;
+  color: #c33;
+  background: rgba(200, 60, 60, 0.08);
+  outline: 1px dashed #c33;
+}
+.sink-pane.has-focus .caret {
+  visibility: visible;
+}
+.sink-show {
+  display: block;
+  margin: 6px 0;
+  font-size: 0.85rem;
+}

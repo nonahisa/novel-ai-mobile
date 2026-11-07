@@ -1,4 +1,5 @@
 import { renderPaneHtml, type PaneState } from "./editContextModel";
+import type { TermSpan } from "./termHighlight";
 
 /**
  * **見えない受け口の形（B の iOS 向け）の中身**（作者の答え 2026-11-07「iPhone にも足す」）。
@@ -46,8 +47,8 @@ export function sinkDisplayState(state: SinkState): PaneState {
   };
 }
 
-export function renderSinkHtml(state: SinkState): string {
-  return renderPaneHtml(sinkDisplayState(state));
+export function renderSinkHtml(state: SinkState, terms: readonly TermSpan[] = []): string {
+  return renderPaneHtml(sinkDisplayState(state), terms);
 }
 
 /** 受け口の中身（確定した字）を本文のカーソルの位置へ移す */

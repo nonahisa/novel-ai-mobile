@@ -23,7 +23,7 @@ function fontSizePx(selector: string): number | undefined {
 }
 
 describe("作者が打つ欄の字は 16px 以上", () => {
-  test.each([".menu-search", "#rubySrc", ".ime-sink", ".draft-input", "#tategaki"])("%s", (selector) => {
+  test.each([".menu-search", "#rubySrc", ".ime-sink", ".draft-input", "#tategaki", ".term-input"])("%s", (selector) => {
     const size = fontSizePx(selector);
     expect(size, `${selector} に px の font-size が無い`).toBeDefined();
     expect(size!).toBeGreaterThanOrEqual(16);

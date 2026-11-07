@@ -1,6 +1,6 @@
 import { revealCaret, watchVisibleBand } from "./caretVisible";
 import { editAtCaret, type Orientation } from "./editContextModel";
-import type { EditContextPane } from "./editContextPane";
+import type { EditContextPane, TermFinder } from "./editContextPane";
 import {
   SINK_SENTINEL,
   commitSinkValue,
@@ -8,6 +8,7 @@ import {
   pageEditFor,
   readSinkValue,
   renderSinkHtml,
+  sinkDisplayState,
   type SinkState,
 } from "./imeSinkModel";
 
@@ -34,6 +35,7 @@ export function mountImeSinkPane(
   log: (line: string) => void = () => undefined
 ): EditContextPane & { setShowSink(show: boolean): void } {
   let state: SinkState = initialSinkState(text);
+  let findTerms: TermFinder = () => [];
   element.classList.add("ec-pane", "sink-pane");
   element.innerHTML = `<div class="sink-view"></div><textarea class="ime-sink" lang="ja" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="原稿の入力"></textarea>`;
   const view = element.querySelector<HTMLElement>(".sink-view")!;
@@ -66,7 +68,8 @@ export function mountImeSinkPane(
     }
   };
   const render = () => {
-    view.innerHTML = renderSinkHtml(state);
+    // 描くのは変換中の字を挟んだ仮の本文なので、用語もその本文で探す
+    view.innerHTML = renderSinkHtml(state, findTerms(sinkDisplayState(state).text));
     placeSink();
     if (document.activeElement === sink) revealCaret(view.querySelector(".caret"));
   };
@@ -190,6 +193,10 @@ export function mountImeSinkPane(
     },
     setOrientation(next) {
       setOrientation(next);
+      render();
+    },
+    setTerms(find) {
+      findTerms = find;
       render();
     },
     setShowSink(show: boolean) {

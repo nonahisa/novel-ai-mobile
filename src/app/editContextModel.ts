@@ -21,6 +21,8 @@
  * ここは DOM に触らない（テストのため）。描く・受けるのは `editContextPane.ts`。
  */
 
+import type { TermSpan } from "./termHighlight";
+
 /** 変換中の区切り1つ（本文の頭からの位置）と線の形 */
 export interface CompositionFormat {
   start: number;
@@ -106,9 +108,11 @@ export function lineClassAt(state: PaneState, index: number): string {
  * 1字ずつ span にした HTML（候補の窓の位置を IME へ返すとき、字の場所が要るため）。
  * サロゲートペアは2つの位置を1つの span にまとめる（`data-i` は頭の位置、`data-n` は単位の数）
  */
-export function renderPaneHtml(state: PaneState): string {
+export function renderPaneHtml(state: PaneState, terms: readonly TermSpan[] = []): string {
   let html = "";
   let i = 0;
+  // 用語は前から順に並んでいて重ならない（`findTermSpans`）。字を進めながら、いま当たっている用語を追う
+  let t = 0;
   while (i <= state.text.length) {
     if (i === state.selection) html += '<span class="caret" aria-hidden="true"></span>';
     if (i === state.text.length) break;
@@ -117,7 +121,9 @@ export function renderPaneHtml(state: PaneState): string {
     if (ch === "\n") {
       html += `<span data-i="${i}" data-n="1">\n</span>`;
     } else {
-      const cls = lineClassAt(state, i);
+      while (t < terms.length && terms[t].end <= i) t++;
+      const term = t < terms.length && terms[t].start <= i ? `term-${terms[t].kind}` : "";
+      const cls = [lineClassAt(state, i), term].filter(Boolean).join(" ");
       html += `<span data-i="${i}" data-n="${n}"${cls ? ` class="${cls}"` : ""}>${escapeChar(ch)}</span>`;
     }
     i += n;

@@ -1,4 +1,5 @@
 import { revealCaret, watchVisibleBand } from "./caretVisible";
+import type { TermSpan } from "./termHighlight";
 import {
   applyTextUpdate,
   editAtCaret,
@@ -39,10 +40,15 @@ interface TextFormatLike {
 }
 type EditContextCtor = new (init: { text: string; selectionStart: number; selectionEnd: number }) => EditContextLike;
 
+/** 本文から用語の位置を探す関数（`termHighlight.ts` の `findTermSpans` を索引に結んだもの） */
+export type TermFinder = (text: string) => TermSpan[];
+
 export interface EditContextPane {
   getText(): string;
   setText(text: string): void;
   setOrientation(orientation: Orientation): void;
+  /** 用語の探し方を替える（語を打ち直したとき）。描き直す */
+  setTerms(find: TermFinder): void;
   focus(): void;
   destroy(): void;
 }
@@ -57,6 +63,7 @@ export function mountEditContextPane(
 ): EditContextPane {
   const Ctor = (window as unknown as { EditContext: EditContextCtor }).EditContext;
   let state: PaneState = initialPaneState(text);
+  let findTerms: TermFinder = () => [];
   const ec = new Ctor({ text, selectionStart: state.selection, selectionEnd: state.selection });
   (element as unknown as { editContext: EditContextLike | null }).editContext = ec;
   element.tabIndex = 0;
@@ -76,7 +83,8 @@ export function mountEditContextPane(
     if (caret) ec.updateSelectionBounds(caret.getBoundingClientRect());
   };
   const render = () => {
-    element.innerHTML = renderPaneHtml(state);
+    // 変換中の字も含めた今の本文で探す（確定する前から色が付く。位置がずれない）
+    element.innerHTML = renderPaneHtml(state, findTerms(state.text));
     reportBounds();
     if (document.activeElement === element) revealCaret(element.querySelector(".caret"));
   };
@@ -178,6 +186,10 @@ export function mountEditContextPane(
     },
     setOrientation(next) {
       setOrientation(next);
+      render();
+    },
+    setTerms(find) {
+      findTerms = find;
       render();
     },
     focus: () => element.focus(),

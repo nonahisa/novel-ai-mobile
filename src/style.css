@@ -403,6 +403,38 @@ button {
   overflow-y: auto;
   height: 40vh;
 }
+/* A：contenteditable。改行は本文の 
+ の字のまま見せる */
+#draftInput {
+  white-space: pre-wrap;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+#draftInput:focus {
+  border-color: var(--accent);
+}
+.term-box .term-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.term-box .term-row span {
+  inline-size: 3em;
+  font-weight: 600;
+}
+.term-input {
+  flex: 1;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  /* 16px 未満の欄に焦点が入ると、iOS がページを拡大する */
+  font-size: 16px;
+}
 .draft-input[hidden] {
   display: none;
 }

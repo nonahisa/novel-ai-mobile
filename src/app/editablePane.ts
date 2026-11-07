@@ -132,18 +132,34 @@ export function mountEditablePane(
     selection.addRange(range);
   };
 
-  /** カーソルを、欄の中でもページでも見える所へ送る（縦書きは欄を横へ、横書きは欄を縦へ。そのあとページ） */
-  const revealSelection = () => {
+  /**
+   * カーソルの位置を測る。大きさ0で返ったとき（iOS は最後の空の列のカーソルを 0〜0 と返す。2026-11-07 Mac
+   * #20 K2）は、**見えない字の印をカーソルの所に一時的に置いて測り**、すぐ外して欄を素直な形に戻す
+   */
+  const measureCaret = (offset: number): DOMRect | undefined => {
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    const range = selection.getRangeAt(0);
-    let rect = range.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) {
-      // 空の行の頭などは大きさ0で返る。支えの <br> か、カーソルの前の字の節で測り直す
-      const host = range.startContainer.nodeType === Node.ELEMENT_NODE ? (range.startContainer.childNodes[range.startOffset] as Element | undefined) : undefined;
-      const fallback = host && host.nodeType === Node.ELEMENT_NODE ? host : range.startContainer.parentElement;
-      if (!fallback) return;
-      rect = fallback.getBoundingClientRect();
+    if (!selection || selection.rangeCount === 0) return undefined;
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) return rect;
+    const marker = document.createElement("span");
+    marker.textContent = "​";
+    selection.getRangeAt(0).insertNode(marker);
+    const measured = marker.getBoundingClientRect();
+    marker.remove();
+    element.normalize();
+    placeCaret(offset);
+    return measured.width > 0 || measured.height > 0 ? measured : undefined;
+  };
+
+  /**
+   * カーソルを、欄の中でもページでも見える所へ送る（縦書きは欄を横へ、横書きは欄を縦へ。そのあとページ）。
+   * **測れなかったら何も送らない**（0〜0 のまま送ると、欄が右へずれ、ページが下へ送られた。2026-11-07 Mac #20 K2）
+   */
+  const revealSelection = (offset: number) => {
+    const rect = measureCaret(offset);
+    if (!rect) {
+      log("A カーソルの位置が測れなかったので、送らなかった");
+      return;
     }
     const box = element.getBoundingClientRect();
     const vertical = element.classList.contains("vertical");
@@ -155,14 +171,11 @@ export function mountEditablePane(
       const delta = caretScrollDelta(rect, { top: box.top, height: box.height }, { top: 8, bottom: 8 });
       if (delta !== 0) element.scrollTop += delta;
     }
-    // ページは、欄の中に収めたカーソルの位置で送る（`clampCaretToPane`。iOS は最後の空の列の
-    // カーソルを欄の下の外と測ることがある。2026-11-07 Mac #19 I1）
+    // ページは、欄の中に収めたカーソルの位置で送る（`clampCaretToPane`）
     const after = element.getBoundingClientRect();
-    const measured = range.getBoundingClientRect();
-    const caret = clampCaretToPane(measured.width === 0 && measured.height === 0 ? rect : measured, after, vertical);
-    if (caret.top !== measured.top || caret.bottom !== measured.bottom) {
-      log(`A カーソルの位置を欄の中に収めた（測った上下 ${Math.round(measured.top)}〜${Math.round(measured.bottom)}、欄 ${Math.round(after.top)}〜${Math.round(after.bottom)}）`);
-    }
+    const moved = measureCaret(offset) ?? rect;
+    const caret = clampCaretToPane(moved, after, vertical);
+    log(`A Enter のあとのカーソル（上下 ${Math.round(moved.top)}〜${Math.round(moved.bottom)}、左右 ${Math.round(moved.left)}〜${Math.round(moved.right)}、欄 ${Math.round(after.top)}〜${Math.round(after.bottom)}）`);
     revealCaret({ getBoundingClientRect: () => caret as DOMRect });
   };
 
@@ -230,14 +243,22 @@ export function mountEditablePane(
       const pageY = window.scrollY;
       const paneX = element.scrollLeft;
       const paneY = element.scrollTop;
+      const restore = () => {
+        if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
+        element.scrollLeft = paneX;
+        element.scrollTop = paneY;
+      };
       write(done.text);
       placeCaret(done.caret);
-      if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
-      element.scrollLeft = paneX;
-      element.scrollTop = paneY;
+      restore();
       onChange(current);
       scheduleHighlights();
-      revealSelection();
+      // iOS は、カーソルを置いたあと、次のコマでも自分でページを送る（2026-11-07 Mac #20 K2：2回目の Enter の
+      // 前に、欄がページの上の外へ出ていた）。次のコマで送り位置をもう一度戻してから、こちらで送る
+      requestAnimationFrame(() => {
+        restore();
+        revealSelection(done.caret);
+      });
     }
   };
   const onInput = () => readBack();

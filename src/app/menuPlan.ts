@@ -91,9 +91,9 @@ export const TABS: readonly PlannedTab[] = [
         title: "試し",
         items: [
           {
-            label: "縦書きの試し",
+            label: "縦書き・横書きの試し",
             built: "tategaki",
-            note: "縦書きで書いて、ルビ・傍点・字数を見て、保存と読み戻しを試す",
+            note: "A（いまの形・変換中の線は左）と B（右傍線）を切り替えて書き比べる。ルビ・傍点・字数・保存と読み戻しも",
           },
         ],
       },

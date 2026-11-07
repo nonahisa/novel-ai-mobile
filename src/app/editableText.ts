@@ -8,8 +8,11 @@
  * DOM をたどって節の並びを作るのは `editablePane.ts`。
  *
  * - 字の節はそのまま本文になる（中の `\n` も改行）
- * - `<br>` は改行1つ。ただし**欄のいちばん後ろの `<br>` は数えない**（本文が改行で終わるとき、
- *   最後の空の行にカーソルを置けるように、こちらで入れる支えの `<br>`。`trailingBreakNeeded`）
+ * - `<br>` は改行1つ（ブラウザが入れたとき。こちらは入れない）
+ * - 本文が改行で終わるとき、最後の空の行にカーソルを置けるように、字の節の末に**見えない支えの字**
+ *   （`LINE_SUPPORT`＝U+200B）を1つ足す。本文を読むときは数えない（`stripSupport`）。
+ *   はじめは支えに `<br>` を使っていたが、iOS（WebKit）は縦書きで `<br>` の前のカーソルの位置を 0〜0 と返し、
+ *   印も描かなかった（2026-11-07 Mac #20〜#23。「ねこ」と打ってカーソルが字の中に入ると印が出た）
  * - `<div>`・`<p>` の頭は、前に字があれば改行1つ（ブラウザが段落で区切ったとき）
  */
 
@@ -42,37 +45,41 @@ export function locateOffset<N>(
   return undefined;
 }
 
-/** 本文が改行で終わるなら、最後の空の行を見せるための支えの `<br>` が要る */
+/** 欄の子の種類（字の節・<br>・そのほかの要素） */
+export type EditableChildKind = "text" | "br" | "other";
+
+/** 本文が改行で終わるなら、最後の空の行を見せるための支え（`LINE_SUPPORT`）が要る */
 export function trailingBreakNeeded(text: string): boolean {
   return text.endsWith("\n");
 }
 
-/** 欄の子の種類（字の節・改行・そのほかの要素） */
-export type EditableChildKind = "text" | "br" | "other";
+/** 最後の空の行を支える見えない字（U+200B）。本文には数えない */
+export const LINE_SUPPORT = "​";
 
-/**
- * 欄の中身が、こちらの決めた素直な形か：字の節1つ（本文が改行で終わるなら、うしろに支えの `<br>`）。
- * 素直でない形（字の節が割れている・空の節や `<br>`・`<div>` が残っている）は、変換していないときに
- * 本文から作り直す（2026-11-07 Mac G2a：iOS で Enter → ⌫ と戻すと、消した改行の跡が1字ぶんのすき間で残った）
- */
-export function isPlainShape(children: readonly EditableChildKind[], text: string): boolean {
-  if (text === "") return children.length === 0;
-  const expected: EditableChildKind[] = trailingBreakNeeded(text) ? ["text", "br"] : ["text"];
-  return children.length === expected.length && children.every((kind, i) => kind === expected[i]);
+/** 本文から、欄に書く字の節の中身を作る（改行で終わるなら支えの字を足す） */
+export function plainValue(text: string): string {
+  return trailingBreakNeeded(text) ? text + LINE_SUPPORT : text;
+}
+
+/** 欄の字から支えの字を除く（本文の U+200B もいっしょに除く。原稿にはまず無い字なので、そう決める） */
+export function stripSupport(value: string): string {
+  return value.split(LINE_SUPPORT).join("");
 }
 
 /**
- * 本文の `offset` 字目にカーソルを置くとき、素直な形の欄のどこに置くか。
- * 本文が改行で終わり、カーソルがその後ろ（最後の空の行）なら、支えの `<br>` の前に置く
- * （字の節の終わりの `\n` の後ろに置くと、iOS ではカーソルが見えず、ページが飛んだ。2026-11-07 Mac G3）
+ * 欄の中身が素直な形か：本文が空なら何も無い。そうでなければ字の節1つで、中身が `plainValue(text)`
+ * （`raw` は1つ目の字の節の中身）
  */
-export function caretPlacement(text: string, offset: number): { kind: "text"; offset: number } | { kind: "beforeBreak" } {
-  const at = Math.min(Math.max(offset, 0), text.length);
-  if (trailingBreakNeeded(text) && at === text.length) return { kind: "beforeBreak" };
-  return { kind: "text", offset: at };
+export function isPlainShape(children: readonly EditableChildKind[], text: string, raw: string | null = null): boolean {
+  if (text === "") return children.length === 0 || (children.length === 1 && children[0] === "text" && raw === "");
+  return children.length === 1 && children[0] === "text" && raw === plainValue(text);
 }
 
-/** 本文の [start, end) を `inserted` に替える（Enter で改行を入れるとき） */
+/** 素直な形の欄で、本文の offset 字目のカーソルは、字の節のその位置（支えの字の前） */
+export function caretPlacement(text: string, offset: number): { kind: "text"; offset: number } {
+  return { kind: "text", offset: Math.min(Math.max(offset, 0), text.length) };
+}
+
 export function replaceRange(text: string, start: number, end: number, inserted: string): { text: string; caret: number } {
   const s = Math.min(Math.max(start, 0), text.length);
   const e = Math.min(Math.max(end, s), text.length);

@@ -1,4 +1,6 @@
 import { Capacitor } from "@capacitor/core";
+import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
+import { createTrialLog } from "./trialLogFile";
 import { SHARED_VERSION } from "../shared";
 import { CapacitorFileStore } from "../platform/capacitorFileStore";
 import type { FileStore } from "../platform/fileStore";
@@ -255,6 +257,7 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
     <details class="menu-hidden"><summary>変換の知らせの記録</summary>
       <label class="sink-show"><input type="checkbox" id="showSink" /> 見えない受け口を薄い赤で見せる（位置が合っているかを見る）</label>
       <label class="sink-show"><input type="checkbox" id="nativeEnter" /> A の Enter をブラウザに任せる（iPhone でカーソルの印が出るかを比べる）</label>
+      <p class="menu-how" id="imeLogFile"></p>
       <pre class="ime-log" id="imeLog"></pre></details>`;
   const input = screen.querySelector<HTMLElement>("#draftInput")!;
   const paneEl = screen.querySelector<HTMLElement>("#draftPane")!;
@@ -277,8 +280,20 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   const sinkWhy = screen.querySelector<HTMLElement>("#sinkWhy");
   const showSink = screen.querySelector<HTMLInputElement>("#showSink")!;
 
+  // 記録はファイルにも書く（iOS は Documents。Mac のセッションが devicectl で取り出す。trialLogFile.ts）
+  const logDirectory = Capacitor.getPlatform() === "ios" ? Directory.Documents : Directory.Data;
+  const logFile = createTrialLog(new Date(), {
+    write: async (path, data) => {
+      await Filesystem.writeFile({ path, data, directory: logDirectory, encoding: Encoding.UTF8, recursive: true });
+    },
+    setTimer: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimer: (handle) => window.clearTimeout(handle as number),
+  });
+  screen.querySelector<HTMLElement>("#imeLogFile")!.textContent =
+    `記録はファイルにも書いています：${logDirectory === Directory.Documents ? "Documents" : "アプリの領域"}/${logFile.path}`;
   const log = (line: string) => {
     const time = new Date().toLocaleTimeString("ja-JP", { hour12: false });
+    logFile.add(`${time} ${line}`);
     logEl.textContent = `${time} ${line}\n${logEl.textContent ?? ""}`.slice(0, 12000);
   };
   const update = () => {

@@ -43,3 +43,15 @@ describe("iOS の縦書き：前後の字からカーソルの位置を決める
     expect(shell).toContain('ownCaretWhenVertical: Capacitor.getPlatform() === "ios"');
   });
 });
+
+describe("iOS の縦書き：既存の字の間でも、こちらの印を出す（2026-11-08 iPad mini・0.1.12：改行のあとにしか出なかった）", () => {
+  const pane = readFileSync(new URL("../src/app/editablePane.ts", import.meta.url), "utf8");
+  const quiet = pane.slice(pane.indexOf("const quietCaretRect"), pane.indexOf("let lastLoggedOffset"));
+  test("前後の字の箱を、潰れた範囲の箱より先に使う", () => {
+    expect(quiet.indexOf("if (box) return")).toBeGreaterThan(0);
+    expect(quiet.indexOf("if (box) return")).toBeLessThan(quiet.lastIndexOf("rect.width > 0 || rect.height > 0 ? { rect"));
+  });
+  test("描画が止まっていても、50ms の時計で描く", () => {
+    expect(pane).toContain("window.setTimeout(run, 50)");
+  });
+});

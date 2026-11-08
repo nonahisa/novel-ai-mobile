@@ -2,8 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 
 /**
- * アプリのアイコンは本体の拡張機能のアイコン（novel-ai-assistant の media/icon.png：濃紺の地に白い万年筆と
- * キーボード）から作る（2026-11-08 作者「わかりやすいよう、アプリのロゴをいつものに」）。
+ * アプリのアイコンは、本体の 1.0.0 の共通アイコン（novel-ai-assistant の docs/assets/icon-1.0.0：紺の地に
+ * 生成り色のキーボードと万年筆、ペン先から伸びる緑の芽）から作る（2026-11-08 作者「わかりやすいよう、
+ * アプリのロゴをいつものに」「芽が出たほうを使ってください」）。
  * PNG の頭（幅・高さ・色の型）だけを見る
  */
 function pngHead(path: string): { width: number; height: number; colorType: number } {
@@ -24,8 +25,8 @@ describe("アプリのアイコン", () => {
       expect(pngHead(`${res}/ic_launcher_foreground.png`)).toMatchObject({ width: (s * 108) / 48, height: (s * 108) / 48 });
     }
   });
-  test("Android の地の色は、本体のアイコンの濃紺", () => {
+  test("Android の地の色は、本体のアイコンの紺", () => {
     const xml = readFileSync(new URL("../android/app/src/main/res/values/ic_launcher_background.xml", import.meta.url), "utf8");
-    expect(xml).toContain("#222733");
+    expect(xml).toContain("#22263A");
   });
 });

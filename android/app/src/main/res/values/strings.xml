@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">NovelAI</string>
-    <string name="title_activity_main">NovelAI</string>
+    <string name="app_name">統合小説執筆環境</string>
+    <string name="title_activity_main">統合小説執筆環境</string>
     <string name="package_name">com.nonahisa.novelai</string>
     <string name="custom_url_scheme">com.nonahisa.novelai</string>
 </resources>

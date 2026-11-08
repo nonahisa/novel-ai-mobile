@@ -28,8 +28,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # テスト（本体の部品を取り込めるか・端末に無いものを読んでいないか。androidReach.test.ts）
       - run: pnpm run test
-      # 型の検査 → 画面のビルド → Android へ写す → APK のビルド
-      - run: pnpm run apk
+      # Gradle の本体（gradle-8.14.3-all.zip）を走りのあいだで取っておく。毎回取り直していて、
+      # 取ってくる所の時間切れ・504 で3回続けて落ちた（2026-11-08 PR #31）
+      - uses: gradle/actions/setup-gradle@v4
+      # 型の検査 → 画面のビルド → Android へ写す → APK のビルド。
+      # Gradle を取ってくる所でネットが落ちたときのために、3回まで試す
+      - name: pnpm run apk（3回まで）
+        shell: pwsh
+        run: |
+          for ($i = 1; $i -le 3; $i++) {
+            pnpm run apk
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "apk の組み立てが落ちた（$i 回目）。30 秒待ってもう一度"
+            Start-Sleep -Seconds 30
+          }
+          exit 1
   ios:
     # iOS の土台（ios/）へ写せるかを見る。Xcode でのビルドは署名が要るので、ここでは行わない
     runs-on: macos-latest

@@ -320,7 +320,9 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
       text = changed;
       update();
     },
-    log
+    log,
+    // iOS の縦書きは、カーソルの印をいつもこちらで描く（2026-11-08 iPad mini：iOS の印が大きくずれた）
+    { ownCaretWhenVertical: Capacitor.getPlatform() === "ios" }
   );
 
   /* 用語の色付け（作者の答え 2026-11-07「両方」）。語を打ち直したら、A・B の両方の探し方を替える */

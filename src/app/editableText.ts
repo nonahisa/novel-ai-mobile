@@ -94,6 +94,29 @@ export interface CaretBox {
 }
 
 /**
+ * **前後の字の位置から、カーソルの位置を決める**（欄に触らずに測る。変換中に印を置いて測ると、変換が切れる）。
+ * iOS は縦書きの欄で、カーソルの位置を 0〜0 と返したり、印を大きくずれた所に描いたりする
+ * （2026-11-08 iPad mini 実機。出先の原稿エディター〈本体の設計書 6.116〉でも、2026-10-24 に同じだった）。
+ *
+ * - 前の字があれば、その字の尻（縦書きは下の端、横書きは右の端）
+ * - 無ければ、うしろの字の頭（縦書きは上の端、横書きは左の端）
+ * - どちらも無ければ undefined（改行の字は、呼ぶ側で渡さない）
+ */
+export function caretFromNeighbors(prev: CaretBox | undefined, next: CaretBox | undefined, vertical: boolean): CaretBox | undefined {
+  if (prev) {
+    return vertical
+      ? { left: prev.left, right: prev.right, top: prev.bottom, bottom: prev.bottom }
+      : { left: prev.right, right: prev.right, top: prev.top, bottom: prev.bottom };
+  }
+  if (next) {
+    return vertical
+      ? { left: next.left, right: next.right, top: next.top, bottom: next.top }
+      : { left: next.left, right: next.left, top: next.top, bottom: next.bottom };
+  }
+  return undefined;
+}
+
+/**
  * **ページを送るときに使うカーソルの位置を、欄の中に収める**（上下だけ）。
  * iOS（WebKit）は縦書きの欄の最後の空の列のカーソルを、欄の下の枠の外と測ることがある。
  * その位置のままページを送ると、ページが下へ送られて欄の上側が見えなくなった（2026-11-07 Mac #19 I1）。

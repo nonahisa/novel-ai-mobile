@@ -7,6 +7,7 @@ import {
   plainValue,
   stripSupport,
   LINE_SUPPORT,
+  caretFromNeighbors,
   clampCaretToPane,
   isPlainShape,
   locateOffset,
@@ -70,11 +71,14 @@ function childKinds(element: HTMLElement): EditableChildKind[] {
   return Array.from(element.childNodes).map((n) => (n.nodeType === Node.TEXT_NODE ? "text" : n.nodeName === "BR" ? "br" : "other"));
 }
 
+type CaretBoxLike = { top: number; bottom: number; left: number; right: number; width?: number; height?: number };
+
 export function mountEditablePane(
   element: HTMLElement,
   text: string,
   onChange: (text: string) => void,
-  log: (line: string) => void = () => undefined
+  log: (line: string) => void = () => undefined,
+  options: { ownCaretWhenVertical?: boolean } = {}
 ): EditablePane {
   try {
     element.contentEditable = "plaintext-only";
@@ -168,6 +172,7 @@ export function mountEditablePane(
     ownCaret.style.top = `${y}px`;
   };
   const hideOwnCaret = () => {
+    if (!ownMode() || document.activeElement !== element) element.classList.remove("own-caret-shown");
     ownCaret?.remove();
     ownCaret = undefined;
     ownState = undefined;
@@ -193,8 +198,74 @@ export function mountEditablePane(
       st: element.scrollTop,
     };
     document.body.appendChild(ownCaret);
+    // こちらの印を出しているあいだは、iOS の印を透明にする。iOS は位置を 0〜0 と返しながら、
+    // 列の中ほどのずれた所に細い印を描くことがあり、印が2本になった（2026-11-08 iPad mini 実機・0.1.11）
+    element.classList.add("own-caret-shown");
     placeOwnCaret();
-    log("A カーソルの印をこちらで描いた（ブラウザが位置を 0〜0 と返したため）");
+    if (!ownMode()) log("A カーソルの印をこちらで描いた（ブラウザが位置を 0〜0 と返したため）");
+  };
+
+  /**
+   * **iOS の縦書きでは、カーソルの印をいつもこちらで描く**（2026-11-08 iPad mini 実機・0.1.11：
+   * 「。」の下を押した直後から、iOS の小さい印が大きくずれた所に出て、改行のあとはこちらの印と2本になった。
+   * 出先の原稿エディター〈本体の設計書 6.116、0.111.2〉でも、iPad は字の入る所は正しいのに印をかなり下に描き、
+   * 選択の位置は正しかったので、端末の印を消して自前の印にした）。
+   * 欄には触らずに測る（`caretFromNeighbors`）。変換中に印を置いて測ると、変換が切れるため
+   */
+  const ownMode = () => options.ownCaretWhenVertical === true && element.classList.contains("vertical");
+  const quietCaretRect = (): { rect: CaretBoxLike; offset: number } | undefined => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return undefined;
+    const range = selection.getRangeAt(0);
+    if (!element.contains(range.startContainer)) return undefined;
+    const sel = selectionOffsets();
+    if (!sel) return undefined;
+    const rect = range.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) return { rect, offset: sel.start };
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) return undefined;
+    const value = node.nodeValue ?? "";
+    const at = range.startOffset;
+    const charBox = (from: number): CaretBoxLike | undefined => {
+      if (from < 0 || from >= value.length || value[from] === "\n") return undefined;
+      const r = document.createRange();
+      r.setStart(node, from);
+      r.setEnd(node, from + 1);
+      const b = r.getBoundingClientRect();
+      return b.width > 0 || b.height > 0 ? b : undefined;
+    };
+    const vertical = element.classList.contains("vertical");
+    const box = caretFromNeighbors(charBox(at - 1), charBox(at), vertical);
+    return box ? { rect: box, offset: sel.start } : undefined;
+  };
+  let ownFrame: number | undefined;
+  const scheduleOwnCaret = () => {
+    if (!ownMode() || ownFrame !== undefined) return;
+    ownFrame = requestAnimationFrame(() => {
+      ownFrame = undefined;
+      if (!ownMode() || document.activeElement !== element) return;
+      element.classList.add("own-caret-shown");
+      let got = quietCaretRect();
+      const sel = selectionOffsets();
+      if (!got && sel && sel.start === sel.end) {
+        // 前後の字で測れない（最後の空の列など）。同じ位置の印が出ていれば、そのまま残す。
+        // 出ていなければ、変換していないときだけ、見えない字の印を置いて測る（measureCaret。置き直しの
+        // selectionchange は同じ位置なので、ここへ戻っても測り直さない）
+        if (ownState && ownState.offset === sel.start && ownCaret) return;
+        if (!composing) {
+          const measured = measureCaret(sel.start);
+          if (measured) got = { rect: measured, offset: sel.start };
+        }
+      }
+      if (!got) {
+        // 範囲を選んでいる・測れない：こちらの印は出さない（範囲の色とつまみは iOS が描く）
+        ownCaret?.remove();
+        ownCaret = undefined;
+        ownState = undefined;
+        return;
+      }
+      showOwnCaret(got.rect as DOMRect, got.offset);
+    });
   };
 
   /**
@@ -349,8 +420,9 @@ export function mountEditablePane(
    * 字が入る。⌫ では見えない支えの字が消えるだけになる）
    */
   const onSelectionChange = () => {
+    if (ownMode()) scheduleOwnCaret();
     // カーソルが動いたら、こちらで描いた印を消す（測るときに置き直した同じ位置なら残す）
-    if (ownState) {
+    else if (ownState) {
       const sel = selectionOffsets();
       if (!sel || sel.start !== ownState.offset || sel.end !== ownState.offset) hideOwnCaret();
     }
@@ -372,6 +444,7 @@ export function mountEditablePane(
   const onInput = (e: Event) => {
     hideOwnCaret();
     readBack();
+    scheduleOwnCaret();
     const type = (e as InputEvent).inputType;
     if (nativeEnter && (type === "insertParagraph" || type === "insertLineBreak")) {
       dumpGeometry("Enter（ブラウザ） 0ms");
@@ -379,7 +452,7 @@ export function mountEditablePane(
     }
   };
   const onCompStart = () => {
-    hideOwnCaret();
+    if (!ownMode()) hideOwnCaret();
     composing = true;
     log("A 変換の始まり");
   };
@@ -453,6 +526,9 @@ export function mountEditablePane(
   window.visualViewport?.addEventListener("resize", placeOwnCaret);
   element.addEventListener("compositionstart", onCompStart);
   element.addEventListener("compositionend", onCompEnd);
+  element.addEventListener("compositionupdate", scheduleOwnCaret);
+  element.addEventListener("focus", scheduleOwnCaret);
+  element.addEventListener("scroll", scheduleOwnCaret);
   document.addEventListener("selectionchange", onSelectionChange);
   write(text);
   scheduleHighlights();
@@ -483,6 +559,11 @@ export function mountEditablePane(
       hideOwnCaret();
       element.removeEventListener("compositionstart", onCompStart);
       element.removeEventListener("compositionend", onCompEnd);
+      element.removeEventListener("compositionupdate", scheduleOwnCaret);
+      element.removeEventListener("focus", scheduleOwnCaret);
+      element.removeEventListener("scroll", scheduleOwnCaret);
+      if (ownFrame !== undefined) cancelAnimationFrame(ownFrame);
+      element.classList.remove("own-caret-shown");
       document.removeEventListener("selectionchange", onSelectionChange);
       stopWatching();
       window.visualViewport?.removeEventListener("scroll", onViewportPan);

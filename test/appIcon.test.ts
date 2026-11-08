@@ -30,3 +30,13 @@ describe("アプリのアイコン", () => {
     expect(xml).toContain("#22263A");
   });
 });
+
+describe("アプリの名前（2026-11-08 作者：Android の「NovelAI」を、本体・iOS と同じ名前に）", () => {
+  test("Android も iOS も「統合小説執筆環境」", () => {
+    const strings = readFileSync(new URL("../android/app/src/main/res/values/strings.xml", import.meta.url), "utf8");
+    expect(strings).toContain('<string name="app_name">統合小説執筆環境</string>');
+    expect(strings).toContain('<string name="title_activity_main">統合小説執筆環境</string>');
+    const plist = readFileSync(new URL("../ios/App/App/Info.plist", import.meta.url), "utf8");
+    expect(plist).toMatch(/<key>CFBundleDisplayName<\/key>\s*<string>統合小説執筆環境<\/string>/);
+  });
+});

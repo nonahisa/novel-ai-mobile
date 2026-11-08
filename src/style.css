@@ -426,6 +426,10 @@ button {
   pointer-events: none;
   animation: own-caret-blink 1s steps(1) infinite;
 }
+/* こちらの印を出しているあいだ、ブラウザの印を隠す（iOS が列の中ほどに描き、印が2本になった。2026-11-08 iPad mini） */
+.own-caret-shown {
+  caret-color: transparent;
+}
 @keyframes own-caret-blink {
   50% {
     opacity: 0;

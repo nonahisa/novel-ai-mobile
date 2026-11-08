@@ -168,6 +168,7 @@ export function mountEditablePane(
     ownCaret.style.top = `${y}px`;
   };
   const hideOwnCaret = () => {
+    element.classList.remove("own-caret-shown");
     ownCaret?.remove();
     ownCaret = undefined;
     ownState = undefined;
@@ -193,6 +194,9 @@ export function mountEditablePane(
       st: element.scrollTop,
     };
     document.body.appendChild(ownCaret);
+    // こちらの印を出しているあいだは、iOS の印を透明にする。iOS は位置を 0〜0 と返しながら、
+    // 列の中ほどのずれた所に細い印を描くことがあり、印が2本になった（2026-11-08 iPad mini 実機・0.1.11）
+    element.classList.add("own-caret-shown");
     placeOwnCaret();
     log("A カーソルの印をこちらで描いた（ブラウザが位置を 0〜0 と返したため）");
   };

@@ -117,6 +117,44 @@ export function caretFromNeighbors(prev: CaretBox | undefined, next: CaretBox | 
 }
 
 /**
+ * **縦書きで、押した点にいちばん近い字の境目を選ぶ**（本体の出先の原稿エディター `nearestCaret` に倣う。
+ * iPad は caretRangeFromPoint でも、自分で置くカーソルでも、縦書きで1字ずれた。本体 2026-10-05）。
+ *
+ * 候補は境目ごとに、うしろの字の箱（`after`：その字の上の辺が境目）か、前の字の箱（下の辺が境目）。
+ * 押した点との上下の差で比べ、列（左右）が字の幅より離れた候補は選ばない。
+ * どの列にも入っていない（行の外の空白を押した）なら undefined（置き直さない）
+ */
+export function nearestBoundary(
+  candidates: { offset: number; box: CaretBox; after: boolean }[],
+  x: number,
+  y: number
+): number | undefined {
+  let best: number | undefined;
+  let bestD = Infinity;
+  for (const c of candidates) {
+    const edge = c.after ? c.box.top : c.box.bottom;
+    const center = (c.box.left + c.box.right) / 2;
+    if (Math.abs(center - x) > c.box.right - c.box.left) continue;
+    const d = Math.abs(edge - y);
+    if (d < bestD) {
+      bestD = d;
+      best = c.offset;
+    }
+  }
+  return best;
+}
+
+/**
+ * **iPad が置いたカーソルを、押した点の近くへ置き直すか**（本体 `applyTouchFix` に倣う）。
+ * iPad の置いた所の隣（前後1字）へ直すときだけ置き直す。キーボードが出てページが送られていると、
+ * 指の座標が実際とずれて届き、座標から引いた所のほうが遠くなることがある（本体 2026-10-05）
+ */
+export function shouldMoveCaret(native: number | undefined, wanted: number): boolean {
+  if (native === undefined) return true;
+  return Math.abs(native - wanted) === 1;
+}
+
+/**
  * **ページを送るときに使うカーソルの位置を、欄の中に収める**（上下だけ）。
  * iOS（WebKit）は縦書きの欄の最後の空の列のカーソルを、欄の下の枠の外と測ることがある。
  * その位置のままページを送ると、ページが下へ送られて欄の上側が見えなくなった（2026-11-07 Mac #19 I1）。

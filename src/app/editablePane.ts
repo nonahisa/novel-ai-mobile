@@ -10,6 +10,8 @@ import {
   caretFromNeighbors,
   clampCaretToPane,
   isPlainShape,
+  nearestBoundary,
+  shouldMoveCaret,
   locateOffset,
   replaceRange,
   segmentsText,
@@ -291,6 +293,66 @@ export function mountEditablePane(
   };
 
   /**
+   * **押した所へカーソルを置き直す**（iOS の縦書きだけ。本体の出先の原稿エディター `applyTouchFix` に倣う。
+   * 2026-11-09 iPad mini・0.1.15「押した所に印が出ない・ずれる」。iPad は縦書きで、押した所から1字ずれた所に
+   * カーソルを置くことがある）。iPad が置き終わるのを待ってから、1回押すごとに1回だけ、前後1字の範囲で直す
+   */
+  let touchPoint: { x: number; y: number } | undefined;
+  const TOUCH_FIX_MS = 400;
+  const onTouchDown = (e: PointerEvent) => {
+    touchPoint = ownMode() && e.pointerType === "touch" ? { x: e.clientX, y: e.clientY } : undefined;
+  };
+  const onTouchUp = (e: PointerEvent) => {
+    if (e.pointerType !== "touch" || !touchPoint) return;
+    window.setTimeout(applyTouchFix, TOUCH_FIX_MS);
+  };
+  const applyTouchFix = () => {
+    const point = touchPoint;
+    touchPoint = undefined;
+    if (!point || composing || !ownMode()) return;
+    const selection = window.getSelection();
+    // 長押しで範囲を選んだときは、そのまま使う
+    if (!selection || (selection.rangeCount > 0 && !selection.isCollapsed)) return;
+    const fromPoint = (document as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null }).caretRangeFromPoint?.(point.x, point.y);
+    if (!fromPoint || fromPoint.startContainer.nodeType !== Node.TEXT_NODE || !element.contains(fromPoint.startContainer)) return;
+    const node = fromPoint.startContainer;
+    const value = node.nodeValue ?? "";
+    const candidates: { offset: number; box: DOMRect; after: boolean }[] = [];
+    for (let o = Math.max(0, fromPoint.startOffset - 2); o <= Math.min(value.length, fromPoint.startOffset + 2); o++) {
+      const after = o < value.length;
+      const from = after ? o : o - 1;
+      const ch = value[from];
+      if (ch === undefined || ch === "\n" || ch === LINE_SUPPORT) continue;
+      const r = document.createRange();
+      r.setStart(node, from);
+      r.setEnd(node, from + 1);
+      const b = r.getBoundingClientRect();
+      if (b.width > 0 || b.height > 0) candidates.push({ offset: o, box: b, after });
+    }
+    const wanted = nearestBoundary(candidates, point.x, point.y);
+    if (wanted === undefined) return;
+    const now = selection.rangeCount > 0 ? selection.getRangeAt(0) : undefined;
+    // iPad が欄の中の別の節に置いたときは、そのまま（素直な形の欄では字の節は1つ）
+    if (now && element.contains(now.startContainer) && now.startContainer !== node) return;
+    const native = now && now.startContainer === node ? now.startOffset : undefined;
+    if (native === wanted || !shouldMoveCaret(native, wanted)) return;
+    log(`A 押した所へ置き直した（${native ?? "-"} → ${wanted}、押した点 ${Math.round(point.x)}/${Math.round(point.y)}）`);
+    const put = () => {
+      const r = document.createRange();
+      r.setStart(node, wanted);
+      r.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(r);
+    };
+    if (document.activeElement !== element) element.focus();
+    put();
+    // iPad の描く印が追いつかないことがあるので、次の描画でもう一度同じ所へ置く
+    requestAnimationFrame(() => {
+      if (!composing) put();
+    });
+  };
+
+  /**
    * カーソルを、欄の中でもページでも見える所へ送る（縦書きは欄を横へ、横書きは欄を縦へ。そのあとページ）。
    * **測れなかったら何も送らない**（0〜0 のまま送ると、欄が右へずれ、ページが下へ送られた。2026-11-07 Mac #20 K2）
    */
@@ -551,6 +613,8 @@ export function mountEditablePane(
   element.addEventListener("compositionupdate", scheduleOwnCaret);
   element.addEventListener("compositionend", scheduleOwnCaret);
   element.addEventListener("pointerup", scheduleOwnCaret);
+  element.addEventListener("pointerdown", onTouchDown);
+  element.addEventListener("pointerup", onTouchUp);
   element.addEventListener("focus", scheduleOwnCaret);
   element.addEventListener("scroll", scheduleOwnCaret);
   document.addEventListener("selectionchange", onSelectionChange);
@@ -586,6 +650,8 @@ export function mountEditablePane(
       element.removeEventListener("compositionupdate", scheduleOwnCaret);
       element.removeEventListener("compositionend", scheduleOwnCaret);
       element.removeEventListener("pointerup", scheduleOwnCaret);
+      element.removeEventListener("pointerdown", onTouchDown);
+      element.removeEventListener("pointerup", onTouchUp);
       element.removeEventListener("focus", scheduleOwnCaret);
       element.removeEventListener("scroll", scheduleOwnCaret);
       if (ownFrame !== undefined) cancelAnimationFrame(ownFrame);

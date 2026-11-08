@@ -77,7 +77,7 @@ export function mountImeSinkPane(
   const revealWhenSafe = () => {
     // 変換中なら何もしない。確定（compositionend）の描き直しでここへ来るので、そのときに送る
     if (document.activeElement !== sink || state.composing) return;
-    revealCaret(view.querySelector(".caret"));
+    revealCaret(view.querySelector(".caret"), element);
   };
   const render = () => {
     // 描くのは変換中の字を挟んだ仮の本文なので、用語もその本文で探す

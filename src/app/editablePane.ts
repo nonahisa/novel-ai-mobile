@@ -222,7 +222,7 @@ export function mountEditablePane(
     const moved = measureCaret(offset) ?? rect;
     const caret = clampCaretToPane(moved, after, vertical);
     log(`A Enter のあとのカーソル（上下 ${Math.round(moved.top)}〜${Math.round(moved.bottom)}、左右 ${Math.round(moved.left)}〜${Math.round(moved.right)}、欄 ${Math.round(after.top)}〜${Math.round(after.bottom)}）`);
-    revealCaret({ getBoundingClientRect: () => caret as DOMRect });
+    revealCaret({ getBoundingClientRect: () => caret as DOMRect }, element);
     // ブラウザがカーソルの位置を測れない（＝描いていない）なら、こちらで印を描く
     const selection = window.getSelection();
     const real = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).getBoundingClientRect() : undefined;
@@ -440,7 +440,7 @@ export function mountEditablePane(
     const r = selection.getRangeAt(0).getBoundingClientRect();
     if (r.width === 0 && r.height === 0) return;
     const caret = clampCaretToPane(r, element.getBoundingClientRect(), element.classList.contains("vertical"));
-    revealCaret({ getBoundingClientRect: () => caret as DOMRect });
+    revealCaret({ getBoundingClientRect: () => caret as DOMRect }, element);
   });
 
   element.addEventListener("beforeinput", onBeforeInput);

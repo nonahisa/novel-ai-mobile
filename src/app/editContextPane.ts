@@ -88,13 +88,13 @@ export function mountEditContextPane(
     element.innerHTML = renderPaneHtml(state, findTerms(state.text));
     reportBounds();
     // 変換中はページを送らない（見えない受け口と同じ。確定の描き直しで送る）
-    if (document.activeElement === element && !state.composing) revealCaret(element.querySelector(".caret"));
+    if (document.activeElement === element && !state.composing) revealCaret(element.querySelector(".caret"), element);
   };
   // キーボードが出て見える範囲が縮んだら、カーソルを見える所へ送る
   const stopWatching = watchVisibleBand(() => {
     if (document.activeElement === element) {
       reportBounds();
-      if (!state.composing) revealCaret(element.querySelector(".caret"));
+      if (!state.composing) revealCaret(element.querySelector(".caret"), element);
     }
   });
   const changed = () => {

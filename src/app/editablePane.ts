@@ -220,10 +220,12 @@ export function mountEditablePane(
     if (!element.contains(range.startContainer)) return undefined;
     const sel = selectionOffsets();
     if (!sel) return undefined;
+    // 前後の字の箱を先に使う（2026-11-08 iPad mini・0.1.12：既存の字の間を押すと、こちらの印が出なかった。
+    // iOS が潰れた範囲の位置を、ずれた所〈iOS が印を描いていた所〉で返していたと見る。字の箱は、
+    // 画面に出ている字そのものの位置なのでずれない）
     const rect = range.getBoundingClientRect();
-    if (rect.width > 0 || rect.height > 0) return { rect, offset: sel.start };
     const node = range.startContainer;
-    if (node.nodeType !== Node.TEXT_NODE) return undefined;
+    if (node.nodeType !== Node.TEXT_NODE) return rect.width > 0 || rect.height > 0 ? { rect, offset: sel.start } : undefined;
     const value = node.nodeValue ?? "";
     const at = range.startOffset;
     const charBox = (from: number): CaretBoxLike | undefined => {
@@ -236,12 +238,30 @@ export function mountEditablePane(
     };
     const vertical = element.classList.contains("vertical");
     const box = caretFromNeighbors(charBox(at - 1), charBox(at), vertical);
-    return box ? { rect: box, offset: sel.start } : undefined;
+    if (!composing && sel.start !== lastLoggedOffset) {
+      lastLoggedOffset = sel.start;
+      const r = (n: number) => Math.round(n);
+      log(
+        `A 印（自前） ${sel.start}字目：範囲 ${r(rect.left)}〜${r(rect.right)}/${r(rect.top)}〜${r(rect.bottom)}、` +
+          `字 ${box ? `${r(box.left)}〜${r(box.right)}/${r(box.top)}` : "-"}、欄 ${r(element.getBoundingClientRect().top)}〜${r(element.getBoundingClientRect().bottom)}`
+      );
+    }
+    if (box) return { rect: box, offset: sel.start };
+    return rect.width > 0 || rect.height > 0 ? { rect, offset: sel.start } : undefined;
   };
+  let lastLoggedOffset = -1;
   let ownFrame: number | undefined;
+  let ownPending = false;
   const scheduleOwnCaret = () => {
-    if (!ownMode() || ownFrame !== undefined) return;
-    ownFrame = requestAnimationFrame(() => {
+    if (!ownMode() || ownPending) return;
+    ownPending = true;
+    // 次の描画の前か 50ms のどちらか先に1回（出先の原稿エディターと同じ。描画が止まっていると rAF が来ない）
+    let done = false;
+    const run = () => {
+      if (done) return;
+      done = true;
+      ownPending = false;
+      if (ownFrame !== undefined) cancelAnimationFrame(ownFrame);
       ownFrame = undefined;
       if (!ownMode() || document.activeElement !== element) return;
       element.classList.add("own-caret-shown");
@@ -265,7 +285,9 @@ export function mountEditablePane(
         return;
       }
       showOwnCaret(got.rect as DOMRect, got.offset);
-    });
+    };
+    ownFrame = requestAnimationFrame(run);
+    window.setTimeout(run, 50);
   };
 
   /**
@@ -527,6 +549,8 @@ export function mountEditablePane(
   element.addEventListener("compositionstart", onCompStart);
   element.addEventListener("compositionend", onCompEnd);
   element.addEventListener("compositionupdate", scheduleOwnCaret);
+  element.addEventListener("compositionend", scheduleOwnCaret);
+  element.addEventListener("pointerup", scheduleOwnCaret);
   element.addEventListener("focus", scheduleOwnCaret);
   element.addEventListener("scroll", scheduleOwnCaret);
   document.addEventListener("selectionchange", onSelectionChange);
@@ -560,6 +584,8 @@ export function mountEditablePane(
       element.removeEventListener("compositionstart", onCompStart);
       element.removeEventListener("compositionend", onCompEnd);
       element.removeEventListener("compositionupdate", scheduleOwnCaret);
+      element.removeEventListener("compositionend", scheduleOwnCaret);
+      element.removeEventListener("pointerup", scheduleOwnCaret);
       element.removeEventListener("focus", scheduleOwnCaret);
       element.removeEventListener("scroll", scheduleOwnCaret);
       if (ownFrame !== undefined) cancelAnimationFrame(ownFrame);

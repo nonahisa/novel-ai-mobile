@@ -48,3 +48,17 @@ describe("欄につないである", () => {
     expect(pane).toContain('element.removeEventListener("pointerup", onTouchUp)');
   });
 });
+
+describe("自前の印は欄の親の中に置き、押すたびに記録を残す（2026-11-09 iPad mini・0.1.15「出ない」）", () => {
+  const pane = readFileSync(new URL("../src/app/editablePane.ts", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../src/style.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  test("position:absolute で、body の直下に置かない", () => {
+    expect(css).toMatch(/\.own-caret\s*\{[^}]*position:\s*absolute/);
+    expect(pane).toContain("caretHost().appendChild(ownCaret)");
+    expect(pane).not.toContain("document.body.appendChild(ownCaret)");
+  });
+  test("押した記録に、印の実際の位置と、印の上にある要素を出す", () => {
+    expect(pane).toContain("A 押した：点");
+    expect(pane).toContain("document.elementFromPoint");
+  });
+});

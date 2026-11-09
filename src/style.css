@@ -420,7 +420,8 @@ button {
 }
 /* ブラウザが描かないカーソルの印を、こちらで描く（editablePane.ts の showOwnCaret。iOS の縦書きの最後の空の列） */
 .own-caret {
-  position: fixed;
+  /* 欄の親の中に置く（fixed で body に置くと iPad で見えなかった。2026-11-09） */
+  position: absolute;
   z-index: 5;
   background: var(--accent);
   pointer-events: none;

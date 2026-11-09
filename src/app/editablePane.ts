@@ -165,13 +165,40 @@ export function mountEditablePane(
    */
   let ownCaret: HTMLElement | undefined;
   let ownState: { offset: number; x: number; y: number; bx: number; by: number; sl: number; st: number } | undefined;
+  /**
+   * 印は**欄の親の中に position:absolute で置く**（2026-11-09 iPad mini・0.1.15：印の位置は欄の中に正しく
+   * 測れていたのに「出ない」。body の直下に position:fixed で置いていた。iPad で印が出ている本体の出先の
+   * 原稿エディターは、紙の要素の中に absolute で置いている。キーボードで見える範囲が動いても、親と一緒に動く）
+   */
+  const caretHost = (): HTMLElement => {
+    const host = element.parentElement ?? document.body;
+    if (getComputedStyle(host).position === "static") host.style.position = "relative";
+    return host;
+  };
   const placeOwnCaret = () => {
     if (!ownCaret || !ownState) return;
+    const host = ownCaret.parentElement;
+    if (!host) return;
     const box = element.getBoundingClientRect();
-    const x = box.left + (ownState.x - ownState.bx) - (element.scrollLeft - ownState.sl);
-    const y = box.top + (ownState.y - ownState.by) - (element.scrollTop - ownState.st);
+    const base = host.getBoundingClientRect();
+    const x = box.left + (ownState.x - ownState.bx) - (element.scrollLeft - ownState.sl) - base.left - host.clientLeft + host.scrollLeft;
+    const y = box.top + (ownState.y - ownState.by) - (element.scrollTop - ownState.st) - base.top - host.clientTop + host.scrollTop;
     ownCaret.style.left = `${x}px`;
     ownCaret.style.top = `${y}px`;
+  };
+  /**
+   * **印が実際にどこに出て、何かに隠れていないかを記録する**（押したあと・Enter のあと。2026-11-09：
+   * 「出ない」の訳が記録から分からなかった）。印＝印の箱、上＝印の真ん中にいちばん上にある要素、
+   * vv＝見える範囲の上・高さ、頁＝ページの縦の送り
+   */
+  const describeOwnCaret = (): string => {
+    if (!ownCaret) return "印なし";
+    const r = ownCaret.getBoundingClientRect();
+    const top = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+    const name = top === ownCaret ? "印" : top ? `${top.tagName.toLowerCase()}${top.id ? `#${top.id}` : ""}${top.className && typeof top.className === "string" ? `.${top.className.split(" ")[0]}` : ""}` : "なし";
+    const vv = window.visualViewport;
+    const round = (n: number) => Math.round(n);
+    return `印 ${round(r.left)}〜${round(r.right)}/${round(r.top)}〜${round(r.bottom)}・上 ${name}・vv ${vv ? `${round(vv.offsetTop)}/${round(vv.height)}` : "-"}・頁 ${round(window.scrollY)}`;
   };
   const hideOwnCaret = () => {
     if (!ownMode() || document.activeElement !== element) element.classList.remove("own-caret-shown");
@@ -199,7 +226,7 @@ export function mountEditablePane(
       sl: element.scrollLeft,
       st: element.scrollTop,
     };
-    document.body.appendChild(ownCaret);
+    caretHost().appendChild(ownCaret);
     // こちらの印を出しているあいだは、iOS の印を透明にする。iOS は位置を 0〜0 と返しながら、
     // 列の中ほどのずれた所に細い印を描くことがあり、印が2本になった（2026-11-08 iPad mini 実機・0.1.11）
     element.classList.add("own-caret-shown");
@@ -304,7 +331,18 @@ export function mountEditablePane(
   };
   const onTouchUp = (e: PointerEvent) => {
     if (e.pointerType !== "touch" || !touchPoint) return;
-    window.setTimeout(applyTouchFix, TOUCH_FIX_MS);
+    const point = touchPoint;
+    window.setTimeout(() => {
+      applyTouchFix();
+      // 押すたびに1行（字の位置が前と同じでも、変換中でも残す。0.1.15 の記録には押した回が1回分しか無かった）
+      window.setTimeout(() => {
+        const sel = selectionOffsets();
+        log(
+          `A 押した：点 ${Math.round(point.x)}/${Math.round(point.y)}、字の位置 ${sel ? (sel.start === sel.end ? sel.start : `${sel.start}〜${sel.end}`) : "-"}、` +
+            `${composing ? "変換中" : "変換なし"}、${describeOwnCaret()}`
+        );
+      }, 120);
+    }, TOUCH_FIX_MS);
   };
   const applyTouchFix = () => {
     const point = touchPoint;
@@ -574,7 +612,7 @@ export function mountEditablePane(
     }
     const vv = window.visualViewport;
     const v = vv ? `${round(vv.offsetLeft)}/${round(vv.pageLeft)}・幅${round(vv.width)}・拡大${vv.scale.toFixed(2)}` : "-";
-    log(`A 位置 ${label}：sl${round(element.scrollLeft)} 欄${round(box.left)}〜${round(box.right)} 頭${head} 印${caret} 頁${round(window.scrollX)} vv${v}`);
+    log(`A 位置 ${label}：sl${round(element.scrollLeft)} 欄${round(box.left)}〜${round(box.right)} 頭${head} 印${caret} 頁${round(window.scrollX)} vv${v}${ownMode() ? `（自前の${describeOwnCaret()}）` : ""}`);
   };
   /** 見える範囲が横へ動いたら記録する（同じ値はくり返さない） */
   let lastPan = "";

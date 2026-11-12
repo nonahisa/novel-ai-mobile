@@ -38,6 +38,10 @@ describe("見本の色", () => {
     expect(css).not.toMatch(/color:\s*#fff\b/i);
   });
 
+  test("hidden を付けた切り替えの段は出さない（.seg の display: flex に負けない）", () => {
+    expect(css).toMatch(/\.seg\[hidden\][^{]*\{\s*display:\s*none/);
+  });
+
   test("Google Fonts を読まない（書体は端末のもの）", () => {
     expect(css).not.toMatch(/fonts\.googleapis|@import/);
   });

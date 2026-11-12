@@ -11,6 +11,8 @@ import { expect, test, type Page } from "@playwright/test";
 async function open(page: Page, hash: string): Promise<void> {
   await page.goto(`/${hash}`);
   await expect(page.locator(".appbar")).toBeVisible();
+  // 縦書きの試しは、保存した原稿か見本の文をあとから読み込む。読み終わる前に打つと、打った字が読み込みで上書きされる
+  if (hash === "#/tategaki") await expect(page.locator("#draftResult")).not.toBeEmpty();
 }
 
 /** A の欄の本文（見えない支えの字を除く） */

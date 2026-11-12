@@ -212,4 +212,15 @@ test.describe("打つ欄（iOS が画面を拡大しないか・原稿の欄を�
     await expect(page.locator("#draftInput")).toHaveCSS("writing-mode", "horizontal-tb");
     await page.locator('[data-orient="vertical"]').click();
   });
+
+  test("B の受け口の段は、B を選んだときだけ出る（A では隠す）", async ({ page }) => {
+    await open(page, "#/tategaki");
+    const sinkSeg = page.locator("#sinkSeg");
+    await expect(page.locator('[data-mode="A"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(sinkSeg).toBeHidden();
+    await page.locator('[data-mode="B"]').click();
+    await expect(sinkSeg).toBeVisible();
+    await page.locator('[data-mode="A"]').click();
+    await expect(sinkSeg).toBeHidden();
+  });
 });

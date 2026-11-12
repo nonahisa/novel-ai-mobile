@@ -44,6 +44,9 @@ keystore.properties
 
 # 動作確認の画面キャプチャ（ローカルだけ）
 .playwright-mcp/
+# 画面の自動テストの途中の記録（pnpm run e2e）
+test-results/
+playwright-report/
 
 # エミュレーターで撮った画面の写真（大きいのでリポジトリに入れない。撮り方は引継ぎ書 12章）
 docs/画面の写真/

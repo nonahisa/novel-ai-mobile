@@ -20,7 +20,7 @@ import {
   type TermInput,
 } from "./termHighlight";
 import { TABS, buildActionList, hiddenActions, searchActions, type PlannedTab } from "./menuPlan";
-import { escapeHtml, renderActionRows, renderTab, renderTabBar } from "./menuScreen";
+import { escapeHtml, renderActionRows, renderAppBar, renderTab, renderTabBar } from "./menuScreen";
 import {
   SAMPLE_TEXT,
   TRIAL_PREFS_KEY,
@@ -152,7 +152,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         leaveGuard = mountTategaki(screen, store);
         return;
       case "check":
-        screen.innerHTML = `<header class="appbar"><button class="appbar-back" data-back aria-label="戻る">←</button><span class="appbar-title">動作確認ページ</span></header><div id="checkRoot"></div>`;
+        screen.innerHTML = `${renderAppBar("動作確認ページ", { back: true })}<div id="checkRoot"></div>`;
         mountCheckPage(screen.querySelector<HTMLElement>("#checkRoot")!);
         return;
     }
@@ -167,7 +167,7 @@ function mountAllActions(screen: HTMLElement): void {
   const list = buildActionList();
   const hidden = hiddenActions();
   screen.innerHTML = `
-    <header class="appbar"><button class="appbar-back" data-back aria-label="戻る">←</button><span class="appbar-title">すべての機能</span></header>
+    ${renderAppBar("すべての機能", { back: true })}
     <input class="menu-search" id="actionSearch" type="search" placeholder="2〜3文字で絞る（例：誤字・相関）" aria-label="機能を探す" />
     <p class="menu-how" id="actionCount"></p>
     <div class="menu-items" id="actionRows"></div>
@@ -224,7 +224,7 @@ function writeTrialPrefs(prefs: TrialPrefs): void {
 function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   const support = editContextSupport(window, Capacitor.getPlatform());
   screen.innerHTML = `
-    <header class="appbar"><button class="appbar-back" data-back aria-label="戻る">←</button><span class="appbar-title">縦書き・横書きの試し</span></header>
+    ${renderAppBar("縦書き・横書きの試し", { back: true, subId: "draftCount" })}
     <div class="seg" role="group" aria-label="向き">
       <button data-orient="vertical" aria-pressed="true">縦書き</button>
       <button data-orient="horizontal" aria-pressed="false">横書き</button>
@@ -241,7 +241,6 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
     <p class="menu-lead" id="modeNote"></p>
     <div class="draft-input vertical" id="draftInput" lang="ja" aria-label="原稿"></div>
     <div class="draft-input vertical" id="draftPane" lang="ja" aria-label="原稿（右傍線の形）" hidden></div>
-    <p class="count" id="draftCount"></p>
     <div class="draft-actions">
       <button class="primary" id="draftSave">保存して読み戻す</button>
       <button id="draftReload">読み直す</button>

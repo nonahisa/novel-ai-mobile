@@ -117,6 +117,19 @@ export function caretFromNeighbors(prev: CaretBox | undefined, next: CaretBox | 
 }
 
 /**
+ * **自前の印の大きさ**。縦書きは横の棒（列の太さ×2）、横書きは縦の棒（2×行の高さ）。
+ * 太さ・高さは箱の左右・上下の差から出す（2026-11-12 iPad mini・0.1.17 の記録：字の箱から出した位置
+ * 〈`caretFromNeighbors`〉には width が無く、`Math.max(undefined, …)` が NaN になって、印の幅が 0 だった。
+ * 0.1.13 から「印が出ない」のはこれ）
+ */
+export function ownCaretSize(at: CaretBox, vertical: boolean, lineHeight: number): { width: number; height: number } {
+  const span = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0);
+  return vertical
+    ? { width: Math.max(span(at.right - at.left), lineHeight), height: 2 }
+    : { width: 2, height: Math.max(span(at.bottom - at.top), lineHeight) };
+}
+
+/**
  * **縦書きで、押した点にいちばん近い字の境目を選ぶ**（本体の出先の原稿エディター `nearestCaret` に倣う。
  * iPad は caretRangeFromPoint でも、自分で置くカーソルでも、縦書きで1字ずれた。本体 2026-10-05）。
  *

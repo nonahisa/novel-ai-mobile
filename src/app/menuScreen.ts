@@ -24,6 +24,31 @@ function itemButton(item: PlannedItem): string {
   return `<button class="menu-item planned" aria-disabled="true" data-planned="${escapeHtml(tell)}">${escapeHtml(item.label)}<span class="menu-badge">未</span>${note}</button>`;
 }
 
+/*
+  絵（画面の見本「Android版 画面デザイン」と同じ線の絵。24 の枡に 2 の線）。
+  見本どおり、作品は本を2冊、書くはペン、提案は吹き出し、ほかは点3つ
+*/
+const ICON_BACK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>`;
+export const TAB_ICONS: Readonly<Record<PlannedTab["id"], string>> = {
+  works: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5h6v14H4zM14 5h6v14h-6z"/></svg>`,
+  write: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>`,
+  proposals: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 4h14v12H9l-4 4z"/></svg>`,
+  other: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/></svg>`,
+};
+
+/**
+ * 上のバー（見本の topbar）。`back` なら左に丸い［戻る］、題の下に小さい補い（`sub`）。
+ * `subId` を付けると、補いの所をあとから書き換えられる（縦書きの試しの字数）
+ */
+export function renderAppBar(title: string, options: { back?: boolean; sub?: string; subId?: string } = {}): string {
+  const back = options.back ? `<button class="appbar-back" data-back aria-label="戻る">${ICON_BACK}</button>` : "";
+  const sub =
+    options.sub !== undefined || options.subId
+      ? `<small${options.subId ? ` id="${options.subId}"` : ""}>${escapeHtml(options.sub ?? "")}</small>`
+      : "";
+  return `<header class="appbar">${back}<span class="appbar-title">${escapeHtml(title)}${sub}</span></header>`;
+}
+
 /** タブの画面 */
 export function renderTab(tab: PlannedTab, version?: string): string {
   const sections = tab.sections
@@ -37,9 +62,8 @@ export function renderTab(tab: PlannedTab, version?: string): string {
     )
     .join("");
   return `
-    <header class="appbar"><span class="appbar-title">${escapeHtml(tab.screen)}</span></header>
+    ${renderAppBar(tab.screen, version ? { sub: version } : {})}
     <p class="menu-lead">設計書 4.3・4.4 の【案】のとおりに並べています。灰色の項目は、まだ作っていません。</p>
-    ${version ? `<p class="menu-how">${escapeHtml(version)}</p>` : ""}
     ${sections}`;
 }
 
@@ -65,7 +89,7 @@ export function renderTabBar(tabs: readonly PlannedTab[], current: string | unde
   return tabs
     .map(
       (tab) =>
-        `<button class="tab${tab.id === current ? " current" : ""}" data-tab="${tab.id}"${tab.id === current ? ' aria-current="page"' : ""}>${escapeHtml(tab.label)}</button>`
+        `<button class="tab${tab.id === current ? " current" : ""}" data-tab="${tab.id}"${tab.id === current ? ' aria-current="page"' : ""}>${TAB_ICONS[tab.id]}${escapeHtml(tab.label)}</button>`
     )
     .join("");
 }

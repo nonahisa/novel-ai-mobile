@@ -1,25 +1,55 @@
 /**
- * 動作確認ページの見た目。
- * スマホの縦画面で読めることだけを狙う。製品の意匠はまだ決めない。
+ * モバイル版の見た目。
+ *
+ * 色・書体・枠は、画面の見本（アーティファクト「Android版 画面デザイン」＝ `docs/画面デザイン.html`）に
+ * そろえる（2026-11-12 作者「見た目をアーティファクトのテスト画面に寄せてください」「並びまで」）。
+ * 色の印（--paper ほか）と値は見本と同じ。古い名前（--bg・--fg・--sub・--card）は見本の印を指す。
+ *
+ * 書体は端末のもの（見本の Google Fonts は読まない。明朝は後で設定から取り寄せる：2026-10-31 作者）。
+ * 原稿の欄（.draft-input・.ec-pane・カーソルの印）の大きさと置き場所は、この直しでは変えない
+ * （iPad で 0.1.19 を確かめている最中のため）。
  */
 
 :root {
   color-scheme: light dark;
-  --bg: #fdfcfa;
-  --fg: #1f2328;
-  --sub: #666f7a;
-  --line: #dfe1e5;
-  --card: #ffffff;
-  --accent: #3b5c8f;
+  --paper: #f4f6f9;
+  --surface: #ffffff;
+  --sunk: #eceff4;
+  --ink: #1b2130;
+  --muted: #5b6475;
+  --line: #d6dbe4;
+  --accent: #2c4a8c;
+  --accent-soft: #e3e9f6;
+  --shu: #b8432e;
+  --shu-soft: #f8e6e1;
+  --ok: #2f7a4f;
+  --warn: #9a6700;
+  --warn-soft: #fbf0d4;
+  --select: #c9d6f2;
+  --font-ui: "BIZ UDPGothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
+  --font-ms: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  /* 古い名前（ほかの所がまだ使う） */
+  --bg: var(--surface);
+  --fg: var(--ink);
+  --sub: var(--muted);
+  --card: var(--surface);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14171c;
-    --fg: #e6e8ea;
-    --sub: #9aa3ad;
-    --line: #2c313a;
-    --card: #1b1f26;
-    --accent: #8fb0e0;
+    --paper: #101319;
+    --surface: #181c24;
+    --sunk: #20252f;
+    --ink: #e5e8ef;
+    --muted: #9ba3b3;
+    --line: #2d3440;
+    --accent: #93abe8;
+    --accent-soft: #24304a;
+    --shu: #f0846d;
+    --shu-soft: #3a2420;
+    --ok: #74c69a;
+    --warn: #e2b44f;
+    --warn-soft: #3a3020;
+    --select: #2e4472;
   }
 }
 
@@ -30,11 +60,11 @@
 body {
   margin: 0;
   padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
-  background: var(--bg);
-  color: var(--fg);
-  font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
+  background: var(--sunk);
+  color: var(--ink);
+  font-family: var(--font-ui);
   font-size: 15px;
-  line-height: 1.7;
+  line-height: 1.75;
 }
 
 h1 {
@@ -51,7 +81,7 @@ h2 {
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 14px;
   margin-bottom: 14px;
 }
@@ -140,13 +170,15 @@ ruby rt {
   text-align: left;
 }
 
+/* 押し口は見本の .btn.pri（藍の地に地の色の字。暗い画面でも字が読める） */
 button {
   font: inherit;
   padding: 10px 18px;
   border: none;
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--accent);
-  color: #fff;
+  color: var(--surface);
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -184,21 +216,51 @@ button {
     iOS は「ページの頭へ送る」をするので、← の1回目が戻らなかった（2026-11-07 Mac。押した位置は 30pt 付近）
   */
   min-height: calc(52px + env(safe-area-inset-top));
-  padding: env(safe-area-inset-top) 12px 0;
+  padding: env(safe-area-inset-top) 8px 0 4px;
   margin: calc(-1 * env(safe-area-inset-top)) -12px 8px;
-  background: var(--bg);
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
+/* 見本の上のバー：左に丸い押し口、題（太字）と下の小さい補い */
 .appbar-title {
-  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  padding-left: 8px;
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.appbar-title small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+.appbar-back + .appbar-title {
+  padding-left: 0;
 }
 .appbar-back {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border: 0;
+  border-radius: 22px;
   background: none;
-  color: var(--fg);
-  font-size: 1.3rem;
-  min-width: 44px;
-  min-height: 44px;
+  color: var(--ink);
+  font-weight: 400;
+}
+.appbar-back svg {
+  width: 22px;
+  height: 22px;
 }
 .tabbar {
   position: fixed;
@@ -209,76 +271,109 @@ button {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   padding-bottom: env(safe-area-inset-bottom);
-  background: var(--card);
+  background: var(--surface);
   border-top: 1px solid var(--line);
 }
 .tabbar[hidden] {
   display: none;
 }
+/* 見本の下のタブ：高さ 64、絵と名前。いまのタブは藍で、絵を淡い藍の丸い地に載せる */
 .tab {
-  min-height: 56px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  padding: 0;
   border: 0;
+  border-radius: 0;
   background: none;
-  color: var(--sub);
+  color: var(--muted);
   font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+}
+.tab svg {
+  width: 22px;
+  height: 22px;
 }
 .tab.current {
   color: var(--accent);
-  font-weight: 600;
-  box-shadow: inset 0 3px 0 var(--accent);
+  font-weight: 700;
+}
+.tab.current svg {
+  width: 52px;
+  height: 28px;
+  padding: 2px 14px;
+  border-radius: 12px;
+  background: var(--accent-soft);
 }
 .menu-lead,
 .menu-how {
-  color: var(--sub);
+  color: var(--muted);
   font-size: 0.85rem;
   margin: 4px 0 8px;
 }
+/* まとまりの見出しは、見本の章の見出し（小さく、字間を空けた補いの色） */
 .menu-section h2 {
-  font-size: 0.95rem;
-  margin: 16px 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 20px 4px 2px;
+}
+.menu-section .menu-how {
+  font-size: 12px;
+  margin: 0 4px 8px;
 }
 .menu-items {
   display: grid;
-  gap: 6px;
+  gap: 10px;
 }
+/* 項目は見本の札（地の色・罫・角 14） */
 .menu-item {
   display: block;
   width: 100%;
   min-height: 48px;
   text-align: left;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--fg);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
+  font-weight: 700;
 }
 .menu-item.built {
   border-color: var(--accent);
+  color: var(--accent);
 }
 .menu-item.planned {
-  color: var(--sub);
-  background: transparent;
-  opacity: 0.55;
+  color: var(--muted);
+  font-weight: 400;
+  opacity: 0.6;
 }
 .menu-note {
   display: block;
-  font-size: 0.78rem;
-  color: var(--sub);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
   margin-top: 2px;
 }
 .menu-badge,
 .menu-ai {
   display: inline-block;
   margin-left: 6px;
-  padding: 0 6px;
-  border-radius: 6px;
-  font-size: 0.7rem;
-  border: 1px solid var(--line);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 400;
+  background: var(--sunk);
+  color: var(--muted);
   vertical-align: 1px;
 }
 .menu-ai {
-  border-color: var(--accent);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .menu-search {
@@ -286,9 +381,9 @@ button {
   min-height: 44px;
   padding: 8px 12px;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--fg);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
   /* 16px 未満の欄に焦点が入ると、iOS がページを拡大して左端が切れる（2026-11-07 Mac の iOS シミュレーター） */
   font-size: 16px;
@@ -305,7 +400,7 @@ button {
   position: fixed;
   left: 16px;
   right: 16px;
-  bottom: calc(72px + env(safe-area-inset-bottom));
+  bottom: calc(76px + env(safe-area-inset-bottom));
   z-index: 4;
   padding: 10px 14px;
   border-radius: 10px;
@@ -344,19 +439,22 @@ button {
   gap: 8px;
   margin: 8px 0;
 }
+/* 見本の .btn（丸い押し口）と .btn.pri（藍の地） */
 .draft-actions button {
   flex: 1;
   min-height: 44px;
-  border-radius: 10px;
+  border-radius: 999px;
   border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--fg);
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
+  font-size: 14px;
 }
 .draft-actions .primary {
   border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
+  background: var(--accent);
+  color: var(--surface);
+  font-weight: 700;
 }
 .draft-result {
   white-space: pre-wrap;
@@ -380,26 +478,30 @@ button {
   gap: 6px;
   margin: 6px 0;
 }
+/* 見本の .pill（選んでいるものは藍の地） */
 .seg button {
   flex: 1;
   min-height: 40px;
+  padding: 4px 10px;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--fg);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 13px;
+  font-weight: 400;
 }
 .seg button[aria-pressed="true"] {
   border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
+  background: var(--accent);
+  color: var(--surface);
+  font-weight: 700;
 }
 .seg button:disabled {
   opacity: 0.45;
 }
 .warn {
-  color: #b3261e;
+  color: var(--shu);
 }
 .draft-input.horizontal,
 .draft-preview.horizontal {
@@ -608,7 +710,7 @@ button {
   inline-size: 100%;
   max-inline-size: 360px;
   padding: 18px 16px 12px;
-  border-radius: 14px;
+  border-radius: 20px;
   background: var(--card);
   color: var(--fg);
 }
@@ -622,14 +724,15 @@ button {
 .dialog-actions button {
   flex: 1;
   min-height: 44px;
-  border-radius: 10px;
+  border-radius: 999px;
   border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--fg);
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
+  font-size: 14px;
 }
 .dialog-actions .danger {
-  border-color: #b3261e;
-  color: #b3261e;
-  font-weight: 600;
+  border-color: var(--shu);
+  color: var(--shu);
+  font-weight: 700;
 }

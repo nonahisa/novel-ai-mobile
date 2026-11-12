@@ -11,6 +11,7 @@ import {
   clampCaretToPane,
   isPlainShape,
   nearestBoundary,
+  ownCaretSize,
   shouldMoveCaret,
   locateOffset,
   replaceRange,
@@ -194,7 +195,11 @@ export function mountEditablePane(
   const describeOwnCaret = (): string => {
     if (!ownCaret) return "印なし";
     const r = ownCaret.getBoundingClientRect();
+    // 印は pointer-events:none なので、そのままでは elementFromPoint に拾われない（0.1.17 の記録の
+    // 「上 div#draftInput」はこのため）。測るあいだだけ拾われるようにする
+    ownCaret.style.pointerEvents = "auto";
     const top = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+    ownCaret.style.pointerEvents = "";
     const name = top === ownCaret ? "印" : top ? `${top.tagName.toLowerCase()}${top.id ? `#${top.id}` : ""}${top.className && typeof top.className === "string" ? `.${top.className.split(" ")[0]}` : ""}` : "なし";
     const vv = window.visualViewport;
     const round = (n: number) => Math.round(n);
@@ -215,8 +220,9 @@ export function mountEditablePane(
     ownCaret.className = "own-caret";
     ownCaret.setAttribute("aria-hidden", "true");
     // 縦書きは横の棒（列の太さ）、横書きは縦の棒（行の高さ）
-    ownCaret.style.width = vertical ? `${Math.max(at.width, lineHeight)}px` : "2px";
-    ownCaret.style.height = vertical ? "2px" : `${Math.max(at.height, lineHeight)}px`;
+    const size = ownCaretSize(at, vertical, lineHeight);
+    ownCaret.style.width = `${size.width}px`;
+    ownCaret.style.height = `${size.height}px`;
     ownState = {
       offset,
       x: vertical ? at.left : at.left - 1,

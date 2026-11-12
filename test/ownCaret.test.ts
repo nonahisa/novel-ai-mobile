@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { caretFromNeighbors } from "../src/app/editableText";
+import { caretFromNeighbors, ownCaretSize } from "../src/app/editableText";
 
 /**
  * こちらでカーソルの印を描いているあいだ、ブラウザの印を透明にする
@@ -53,5 +53,22 @@ describe("iOS の縦書き：既存の字の間でも、こちらの印を出す
   });
   test("描画が止まっていても、50ms の時計で描く", () => {
     expect(pane).toContain("window.setTimeout(run, 50)");
+  });
+});
+
+describe("自前の印の大きさ（2026-11-12 iPad mini・0.1.17：字の箱から出した位置には width が無く、印の幅が 0 だった）", () => {
+  test("縦書きは、箱の左右の差（width が無くても）と字の大きさの大きいほう×2", () => {
+    expect(ownCaretSize({ left: 556, right: 575, top: 523, bottom: 523 }, true, 16)).toEqual({ width: 19, height: 2 });
+    expect(ownCaretSize({ left: 556, right: 556, top: 523, bottom: 523 }, true, 16)).toEqual({ width: 16, height: 2 });
+  });
+  test("横書きは 2×（箱の上下の差と字の大きさの大きいほう）", () => {
+    expect(ownCaretSize({ left: 10, right: 10, top: 20, bottom: 44 }, false, 16)).toEqual({ width: 2, height: 24 });
+  });
+  test("欄は ownCaretSize で大きさを決める（at.width・at.height を直に読まない）", () => {
+    expect(pane).toContain("ownCaretSize(at, vertical, lineHeight)");
+    expect(pane).not.toMatch(/at\.width|at\.height/);
+  });
+  test("印の上の要素を測るあいだだけ、印も拾われるようにする", () => {
+    expect(pane).toMatch(/pointerEvents = "auto";\s*\n\s*const top = document\.elementFromPoint/);
   });
 });

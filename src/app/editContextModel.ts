@@ -114,7 +114,7 @@ export function renderPaneHtml(state: PaneState, terms: readonly TermSpan[] = []
   // 用語は前から順に並んでいて重ならない（`findTermSpans`）。字を進めながら、いま当たっている用語を追う
   let t = 0;
   while (i <= state.text.length) {
-    if (i === state.selection) html += '<span class="caret" aria-hidden="true"></span>';
+    if (i === state.selection) html += '<span class="caret" aria-hidden="true">&#8203;</span>';
     if (i === state.text.length) break;
     const n = nextLength(state.text, i);
     const ch = state.text.slice(i, i + n);

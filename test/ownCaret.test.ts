@@ -72,3 +72,14 @@ describe("自前の印の大きさ（2026-11-12 iPad mini・0.1.17：字の箱�
     expect(pane).toMatch(/pointerEvents = "auto";\s*\n\s*const top = document\.elementFromPoint/);
   });
 });
+
+describe("B の縦書きの印は列の真ん中（2026-11-11 iPad mini「カーソルが行中央になっていません」）", () => {
+  test("見えない字を入れた inline の箱の上の線にする（vertical-align: middle で寄せない）", () => {
+    const rule = css.match(/\.ec-pane\.vertical \.caret\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(rule).toMatch(/display:\s*inline;/);
+    expect(rule).toMatch(/border-top:\s*2px/);
+    expect(rule).not.toMatch(/vertical-align/);
+    const model = readFileSync(new URL("../src/app/editContextModel.ts", import.meta.url), "utf8");
+    expect(model).toContain('<span class="caret" aria-hidden="true">&#8203;</span>');
+  });
+});

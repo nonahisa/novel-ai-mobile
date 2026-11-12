@@ -500,6 +500,12 @@ button {
 .seg button:disabled {
   opacity: 0.45;
 }
+/* hidden を付けた段・補いは出さない（.seg の display: flex が hidden に勝ち、A を選んでいても B の受け口の段が出ていた。
+   2026-11-13 iPad の確かめが済んでから直した） */
+.seg[hidden],
+.menu-how[hidden] {
+  display: none;
+}
 .warn {
   color: var(--shu);
 }

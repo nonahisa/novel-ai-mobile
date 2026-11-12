@@ -56,3 +56,25 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run sync:ios
+  e2e:
+    # 画面の自動テスト（pnpm run e2e。Playwright。作者 2026-11-12「CI に載せる」）。写真の撮影（shots）は入れない
+    # windows-latest には Edge が入っているので、playwright.config.ts の channel: "msedge" でブラウザを取り寄せずに走る
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # 組み立て（vite build）と vite preview は playwright.config.ts の webServer が行う（CI では毎回立て直す）
+      - run: pnpm run e2e
+      # 落ちたときだけ、どこで落ちたかの記録（写真・error-context.md）を残す
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-test-results
+          path: test-results/e2e
+          retention-days: 7

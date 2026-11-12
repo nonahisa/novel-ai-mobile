@@ -501,11 +501,12 @@ button {
   display: inline-block;
   animation: blink 1s steps(1) infinite;
 }
+/* 縦書きは、中に見えない字を1つ入れた inline の箱の上の線。箱の左右は前後の字と同じ（字の大きさ・
+   書体によらない）ので、線が列の真ん中に来る。inline-block で vertical-align: middle にすると、
+   字の大きさの半分ほど右へ寄った（2026-11-11 iPad mini「カーソルが行中央になっていません」） */
 .ec-pane.vertical .caret {
-  inline-size: 0;
-  block-size: 1em;
+  display: inline;
   border-top: 2px solid var(--accent);
-  vertical-align: middle;
 }
 .ec-pane.horizontal .caret {
   width: 0;

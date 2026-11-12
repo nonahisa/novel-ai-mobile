@@ -63,7 +63,7 @@ describe("変換中の線（線の向きは CSS。ここではどの字に線を
   test("1字ずつ span にし、カーソルの位置に印を置く。< & はタグにしない", () => {
     const html = renderPaneHtml({ ...composing("a<b", [{ start: 0, end: 1, style: "solid", thickness: "thin" }]), selection: 1 });
     expect(html).toBe(
-      '<span data-i="0" data-n="1" class="comp">a</span><span class="caret" aria-hidden="true"></span><span data-i="1" data-n="1">&lt;</span><span data-i="2" data-n="1">b</span>'
+      '<span data-i="0" data-n="1" class="comp">a</span><span class="caret" aria-hidden="true">&#8203;</span><span data-i="1" data-n="1">&lt;</span><span data-i="2" data-n="1">b</span>'
     );
   });
 

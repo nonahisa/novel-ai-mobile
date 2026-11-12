@@ -16,7 +16,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test screens",
+    "e2e": "playwright test screens fieldCheck",
     "shots": "playwright test shots",
     "sync": "pnpm run build && cap sync android",
     "apk": "pnpm run sync && cd android && .\\gradlew.bat assembleDebug",

@@ -756,3 +756,32 @@ button {
   color: var(--shu);
   font-weight: 700;
 }
+/* 字を1行打つ窓（`dialog.ts` の askText） */
+.dialog-input {
+  inline-size: 100%;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  /* 16px 未満の欄に焦点が入ると、iOS がページを拡大する */
+  font-size: 16px;
+}
+.dialog-note {
+  min-height: 1.2em;
+  margin: 6px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.dialog-actions .primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+  font-weight: 700;
+}
+/* C の［ルビ］［傍点］の知らせ。何も無いときは場所を取らない */
+#composedNote:empty {
+  display: none;
+}

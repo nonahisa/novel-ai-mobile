@@ -243,6 +243,11 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
     </div>
     ${support.ok ? "" : `<p class="menu-how" id="sinkWhy" hidden>${escapeHtml(support.reason)}</p>`}
     <p class="menu-lead" id="modeNote"></p>
+    <div class="seg" role="group" aria-label="ルビと傍点" id="composedTools" hidden>
+      <button id="composedRuby">ルビ</button>
+      <button id="composedEm">傍点</button>
+    </div>
+    <p class="draft-result" id="composedNote" role="status" hidden></p>
     <div class="draft-input vertical" id="draftInput" lang="ja" aria-label="原稿"></div>
     <div class="draft-input vertical" id="draftPane" lang="ja" aria-label="原稿（右傍線の形）" hidden></div>
     <div class="draft-input composed vertical" id="draftComposed" lang="ja" aria-label="原稿（組んで書く）" hidden></div>
@@ -267,6 +272,21 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   const paneEl = screen.querySelector<HTMLElement>("#draftPane")!;
   const composedEl = screen.querySelector<HTMLElement>("#draftComposed")!;
   let composedPane: ComposedPane | undefined;
+  const composedTools = screen.querySelector<HTMLElement>("#composedTools")!;
+  const composedNote = screen.querySelector<HTMLElement>("#composedNote")!;
+  const tellComposed = (message: string) => {
+    composedNote.textContent = message;
+  };
+  // 押しても欄の焦点と選択を外さない（選んだ字に振るため）
+  composedTools.querySelectorAll("button").forEach((b) => b.addEventListener("pointerdown", (e) => e.preventDefault()));
+  screen.querySelector<HTMLButtonElement>("#composedRuby")!.addEventListener("click", () => {
+    tellComposed("");
+    void composedPane?.addRuby(tellComposed);
+  });
+  screen.querySelector<HTMLButtonElement>("#composedEm")!.addEventListener("click", () => {
+    tellComposed("");
+    composedPane?.toggleEmphasis(tellComposed);
+  });
   const countEl = screen.querySelector<HTMLElement>("#draftCount")!;
   const preview = screen.querySelector<HTMLElement>("#draftPreview")!;
   const result = screen.querySelector<HTMLElement>("#draftResult")!;
@@ -325,6 +345,8 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
     input.hidden = mode !== "A";
     paneEl.hidden = mode !== "B";
     composedEl.hidden = mode !== "C";
+    composedTools.hidden = mode !== "C";
+    composedNote.hidden = mode !== "C";
     noteEl.textContent = modeNote();
     sinkSeg.hidden = mode !== "B";
     if (sinkWhy) sinkWhy.hidden = mode !== "B";

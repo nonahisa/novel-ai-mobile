@@ -6,6 +6,10 @@ import {
   composedHtml,
   deleteRange,
   describeCaretAt,
+  emphasisAction,
+  readingProblem,
+  rubySource,
+  rubyTarget,
   readComposed,
   snapOutOfChunk,
   tokenizeComposed,
@@ -144,5 +148,42 @@ describe("⌫・Delete で塊ごと消す", () => {
     expect(describeCaretAt(tokens, 0)).toBe("0字目（地の字）");
     expect(describeCaretAt(tokens, 4)).toBe("4字目（ルビ「漢字」の中）");
     expect(describeCaretAt(tokenizeComposed("{a|b}{{c}}"), 5)).toBe("5字目（ルビ「a」の直後・傍点「c」の直前）");
+  });
+});
+
+describe("［ルビ］［傍点］", () => {
+  const body = "吾輩は{猫|ねこ}{{である}}";
+  // 吾輩は 0〜3、ルビ 3〜9、傍点 9〜16
+  const tokens = tokenizeComposed(body);
+
+  test("選んだ字に振る・選んでいなければカーソルの前の漢字のまとまりに振る", () => {
+    expect(rubyTarget(body, tokens, 0, 2)).toEqual({ kind: "new", start: 0, end: 2, base: "吾輩" });
+    expect(rubyTarget("今日は晴天", tokenizeComposed("今日は晴天"), 5, 5)).toEqual({ kind: "new", start: 3, end: 5, base: "晴天" });
+    expect(rubyTarget(body, tokens, 3, 3).kind).toBe("none");
+  });
+
+  test("ルビにかかっている・すぐ前がルビなら、読みを直す", () => {
+    expect(rubyTarget(body, tokens, 9, 9)).toMatchObject({ kind: "edit", chunk: { base: "猫", reading: "ねこ" } });
+    expect(rubyTarget(body, tokens, 2, 5)).toMatchObject({ kind: "edit" });
+  });
+
+  test("傍点の塊・改行・記法の字を含む所には振らない", () => {
+    expect(rubyTarget(body, tokens, 9, 16).kind).toBe("none");
+    expect(rubyTarget("あ\nい", tokenizeComposed("あ\nい"), 0, 3).kind).toBe("none");
+    expect(readingProblem("ね|こ")).toBeDefined();
+    expect(readingProblem("ねこ")).toBeUndefined();
+  });
+
+  test("読みが空ならルビを外す（親の字だけ）", () => {
+    expect(rubySource("猫", "ねこ")).toBe("{猫|ねこ}");
+    expect(rubySource("猫", "")).toBe("猫");
+  });
+
+  test("［傍点］は付け外しの切り替え", () => {
+    expect(emphasisAction(body, tokens, 0, 2)).toEqual({ kind: "add", start: 0, end: 2, src: "{{吾輩}}" });
+    expect(emphasisAction(body, tokens, 16, 16)).toEqual({ kind: "remove", start: 9, end: 16, src: "である" });
+    expect(emphasisAction(body, tokens, 10, 12)).toMatchObject({ kind: "remove" });
+    expect(emphasisAction(body, tokens, 0, 0).kind).toBe("none");
+    expect(emphasisAction(body, tokens, 0, 5).kind).toBe("none");
   });
 });

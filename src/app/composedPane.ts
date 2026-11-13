@@ -5,12 +5,17 @@ import {
   composedHtml,
   deleteRange,
   describeCaretAt,
+  emphasisAction,
+  readingProblem,
+  rubySource,
+  rubyTarget,
   isChunk,
   readComposed,
   snapOutOfChunk,
   tokenizeComposed,
   widenToChunks,
 } from "./composedText";
+import { askText } from "./dialog";
 import { LINE_SUPPORT, plainValue, replaceRange } from "./editableText";
 
 /**
@@ -36,6 +41,10 @@ export interface ComposedPane {
   setText(text: string): void;
   /** 組んで出しているか（false なら、往復が合わなかったので記法のまま出している） */
   isComposed(): boolean;
+  /** ［ルビ］：選んだ字かカーソルの前の漢字に振る。ルビの所なら読みを直す（空にすると外す）。振れなければ notify に訳 */
+  addRuby(notify: (message: string) => void): Promise<void>;
+  /** ［傍点］：選んだ字に付ける。傍点の所なら外す。付けられなければ notify に訳 */
+  toggleEmphasis(notify: (message: string) => void): void;
   destroy(): void;
 }
 
@@ -56,6 +65,9 @@ export function mountComposedPane(
   let tokens: ComposedToken[] = [];
   let composed = true;
   let composing = false;
+  let lastSel: { start: number; end: number } | undefined;
+  /** いまの選択（焦点が外れていれば、欄の中の最後の選択） */
+  const currentSel = () => selectionOffsets() ?? lastSel ?? { start: current.length, end: current.length };
 
   /** 欄を本文から組み直す。往復が合わなければ記法のまま出す */
   const write = (next: string) => {
@@ -226,6 +238,9 @@ export function mountComposedPane(
    */
   const onSelectionChange = () => {
     if (composing) return;
+    // ［ルビ］［傍点］を押したときに焦点が外れても使えるように、欄の中の最後の選択を覚える
+    const seen = selectionOffsets();
+    if (seen) lastSel = seen;
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return;
     const node = selection.anchorNode;
@@ -281,6 +296,43 @@ export function mountComposedPane(
       write(next);
     },
     isComposed: () => composed,
+    async addRuby(notify) {
+      if (composing) return notify("変換を確定してから押してください");
+      if (!composed) return notify("組めていないので、記法のまま {漢字|かんじ} と打ってください");
+      const sel = currentSel();
+      const target = rubyTarget(current, tokens, sel.start, sel.end);
+      if (target.kind === "none") {
+        log(`C ［ルビ］：振らなかった（${target.reason}）`);
+        return notify(target.reason);
+      }
+      const base = target.kind === "new" ? target.base : target.chunk.base;
+      const reading = await askText(`「${base}」の読み`, {
+        initial: target.kind === "edit" ? target.chunk.reading : "",
+        note: target.kind === "edit" ? "読みを消して決めると、ルビを外します" : "",
+        validate: readingProblem,
+      });
+      element.focus({ preventScroll: true });
+      if (reading === undefined || (target.kind === "new" && reading === "")) {
+        placeCaret(sel.end);
+        log("C ［ルビ］：やめた");
+        return;
+      }
+      const start = target.kind === "new" ? target.start : target.chunk.start;
+      const end = target.kind === "new" ? target.end : target.chunk.start + target.chunk.src.length;
+      replace(start, end, rubySource(base, reading), target.kind === "new" ? `ルビを振った（${rubySource(base, reading)}）` : reading === "" ? `ルビを外した（${base}）` : `ルビの読みを直した（${rubySource(base, reading)}）`);
+    },
+    toggleEmphasis(notify) {
+      if (composing) return notify("変換を確定してから押してください");
+      if (!composed) return notify("組めていないので、記法のまま {{語}} と打ってください");
+      const sel = currentSel();
+      const action = emphasisAction(current, tokens, sel.start, sel.end);
+      if (action.kind === "none") {
+        log(`C ［傍点］：付けなかった（${action.reason}）`);
+        return notify(action.reason);
+      }
+      element.focus({ preventScroll: true });
+      replace(action.start, action.end, action.src, action.kind === "add" ? `傍点を付けた（${action.src}）` : `傍点を外した（${action.src}）`);
+    },
     destroy() {
       element.removeEventListener("beforeinput", onBeforeInput);
       element.removeEventListener("input", onInput);

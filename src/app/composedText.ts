@@ -208,3 +208,73 @@ export function describeCaretAt(tokens: readonly ComposedToken[], offset: number
   const parts = [before ? `${label(before)}の直後` : "", after ? `${label(after)}の直前` : ""].filter(Boolean);
   return `${offset}字目（${parts.length ? parts.join("・") : "地の字"}）`;
 }
+
+/*
+ * ---------- ［ルビ］［傍点］（3本目。本体の「ルビ付与」「傍点付与」に倣う） ----------
+ */
+
+/** ルビ・傍点の親の字に使えない字（記法を壊す字と改行） */
+const BAD_IN_NOTATION = /[{}|\r\n]/;
+/** カーソルの前の漢字のまとまり（選んでいないときに振る所。Android詳細設計書 5.6） */
+const KANJI_RUN = /[一-鿿㐀-䶿豈-﫿々〆ヶ]+$/u;
+
+export type RubyTarget =
+  | { kind: "new"; start: number; end: number; base: string }
+  | { kind: "edit"; chunk: Extract<ComposedChunk, { kind: "ruby" }> }
+  | { kind: "none"; reason: string };
+
+/**
+ * **［ルビ］を押したとき、どこに振るか**。
+ * - 選んだ範囲・カーソルがルビの塊にかかっていれば、そのルビの読みを直す（本体も、ルビのある所で振ると重ねずに読みの直しになる）
+ * - カーソルのすぐ前がルビの塊なら、そのルビの読みを直す
+ * - 範囲を選んでいれば、その字に振る（改行・記法の字・ほかの塊を含むなら振らない）
+ * - 選んでいなければ、カーソルの前の漢字のまとまりに振る
+ */
+export function rubyTarget(text: string, tokens: readonly ComposedToken[], start: number, end: number): RubyTarget {
+  const isRuby = (t: ComposedToken): t is Extract<ComposedChunk, { kind: "ruby" }> => t.kind === "ruby";
+  const touching = tokens.find((t) => isRuby(t) && ((start < t.start + t.src.length && end > t.start) || t.start + t.src.length === start && start === end));
+  if (touching && isRuby(touching)) return { kind: "edit", chunk: touching };
+  if (start !== end) {
+    const base = text.slice(start, end);
+    if (tokens.some((t) => isChunk(t) && t.start < end && t.start + t.src.length > start)) return { kind: "none", reason: "傍点の塊を含む所には振れません" };
+    if (BAD_IN_NOTATION.test(base)) return { kind: "none", reason: "改行や { } | を含む所には振れません" };
+    return { kind: "new", start, end, base };
+  }
+  const run = KANJI_RUN.exec(text.slice(0, start));
+  if (!run) return { kind: "none", reason: "振る字を選んでから押してください（カーソルの前に漢字があれば、その漢字に振ります）" };
+  return { kind: "new", start: start - run[0].length, end: start, base: run[0] };
+}
+
+/** 読みとして使えるか。使えなければ理由 */
+export function readingProblem(reading: string): string | undefined {
+  return BAD_IN_NOTATION.test(reading) ? "読みに改行や { } | は使えません" : undefined;
+}
+
+/** ルビの記法（読みが空なら親の字だけ。ルビを外す） */
+export function rubySource(base: string, reading: string): string {
+  return reading === "" ? base : `{${base}|${reading}}`;
+}
+
+export type EmphasisAction =
+  | { kind: "add"; start: number; end: number; src: string }
+  | { kind: "remove"; start: number; end: number; src: string }
+  | { kind: "none"; reason: string };
+
+/**
+ * **［傍点］を押したとき**（本体と同じく付け外しの切り替え）。
+ * - 選んだ範囲・カーソルのすぐ前が傍点の塊なら、傍点を外す（中の字は残す）
+ * - 範囲を選んでいれば、その字に傍点を付ける（改行・記法の字・ルビの塊を含むなら付けない）
+ * - 選んでいなければ、字を選ぶよう知らせる
+ */
+export function emphasisAction(text: string, tokens: readonly ComposedToken[], start: number, end: number): EmphasisAction {
+  const em = tokens.find(
+    (t): t is Extract<ComposedChunk, { kind: "emphasis" }> =>
+      t.kind === "emphasis" && ((start < t.start + t.src.length && end > t.start) || (start === end && t.start + t.src.length === start))
+  );
+  if (em) return { kind: "remove", start: em.start, end: em.start + em.src.length, src: em.inner };
+  if (start === end) return { kind: "none", reason: "傍点を付ける字を選んでから押してください" };
+  const inner = text.slice(start, end);
+  if (tokens.some((t) => isChunk(t) && t.start < end && t.start + t.src.length > start)) return { kind: "none", reason: "ルビの塊を含む所には付けられません" };
+  if (BAD_IN_NOTATION.test(inner)) return { kind: "none", reason: "改行や { } | を含む所には付けられません" };
+  return { kind: "add", start, end, src: `{{${inner}}}` };
+}

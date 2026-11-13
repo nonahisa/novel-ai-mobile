@@ -4,6 +4,8 @@ import {
   chunkAround,
   chunkSignature,
   composedHtml,
+  deleteRange,
+  describeCaretAt,
   readComposed,
   snapOutOfChunk,
   tokenizeComposed,
@@ -113,5 +115,34 @@ describe("カーソルと範囲は塊を割らない", () => {
     expect(widenToChunks(tokens, 0, 3)).toEqual({ start: 0, end: 9 });
     expect(widenToChunks(tokens, 5, 10)).toEqual({ start: 1, end: 10 });
     expect(widenToChunks(tokens, 0, 1)).toEqual({ start: 0, end: 1 });
+  });
+});
+
+describe("⌫・Delete で塊ごと消す", () => {
+  // 「あ」0、ルビ 1〜9、「い」9、傍点 10〜15、末 15
+  const tokens = tokenizeComposed("あ{漢字|かんじ}い{{語}}");
+  test("カーソルのすぐ前が塊なら ⌫ で塊まるごと、すぐ後なら Delete で", () => {
+    expect(deleteRange(tokens, 9, 9, "backward")).toMatchObject({ start: 1, end: 9, chunk: { kind: "ruby" } });
+    expect(deleteRange(tokens, 15, 15, "backward")).toMatchObject({ start: 10, end: 15, chunk: { kind: "emphasis" } });
+    expect(deleteRange(tokens, 1, 1, "forward")).toMatchObject({ start: 1, end: 9 });
+  });
+
+  test("地の字の1字消しはブラウザに任せる（undefined）", () => {
+    expect(deleteRange(tokens, 1, 1, "backward")).toBeUndefined();
+    expect(deleteRange(tokens, 9, 9, "forward")).toBeUndefined();
+    expect(deleteRange(tokens, 0, 1, "backward")).toBeUndefined();
+  });
+
+  test("塊にかかった範囲・塊を含む範囲はこちらで消す（塊を割らない）", () => {
+    expect(deleteRange(tokens, 0, 4, "backward")).toEqual({ start: 0, end: 9 });
+    expect(deleteRange(tokens, 0, 10, "backward")).toEqual({ start: 0, end: 10 });
+  });
+
+  test("記録に残すカーソルの様子", () => {
+    expect(describeCaretAt(tokens, 9)).toBe("9字目（ルビ「漢字」の直後）");
+    expect(describeCaretAt(tokens, 1)).toBe("1字目（ルビ「漢字」の直前）");
+    expect(describeCaretAt(tokens, 0)).toBe("0字目（地の字）");
+    expect(describeCaretAt(tokens, 4)).toBe("4字目（ルビ「漢字」の中）");
+    expect(describeCaretAt(tokenizeComposed("{a|b}{{c}}"), 5)).toBe("5字目（ルビ「a」の直後・傍点「c」の直前）");
   });
 });

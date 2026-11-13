@@ -29,6 +29,22 @@ async function caretToEnd(page: Page): Promise<void> {
   });
 }
 
+/** 最初の塊のすぐ後（after）・すぐ前（before）にカーソルを置く */
+async function caretBesideFirstChunk(page: Page, side: "after" | "before"): Promise<void> {
+  const pane = page.locator("#draftComposed");
+  await pane.click();
+  await pane.evaluate((el, where) => {
+    const chunk = el.querySelector(".chunk")!;
+    const range = document.createRange();
+    if (where === "after") range.setStart(chunk.nextSibling!, 0);
+    else range.setStart(chunk.previousSibling!, (chunk.previousSibling!.nodeValue ?? "").length);
+    range.collapse(true);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }, side);
+}
+
 test.describe("C 組んで書く", () => {
   test("ルビと傍点が振り仮名・圏点の塊で組まれ、中には打てない", async ({ page }) => {
     await openC(page);
@@ -70,5 +86,47 @@ test.describe("C 組んで書く", () => {
   test("スマホの幅でも、3つの形の切り替えが横にはみ出さない", async ({ page }) => {
     await openC(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+
+  test("⌫ で、すぐ前の塊がまるごと消える（ほかの字は残る）", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    const chunks = await pane.locator(".chunk").count();
+    await caretBesideFirstChunk(page, "after");
+    await page.keyboard.press("Backspace");
+    await expect(pane.locator(".chunk")).toHaveCount(chunks - 1);
+    await expect(page.locator("#imeLog")).toContainText("⌫ で塊を消した（{吾輩|わがはい}）");
+    // 続けて打つと、消した所に入る
+    await page.keyboard.insertText("我が輩");
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("我が輩は猫である。")).toBe(true);
+  });
+
+  test("Delete で、すぐ後の塊がまるごと消える", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    const chunks = await pane.locator(".chunk").count();
+    await caretBesideFirstChunk(page, "before");
+    await page.keyboard.press("Delete");
+    await expect(pane.locator(".chunk")).toHaveCount(chunks - 1);
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("は猫である。")).toBe(true);
+  });
+
+  test("塊のすぐ前に打てる（塊の中に入らない）", async ({ page }) => {
+    await openC(page);
+    await caretBesideFirstChunk(page, "before");
+    await page.keyboard.insertText("「");
+    await expect(page.locator("#imeLog")).toContainText("ルビ「吾輩」の直前");
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("「{吾輩|わがはい}は猫")).toBe(true);
+  });
+
+  test("押した所の様子を記録に残す（実機の確かめを記録で裏付ける）", async ({ page }) => {
+    await openC(page);
+    await page.locator("#draftComposed .chunk").first().click();
+    await expect(page.locator("#imeLog")).toContainText("C 押した（点");
+    // 塊を押しても、カーソルは塊の外
+    await expect(page.locator("#imeLog")).not.toContainText("の中）");
   });
 });

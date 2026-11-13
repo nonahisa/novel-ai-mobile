@@ -172,3 +172,39 @@ export function widenToChunks(tokens: readonly ComposedToken[], start: number, e
   const tail = chunkAround(tokens, end);
   return { start: head ? head.start : start, end: tail ? tail.start + tail.src.length : end };
 }
+
+/**
+ * **消す範囲**（⌫・Delete。2026-11-13 作者の答えの2本目「⌫ で塊ごと消す」）。
+ * - 範囲を選んでいれば、塊を割らないように広げた範囲
+ * - カーソルのすぐ前（⌫）・すぐ後（Delete）が塊なら、その塊まるごと
+ * - そうでなければ undefined（地の字の1字消しはブラウザに任せる。こちらで組み直すと、iOS がカーソルの
+ *   印を描かなくなることがあった〈A の 2026-11-07 Mac #24〉ので、塊のときだけ手を出す）
+ */
+export function deleteRange(
+  tokens: readonly ComposedToken[],
+  start: number,
+  end: number,
+  direction: "backward" | "forward"
+): { start: number; end: number; chunk?: ComposedChunk } | undefined {
+  if (start !== end) {
+    const wide = widenToChunks(tokens, start, end);
+    return wide.start !== start || wide.end !== end || tokens.some((t) => isChunk(t) && t.start >= wide.start && t.start < wide.end)
+      ? wide
+      : undefined;
+  }
+  const chunk = tokens.find(
+    (t): t is ComposedChunk => isChunk(t) && (direction === "backward" ? t.start + t.src.length === start : t.start === start)
+  );
+  return chunk ? { start: chunk.start, end: chunk.start + chunk.src.length, chunk } : undefined;
+}
+
+/** 記録に残す、カーソルの所の様子（塊の直前・直後・地の字）。実機の確かめを記録で裏付けるため */
+export function describeCaretAt(tokens: readonly ComposedToken[], offset: number): string {
+  const label = (c: ComposedChunk) => (c.kind === "ruby" ? `ルビ「${c.base}」` : `傍点「${c.inner}」`);
+  const inside = chunkAround(tokens, offset);
+  if (inside) return `${offset}字目（${label(inside)}の中）`;
+  const before = tokens.find((t): t is ComposedChunk => isChunk(t) && t.start + t.src.length === offset);
+  const after = tokens.find((t): t is ComposedChunk => isChunk(t) && t.start === offset);
+  const parts = [before ? `${label(before)}の直後` : "", after ? `${label(after)}の直前` : ""].filter(Boolean);
+  return `${offset}字目（${parts.length ? parts.join("・") : "地の字"}）`;
+}

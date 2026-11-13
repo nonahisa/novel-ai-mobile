@@ -3,6 +3,8 @@ import {
   type ComposedToken,
   chunkSignature,
   composedHtml,
+  deleteRange,
+  describeCaretAt,
   isChunk,
   readComposed,
   snapOutOfChunk,
@@ -22,6 +24,11 @@ import { LINE_SUPPORT, plainValue, replaceRange } from "./editableText";
  *   本文の塊と合わなくなったとき（`}` を打って記法が閉じた・ブラウザが塊を消した・空の要素が残った）
  * - 入る前と組み直すたびに「記法 → 欄 → 記法」の往復を確かめ、1字でも違えば組まずに記法のまま出す
  *   （安全弁。本体の 6.34.5）
+ * - ⌫・Delete は、カーソルのすぐ前・すぐ後が塊なら塊まるごと、塊にかかった範囲なら塊ごと消す。地の字の
+ *   1字消しはブラウザのまま（2本目。`composedText.ts` の `deleteRange`）
+ * - カーソルが塊の中や欄の直下に来たら、近いほうの塊の外（字の節の中）へ置き直す
+ * - 押した・変換の始まり・確定のあと・⌫ で塊を消した、を記録（trial-log）に残す。塊の直前・直後に
+ *   打てたかを、実機の確かめで記録から裏付ける
  * - 用語の色は、この形ではまだ付けない
  */
 export interface ComposedPane {
@@ -178,6 +185,13 @@ export function mountComposedPane(
     if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") {
       e.preventDefault();
       replace(sel.start, sel.end, "\n", "改行");
+    } else if (e.inputType.startsWith("delete")) {
+      // 塊のすぐ前・すぐ後・塊にかかった範囲だけ、こちらで塊ごと消す（地の字の1字消しはブラウザのまま）
+      const direction = /Forward$/.test(e.inputType) ? "forward" : "backward";
+      const range = deleteRange(tokens, sel.start, sel.end, direction);
+      if (!range) return;
+      e.preventDefault();
+      replace(range.start, range.end, "", range.chunk ? `${direction === "backward" ? "⌫" : "Delete"} で塊を消した（${range.chunk.src}）` : "塊にかかった範囲を消した");
     } else if (e.inputType === "insertFromPaste" || e.inputType === "insertFromDrop") {
       const data = e.dataTransfer?.getData("text/plain") ?? e.data ?? "";
       e.preventDefault();
@@ -195,18 +209,52 @@ export function mountComposedPane(
   };
   const onCopyEvent = (e: ClipboardEvent) => onCopy(e, false);
   const onCutEvent = (e: ClipboardEvent) => onCopy(e, true);
-  const onInput = () => readBack();
+  const onInput = (e: Event) => {
+    readBack();
+    // 変換を通さずに入った字（ハードのキーボード・記号のキーなど）も、入った所を記録に残す
+    const input = e as InputEvent;
+    if (!composing && input.inputType === "insertText") logCaret(`C 打った「${input.data ?? ""}」のあと`);
+  };
+  /** カーソルの所の様子を記録に残す（塊の直前・直後に打てたかを、記録で裏付ける） */
+  const logCaret = (label: string) => {
+    const sel = selectionOffsets();
+    log(`${label}：${sel ? (sel.start === sel.end ? describeCaretAt(tokens, sel.start) : `${sel.start}〜${sel.end}字目を選んでいる`) : "カーソルなし"}`);
+  };
+  /**
+   * **カーソルが塊の中や欄の直下に来たら、近いほうの塊の外（字の節の中）へ置き直す**（本体もルビの中には
+   * カーソルを入れない。字の節の中に置くのは、iOS が字の節の外のカーソルを描かないことがあったため）
+   */
+  const onSelectionChange = () => {
+    if (composing) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return;
+    const node = selection.anchorNode;
+    if (!node || !element.contains(node)) return;
+    const inChunk = (node instanceof Element ? node : node.parentElement)?.closest("[data-src]");
+    const onPane = node === element;
+    if (!inChunk && !onPane) return;
+    const sel = selectionOffsets();
+    if (!sel) return;
+    const offset = inChunk instanceof HTMLElement ? snapOutOfChunk(tokens, sel.start) : sel.start;
+    placeCaret(offset);
+    log(`C カーソルを${inChunk ? "塊の外" : "字の節の中"}へ置き直した：${describeCaretAt(tokens, offset)}`);
+  };
+  /** 押したら、押した所のカーソルの様子を記録に残す（iPad・Android の実機の確かめ） */
+  const onPointerUp = (e: PointerEvent) => {
+    const point = `${Math.round(e.clientX)}/${Math.round(e.clientY)}`;
+    window.setTimeout(() => logCaret(`C 押した（点 ${point}、${e.pointerType}）`), 150);
+  };
   const onCompStart = () => {
     composing = true;
-    const sel = selectionOffsets();
-    log(`C 変換の始まり（${sel ? sel.start : "-"}字目）`);
+    logCaret("C 変換の始まり");
   };
   const onCompEnd = (e: CompositionEvent) => {
     composing = false;
-    log(`C 確定「${e.data}」`);
     // 確定の字が入りきってから形を見る（端末によって compositionend と input の順が違う）
     window.setTimeout(() => {
-      if (!composing) readBack();
+      if (composing) return;
+      readBack();
+      logCaret(`C 確定「${e.data}」のあと`);
     }, 0);
   };
 
@@ -221,6 +269,8 @@ export function mountComposedPane(
   element.addEventListener("cut", onCutEvent);
   element.addEventListener("compositionstart", onCompStart);
   element.addEventListener("compositionend", onCompEnd);
+  element.addEventListener("pointerup", onPointerUp);
+  document.addEventListener("selectionchange", onSelectionChange);
   write(text);
   log(composed ? `C 組んだ（塊 ${tokens.filter(isChunk).length}つ）` : "C 記法のまま出した");
 
@@ -238,6 +288,8 @@ export function mountComposedPane(
       element.removeEventListener("cut", onCutEvent);
       element.removeEventListener("compositionstart", onCompStart);
       element.removeEventListener("compositionend", onCompEnd);
+      element.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("selectionchange", onSelectionChange);
       stopWatching();
     },
   };

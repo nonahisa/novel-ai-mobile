@@ -45,6 +45,24 @@ async function caretBesideFirstChunk(page: Page, side: "after" | "before"): Prom
   }, side);
 }
 
+/** 最初の塊のすぐ後の地の字の from〜to 字目を選ぶ（見本では「は猫である。名前は…」） */
+async function selectAfterFirstChunk(page: Page, from: number, to: number): Promise<void> {
+  const pane = page.locator("#draftComposed");
+  await pane.click();
+  await pane.evaluate(
+    (el, [a, b]) => {
+      const node = el.querySelector(".chunk")!.nextSibling!;
+      const range = document.createRange();
+      range.setStart(node, a);
+      range.setEnd(node, b);
+      const sel = window.getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(range);
+    },
+    [from, to]
+  );
+}
+
 test.describe("C 組んで書く", () => {
   test("ルビと傍点が振り仮名・圏点の塊で組まれ、中には打てない", async ({ page }) => {
     await openC(page);
@@ -128,5 +146,68 @@ test.describe("C 組んで書く", () => {
     await expect(page.locator("#imeLog")).toContainText("C 押した（点");
     // 塊を押しても、カーソルは塊の外
     await expect(page.locator("#imeLog")).not.toContainText("の中）");
+  });
+
+  test("［ルビ］：選んだ字に、窓で打った読みを振る", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    const rubies = await pane.locator(".chunk-ruby").count();
+    await expect(page.locator("#composedTools")).toBeVisible();
+    await selectAfterFirstChunk(page, 1, 2); // 「猫」
+    await page.locator("#composedRuby").click();
+    await expect(page.locator(".dialog-message")).toHaveText("「猫」の読み");
+    await page.locator("#dialogInput").fill("ねこ");
+    await page.locator('.dialog [data-answer="yes"]').click();
+    await expect(pane.locator(".chunk-ruby")).toHaveCount(rubies + 1);
+    await expect(page.locator("#imeLog")).toContainText("ルビを振った（{猫|ねこ}）");
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("{吾輩|わがはい}は{猫|ねこ}である。")).toBe(true);
+  });
+
+  test("［ルビ］：すぐ前のルビの読みを直す・読みを消すと外す", async ({ page }) => {
+    await openC(page);
+    await caretBesideFirstChunk(page, "after");
+    await page.locator("#composedRuby").click();
+    await expect(page.locator("#dialogInput")).toHaveValue("わがはい");
+    await page.locator("#dialogInput").fill("");
+    await page.locator('.dialog [data-answer="yes"]').click();
+    await expect(page.locator("#imeLog")).toContainText("ルビを外した（吾輩）");
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("吾輩は猫である。")).toBe(true);
+  });
+
+  test("［ルビ］：読みに | は使えない。［やめる］なら何も変えない", async ({ page }) => {
+    await openC(page);
+    await selectAfterFirstChunk(page, 1, 2);
+    await page.locator("#composedRuby").click();
+    await page.locator("#dialogInput").fill("ね|こ");
+    await page.locator('.dialog [data-answer="yes"]').click();
+    await expect(page.locator(".dialog-note")).toContainText("使えません");
+    await page.locator('.dialog [data-answer="no"]').click();
+    await expect(page.locator(".dialog")).toHaveCount(0);
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("{吾輩|わがはい}は猫である。")).toBe(true);
+  });
+
+  test("［ルビ］：振る字が無ければ訳を知らせる", async ({ page }) => {
+    await openC(page);
+    await caretBesideFirstChunk(page, "before");
+    await page.locator("#composedRuby").click();
+    await expect(page.locator("#composedNote")).toContainText("選んでから押してください");
+    await expect(page.locator(".dialog")).toHaveCount(0);
+  });
+
+  test("［傍点］：選んだ字に付け、すぐ前の傍点を外す", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    const ems = await pane.locator(".chunk-em").count();
+    await selectAfterFirstChunk(page, 6, 8); // 「名前」
+    await page.locator("#composedEm").click();
+    await expect(pane.locator(".chunk-em")).toHaveCount(ems + 1);
+    await expect(page.locator("#imeLog")).toContainText("傍点を付けた（{{名前}}）");
+    // 付けたあとカーソルは塊のすぐ後。もう一度押すと外す
+    await page.locator("#composedEm").click();
+    await expect(pane.locator(".chunk-em")).toHaveCount(ems);
+    await expect(page.locator("#imeLog")).toContainText("傍点を外した（名前）");
   });
 });

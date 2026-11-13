@@ -10,6 +10,7 @@ import { editContextSupport, type Orientation } from "./editContextModel";
 import { mountEditContextPane, type EditContextPane } from "./editContextPane";
 import { mountImeSinkPane } from "./imeSinkPane";
 import { mountEditablePane } from "./editablePane";
+import { mountComposedPane, type ComposedPane } from "./composedPane";
 import {
   SAMPLE_TERM_INPUT,
   TERM_KINDS,
@@ -188,11 +189,13 @@ function mountAllActions(screen: HTMLElement): void {
   update();
 }
 
-/* ---------- 縦書き・横書きの試し（A：いまの形・B：右傍線） ---------- */
+/* ---------- 縦書き・横書きの試し（A：いまの形・B：右傍線・C：組んで書く） ---------- */
 
 const MODE_NOTES = {
   A: "A：いまの形。入力欄はブラウザのもの（本体の原稿エディターと同じ contenteditable）で、変換中の線もブラウザが描きます（縦書きでは行の左に出ます）。候補の窓は縦になります。",
   B: "B：右傍線の形（EditContext）。字と変換中の線をこの画面が描きます（縦書きでは右、横書きでは下）。文節ごとの太い線・細い線も出ます。入力欄の中ではルビ・傍点は記法の字のまま出ます（下の表示で見られます）。選択・元に戻すはまだありません。",
+  C: "C：組んで書く（本体の原稿エディターと同じ形）。ルビ・傍点を振り仮名・圏点で組んだまま打ちます。ルビ・傍点は1つの塊で、中には打てません。塊のすぐ前・すぐ後には打てます。用語の色はこの形ではまだ付けません。",
+  composeFailed: "C：組んで書く。本文を組んで記法へ戻したら元と合わなかったので、組まずに記法のまま出しています（本体と同じ安全弁）。",
   sink: "B：右傍線の形（見えない受け口）。カーソルの位置に重ねた透明な欄で日本語入力を受け、字と変換中の線をこの画面が描きます（縦書きでは右、横書きでは下）。線は変換中の字全体に1本で、文節ごとの太い線・細い線は出ません。入力欄の中ではルビ・傍点は記法の字のまま出ます。選択・元に戻すはまだありません。",
 } as const;
 
@@ -230,8 +233,9 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
       <button data-orient="horizontal" aria-pressed="false">横書き</button>
     </div>
     <div class="seg" role="group" aria-label="入力の形">
-      <button data-mode="A" aria-pressed="true">A いまの形（線は左）</button>
+      <button data-mode="A" aria-pressed="true">A いまの形</button>
       <button data-mode="B" aria-pressed="false">B 右傍線</button>
+      <button data-mode="C" aria-pressed="false">C 組んで書く</button>
     </div>
     <div class="seg" role="group" aria-label="B の受け口" id="sinkSeg" hidden>
       <button data-sink="ec" aria-pressed="true"${support.ok ? "" : " disabled"}>EditContext</button>
@@ -241,6 +245,7 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
     <p class="menu-lead" id="modeNote"></p>
     <div class="draft-input vertical" id="draftInput" lang="ja" aria-label="原稿"></div>
     <div class="draft-input vertical" id="draftPane" lang="ja" aria-label="原稿（右傍線の形）" hidden></div>
+    <div class="draft-input composed vertical" id="draftComposed" lang="ja" aria-label="原稿（組んで書く）" hidden></div>
     <div class="draft-actions">
       <button class="primary" id="draftSave">保存して読み戻す</button>
       <button id="draftReload">読み直す</button>
@@ -260,6 +265,8 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
       <pre class="ime-log" id="imeLog"></pre></details>`;
   const input = screen.querySelector<HTMLElement>("#draftInput")!;
   const paneEl = screen.querySelector<HTMLElement>("#draftPane")!;
+  const composedEl = screen.querySelector<HTMLElement>("#draftComposed")!;
+  let composedPane: ComposedPane | undefined;
   const countEl = screen.querySelector<HTMLElement>("#draftCount")!;
   const preview = screen.querySelector<HTMLElement>("#draftPreview")!;
   const result = screen.querySelector<HTMLElement>("#draftResult")!;
@@ -271,7 +278,7 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   // 前に選んでいた形で開く（2026-11-07 Mac：入り直すと A に戻っていた）
   const prefs = readTrialPrefs(support.ok);
   let orientation: Orientation = prefs.orientation;
-  let mode: "A" | "B" = prefs.mode;
+  let mode: "A" | "B" | "C" = prefs.mode;
   let pane: (EditContextPane & { setShowSink?(show: boolean): void }) | undefined;
   /** B の受け口。EditContext が無ければ（iOS など）見えない受け口だけ */
   let sinkKind: "ec" | "sink" = prefs.sinkKind;
@@ -301,19 +308,24 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   };
   const showText = () => {
     if (mode === "A") editable.setText(text);
-    else pane?.setText(text);
+    else if (mode === "B") pane?.setText(text);
+    else composedPane?.setText(text);
     update();
+    noteEl.textContent = modeNote();
   };
+  const modeNote = () =>
+    mode === "A" ? MODE_NOTES.A : mode === "C" ? (composedPane?.isComposed() === false ? MODE_NOTES.composeFailed : MODE_NOTES.C) : sinkKind === "ec" ? MODE_NOTES.B : MODE_NOTES.sink;
   const applyLayout = () => {
     writeTrialPrefs({ orientation, mode, sinkKind });
-    for (const el of [input, paneEl, preview]) {
+    for (const el of [input, paneEl, composedEl, preview]) {
       el.classList.toggle("vertical", orientation === "vertical");
       el.classList.toggle("horizontal", orientation === "horizontal");
     }
     pane?.setOrientation(orientation);
     input.hidden = mode !== "A";
     paneEl.hidden = mode !== "B";
-    noteEl.textContent = mode === "A" ? MODE_NOTES.A : sinkKind === "ec" ? MODE_NOTES.B : MODE_NOTES.sink;
+    composedEl.hidden = mode !== "C";
+    noteEl.textContent = modeNote();
     sinkSeg.hidden = mode !== "B";
     if (sinkWhy) sinkWhy.hidden = mode !== "B";
     screen
@@ -367,10 +379,11 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   );
   screen.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((button) =>
     button.addEventListener("click", () => {
-      const next = button.dataset.mode as "A" | "B";
+      const next = button.dataset.mode as "A" | "B" | "C";
       if (next === mode) return;
       mode = next;
       if (mode === "B" && !pane) mountPane();
+      if (mode === "C" && !composedPane) mountComposed();
       applyLayout();
       showText();
     })
@@ -390,6 +403,19 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   showSink.addEventListener("change", () => pane?.setShowSink?.(showSink.checked));
   const nativeEnterBox = screen.querySelector<HTMLInputElement>("#nativeEnter")!;
   nativeEnterBox.addEventListener("change", () => editable.setNativeEnter(nativeEnterBox.checked));
+
+  /** C の入力欄（組んで書く） */
+  function mountComposed(): void {
+    composedPane = mountComposedPane(
+      composedEl,
+      text,
+      (changed) => {
+        text = changed;
+        update();
+      },
+      log
+    );
+  }
 
   /** B の入力欄を、選んでいる受け口で作る */
   function mountPane(): void {
@@ -450,12 +476,14 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   });
 
   if (mode === "B") mountPane();
+  if (mode === "C") mountComposed();
   applyLayout();
   void load();
   return {
     isDirty: () => text !== (savedText ?? SAMPLE_TEXT),
     destroy() {
       pane?.destroy();
+      composedPane?.destroy();
       editable.destroy();
     },
   };

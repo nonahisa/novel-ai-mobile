@@ -137,12 +137,12 @@ export function saveFailureMessage(reason: WriteTextFailureReason | "cannot_enco
 
 /**
  * **試しの画面の選び方を覚える**（2026-11-07 Mac：試しへ入り直すと A に戻り、B を選んでいたことを
- * 覚えていなかった）。向き・A／B・B の受け口を、端末の中（localStorage）に置く。
+ * 覚えていなかった）。向き・A／B／C・B の受け口を、端末の中（localStorage）に置く。
  * 読めない・壊れている・この端末で使えない受け口（EditContext が無い）なら、初めの形に戻す。
  */
 export interface TrialPrefs {
   orientation: "vertical" | "horizontal";
-  mode: "A" | "B";
+  mode: "A" | "B" | "C";
   sinkKind: "ec" | "sink";
 }
 
@@ -154,7 +154,7 @@ export function parseTrialPrefs(raw: string | null, editContextOk: boolean): Tri
   try {
     const value = JSON.parse(raw) as Partial<Record<keyof TrialPrefs, unknown>>;
     const orientation = value.orientation === "horizontal" || value.orientation === "vertical" ? value.orientation : fallback.orientation;
-    const mode = value.mode === "A" || value.mode === "B" ? value.mode : fallback.mode;
+    const mode = value.mode === "A" || value.mode === "B" || value.mode === "C" ? value.mode : fallback.mode;
     const sinkKind = value.sinkKind === "sink" ? "sink" : value.sinkKind === "ec" && editContextOk ? "ec" : fallback.sinkKind;
     return { orientation, mode, sinkKind };
   } catch {

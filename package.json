@@ -1,7 +1,7 @@
 {
   "name": "novel-ai-mobile",
   "private": true,
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "統合小説執筆環境の Android 版（移植作業中）",
   "license": "MIT",
   "packageManager": "pnpm@10.34.9",
@@ -16,7 +16,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test screens fieldCheck",
+    "e2e": "playwright test screens fieldCheck composed",
     "shots": "playwright test shots",
     "sync": "pnpm run build && cap sync android",
     "apk": "pnpm run sync && cd android && .\\gradlew.bat assembleDebug",

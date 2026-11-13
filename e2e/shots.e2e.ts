@@ -9,7 +9,7 @@ import { expect, test } from "@playwright/test";
  * リポジトリには入れない。`pnpm run e2e` は `screens` のファイルだけを走らせるので、そのときは撮らない。
  */
 
-const SCREENS: { name: string; hash: string; prepare?: string }[] = [
+const SCREENS: { name: string; hash: string; prepare?: string; mode?: string }[] = [
   { name: "01-作品", hash: "#/works" },
   { name: "02-書く", hash: "#/write" },
   { name: "03-提案", hash: "#/proposals" },
@@ -18,6 +18,7 @@ const SCREENS: { name: string; hash: string; prepare?: string }[] = [
   { name: "06-縦書きの試し-縦", hash: "#/tategaki", prepare: "vertical" },
   { name: "07-縦書きの試し-横", hash: "#/tategaki", prepare: "horizontal" },
   { name: "08-動作確認ページ", hash: "#/check" },
+  { name: "09-縦書きの試し-C組んで書く", hash: "#/tategaki", prepare: "vertical", mode: "C" },
 ];
 
 for (const screen of SCREENS) {
@@ -25,6 +26,10 @@ for (const screen of SCREENS) {
     await page.goto(`/${screen.hash}`);
     await expect(page.locator(".appbar")).toBeVisible();
     if (screen.prepare) await page.locator(`[data-orient="${screen.prepare}"]`).click();
+    if (screen.mode) {
+      await expect(page.locator("#draftResult")).not.toBeEmpty();
+      await page.locator(`[data-mode="${screen.mode}"]`).click();
+    }
     // 字と絵が出そろってから撮る
     await page.evaluate(() => document.fonts.ready);
     const dir = `docs/画面の写真/自動/${info.project.name}`;

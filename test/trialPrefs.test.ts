@@ -7,10 +7,14 @@ describe("試しの画面の選び方を覚える（2026-11-07 Mac：入り直�
     expect(parseTrialPrefs(raw, true)).toEqual({ orientation: "horizontal", mode: "B", sinkKind: "sink" });
   });
 
+  test("C（組んで書く）も覚える（2026-11-13）", () => {
+    expect(parseTrialPrefs(JSON.stringify({ orientation: "vertical", mode: "C", sinkKind: "ec" }), true).mode).toBe("C");
+  });
+
   test("何も覚えていない・壊れているなら、初めの形（縦書き・A）", () => {
     expect(parseTrialPrefs(null, true)).toEqual({ orientation: "vertical", mode: "A", sinkKind: "ec" });
     expect(parseTrialPrefs("{壊れた", true)).toEqual({ orientation: "vertical", mode: "A", sinkKind: "ec" });
-    expect(parseTrialPrefs(JSON.stringify({ mode: "C", orientation: 3 }), true)).toEqual({ orientation: "vertical", mode: "A", sinkKind: "ec" });
+    expect(parseTrialPrefs(JSON.stringify({ mode: "Z", orientation: 3 }), true)).toEqual({ orientation: "vertical", mode: "A", sinkKind: "ec" });
   });
 
   test("EditContext の無い端末（iOS）では、覚えていても見えない受け口にする", () => {

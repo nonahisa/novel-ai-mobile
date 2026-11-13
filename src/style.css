@@ -569,6 +569,20 @@ button {
 .draft-input[hidden] {
   display: none;
 }
+/* C：組んで書く。ルビ・傍点は中に打てない塊（composedPane.ts）。改行は本文の改行の字のまま見せる */
+.draft-input.composed {
+  white-space: pre-wrap;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+.draft-input.composed:focus {
+  border-color: var(--accent);
+}
+.draft-input.composed .chunk {
+  /* 塊は1字のように扱う（中で折り返さない） */
+  white-space: nowrap;
+  cursor: default;
+}
 /* B：字と変換中の線をページが描く。縦書きは行の右、横書きは下に線 */
 .ec-pane {
   white-space: pre-wrap;

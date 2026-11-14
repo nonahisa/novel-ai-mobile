@@ -4,6 +4,7 @@ import { MemoryFileStore } from "../src/platform/memoryFileStore";
 import {
   RECOVERY_DIRECTORY_NAME,
   readTextFile,
+  setTextFileLog,
   writeTextFilePreservingFormat,
 } from "../src/platform/textFile";
 
@@ -63,7 +64,24 @@ describe("本文形式を保持した保存（モバイル版）", () => {
     const read = await readTextFile(store, FILE);
     const result = await writeTextFilePreservingFormat(store, FILE, "本文🐈\n", read, read.hash);
     expect(result).toMatchObject({ ok: false, reason: "encoding_error" });
+    // 本体 1.0.0 から：どの字がどこにあるかを detail に添える
+    expect(result.ok ? "" : result.detail).toContain("🐈");
     expect(bytesOf(store.peek(FILE))).toEqual(bytesOf(original));
+  });
+
+  test("Shift_JIS に符号の無い字は表の字へ置き換えて書き、作者には知らせず記録だけ残す（本体 1.0.0）", async () => {
+    const lines: string[] = [];
+    setTextFileLog((line) => lines.push(line));
+    try {
+      const store = storeWith(shiftJis("本文\r\n"));
+      const read = await readTextFile(store, FILE);
+      const result = await writeTextFilePreservingFormat(store, FILE, "𠮟る本文\n", read, read.hash);
+      expect(result.ok).toBe(true);
+      expect(iconv.decode(Buffer.from(store.peek(FILE)!), "shift_jis")).toBe("叱る本文\r\n");
+      expect(lines.join("")).toContain("置き換えました");
+    } finally {
+      setTextFileLog(() => undefined);
+    }
   });
 
   test("読んだあとに外で書き換えられていたら書かない", async () => {

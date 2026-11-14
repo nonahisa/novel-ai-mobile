@@ -42,8 +42,8 @@ importers:
         specifier: ^1.41.9
         version: 1.41.9
       novel-ai-assistant:
-        specifier: github:nonahisa/novel-ai-assistant#v0.130.3
-        version: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/088b95c55afc14fc336248c440bbf51de41ae4f1
+        specifier: github:nonahisa/novel-ai-assistant#v1.0.0
+        version: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/be25dc7d3ee85fd7d58e216883c65c1fed9d9b34
       path-browserify:
         specifier: ^1.0.1
         version: 1.0.1
@@ -71,6 +71,9 @@ importers:
         version: 4.1.11(@types/node@22.20.5)(vite@8.2.2(@types/node@22.20.5))
 
 packages:
+
+  '@breezystack/lamejs@1.2.7':
+    resolution: {integrity: sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==}
 
   '@capacitor/android@8.5.0':
     resolution: {integrity: sha512-Rb3prJeQiTp0pQhSSOReJuG9VgibOGMG4ECs+UhMwr6TCCHZ3NCZO811bDA0HxD0xrT/gCrJAsY5yfEATu84JQ==}
@@ -765,9 +768,9 @@ packages:
     engines: {node: '>=16.0.0'}
     hasBin: true
 
-  novel-ai-assistant@https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/088b95c55afc14fc336248c440bbf51de41ae4f1:
-    resolution: {gitHosted: true, integrity: sha512-6FGgeT0Dg0Wb8C/1oMdq7FrOibLIEBztFVe2NCkTVFto0pZxiVr4M/bguV0GBGtWX+6Je8YMcwKZB8wMMYQ6RA==, tarball: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/088b95c55afc14fc336248c440bbf51de41ae4f1}
-    version: 0.130.3
+  novel-ai-assistant@https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/be25dc7d3ee85fd7d58e216883c65c1fed9d9b34:
+    resolution: {gitHosted: true, integrity: sha512-ROsf7IMhxZwfi/82I5fUw3Q7rJMEXTZz1YWbo/rg6KKJHtE5B3sa3znxMUqvqu+O2wFMtgrw+HL01GxUYdFSwA==, tarball: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/be25dc7d3ee85fd7d58e216883c65c1fed9d9b34}
+    version: 1.0.0
     engines: {vscode: ^1.90.0}
 
   obug@2.1.4:
@@ -1139,6 +1142,8 @@ packages:
     resolution: {integrity: sha512-p4a9I6X6nu6IhoGmBqAcbJy1mlC4j27vEPZX9F4L4/vZT3Lyq1VkFHw/V/PUcB9Buo+DG3iHkT0x3Qya58zc3g==}
 
 snapshots:
+
+  '@breezystack/lamejs@1.2.7': {}
 
   '@capacitor/android@8.5.0(@capacitor/core@8.5.0)':
     dependencies:
@@ -1779,8 +1784,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  novel-ai-assistant@https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/088b95c55afc14fc336248c440bbf51de41ae4f1:
+  novel-ai-assistant@https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/be25dc7d3ee85fd7d58e216883c65c1fed9d9b34:
     dependencies:
+      '@breezystack/lamejs': 1.2.7
       buffer: 5.7.1
       diff: 8.0.4
       fflate: 0.8.3

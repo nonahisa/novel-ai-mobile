@@ -132,3 +132,18 @@ describe("画面の切り替え（#/…）", () => {
     expect(parseRoute("#/all")).toEqual({ kind: "all" });
   });
 });
+
+describe("説明はレイアウトに任せる（2026-11-14 作者。設計書 4.6）", () => {
+  test("項目の下の小さな注意は、データを消すかどうかの注意だけ", () => {
+    const notes = TABS.flatMap((t) => t.sections.flatMap((s) => s.items.filter((i) => i.note).map((i) => `${i.label}：${i.note}`)));
+    expect(notes).toEqual(["登録から外す：GitHub の置き場は消さない"]);
+  });
+
+  test("タブの画面に説明の行・設計書の番号を出さない。題はタブの名前", () => {
+    for (const tab of TABS) {
+      const html = renderTab(tab);
+      expect(html).not.toMatch(/menu-lead|menu-how|設計書|【案】/);
+      expect(html).toContain(`<span class="appbar-title">${tab.label}</span>`);
+    }
+  });
+});

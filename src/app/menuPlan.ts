@@ -18,7 +18,10 @@ export type ScreenId = "tategaki" | "check" | "allActions";
 /** メニューの1項目 */
 export interface PlannedItem {
   label: string;
-  /** 押したときに出す補足（どこに置く予定か・何をする所か） */
+  /**
+   * 項目の下の小さな注意。**データを消す・外へ送るなど、見落とすと損が大きいことだけ**に使う
+   * （2026-11-14 作者「不要なセカンダリラベルや説明を避け、レイアウトに説明させてください」。設計書 4.6）
+   */
   note?: string;
   /** 作ってあれば、開く画面 */
   built?: ScreenId;
@@ -29,8 +32,6 @@ export interface PlannedItem {
 /** 画面の中のまとまり */
 export interface PlannedSection {
   title: string;
-  /** どこから出すか（長押し・右下の［＋］など。設計書 4.4.1 の段） */
-  how?: string;
   items: PlannedItem[];
 }
 
@@ -38,8 +39,6 @@ export interface PlannedSection {
 export interface PlannedTab {
   id: "works" | "write" | "proposals" | "other";
   label: string;
-  /** そのタブの画面（作品一覧など）の名前と、まだ作っていないか */
-  screen: string;
   sections: PlannedSection[];
 }
 
@@ -47,29 +46,25 @@ export const TABS: readonly PlannedTab[] = [
   {
     id: "works",
     label: "作品",
-    screen: "作品一覧（A）・話の一覧（B）",
     sections: [
       {
         title: "作品を足す",
-        how: "右下の［＋］（4.4.3）",
         items: [
-          { label: "GitHub から取り寄せる", action: "GitHubから追加", note: "パソコンで書いている作品を持ってくる（浅い取得）" },
-          { label: "新しく作る", action: "本文起点", note: "題を入れるだけで作る。GitHub に置き場を作るかは後で訊く" },
+          { label: "GitHub から取り寄せる", action: "GitHubから追加" },
+          { label: "新しく作る", action: "本文起点" },
         ],
       },
       {
         title: "作品の長押し",
-        how: "作品を長押し（4.4.1 の2段目）",
         items: [
           { label: "題を変える", action: "作品名変更" },
           { label: "登録から外す", note: "GitHub の置き場は消さない" },
           { label: "シリーズ", action: "シリーズ連結" },
-          { label: "作品の設定", note: "形式・ジャンル・作品の種類・投稿サイトなど" },
+          { label: "作品の設定" },
         ],
       },
       {
         title: "話の長押し",
-        how: "話の一覧で話を長押し（4.4.1 の2段目）",
         items: [
           { label: "誤字脱字", action: "誤字脱字検知" },
           { label: "推敲", action: "推敲" },
@@ -78,14 +73,13 @@ export const TABS: readonly PlannedTab[] = [
       },
       {
         title: "同期",
-        items: [{ label: "保存・同期", action: "保存・同期", note: "GitHub の API で送る（引継ぎ書 11章。部品はできた。画面はまだ）" }],
+        items: [{ label: "保存・同期", action: "保存・同期" }],
       },
     ],
   },
   {
     id: "write",
     label: "書く",
-    screen: "原稿エディター（C）",
     sections: [
       {
         title: "試し",
@@ -93,31 +87,28 @@ export const TABS: readonly PlannedTab[] = [
           {
             label: "縦書き・横書きの試し",
             built: "tategaki",
-            note: "A（いまの形・変換中の線は左）と B（右傍線）を切り替えて書き比べる。ルビ・傍点・字数・保存と読み戻しも",
           },
         ],
       },
       {
         title: "原稿",
-        items: [{ label: "話を開いて書く", note: "最後に開いた話を開く（4.3）" }],
+        items: [{ label: "話を開いて書く" }],
       },
       {
         title: "上のバーの［…］",
-        how: "上のバーの［…］（4.4）",
         items: [
-          { label: "新しい話", note: "話を1つ足す" },
+          { label: "新しい話" },
           { label: "章を立てる", action: "章立て提案" },
-          { label: "書き出し", note: "投稿用・設定資料集など" },
-          { label: "AI を走らせる", note: "誤字脱字・推敲・矛盾検知など。結果は［提案］へ" },
+          { label: "書き出し" },
+          { label: "AI を走らせる" },
           { label: "AI に相談", action: "AIに相談" },
         ],
       },
       {
         title: "字を選んだときの帯",
-        how: "原稿で字を選ぶ（4.4）",
         items: [
-          { label: "ルビ", action: "ルビ付与", note: "縦書きの試しでは {漢字|かんじ} と打つと表示を見られる" },
-          { label: "傍点", action: "傍点付与", note: "縦書きの試しでは {{語}} と打つと表示を見られる" },
+          { label: "ルビ", action: "ルビ付与" },
+          { label: "傍点", action: "傍点付与" },
           { label: "資料を見る", action: "設定資料集閲覧" },
           { label: "AI に訊く" },
         ],
@@ -127,17 +118,15 @@ export const TABS: readonly PlannedTab[] = [
   {
     id: "proposals",
     label: "提案",
-    screen: "提案の一覧（D）",
     sections: [
       {
         title: "提案",
-        how: "AI の指摘・設定資料の更新案がここに集まる。タブに未決の件数を付ける（4.3）",
         items: [
-          { label: "提案の一覧", note: "話ごと・種類ごとに並べる" },
+          { label: "提案の一覧" },
           { label: "採る" },
           { label: "見送る" },
           { label: "まとめて採る・見送る" },
-          { label: "編集者の提案", note: "最初の版では作らない（3章 #13）" },
+          { label: "編集者の提案" },
         ],
       },
     ],
@@ -145,15 +134,13 @@ export const TABS: readonly PlannedTab[] = [
   {
     id: "other",
     label: "ほか",
-    screen: "ほか（E〜I）",
     sections: [
       {
         title: "探して呼ぶ",
-        how: "4.4.1 の3段目",
         items: [
-          { label: "すべての機能", built: "allActions", note: "検索欄つきの一覧。名前は本体の詳細メニューと同じ字" },
-          { label: "AI に相談", action: "AIに相談", note: "「表記ゆれを見て」と頼めばその場で動く" },
-          { label: "簡単ステップメニュー", note: "次にやることの案内" },
+          { label: "すべての機能", built: "allActions" },
+          { label: "AI に相談", action: "AIに相談" },
+          { label: "簡単ステップメニュー" },
         ],
       },
       {
@@ -161,17 +148,16 @@ export const TABS: readonly PlannedTab[] = [
         items: [
           { label: "プロット", action: "プロット自力作成" },
           { label: "設定資料", action: "設定資料集閲覧" },
-          { label: "執筆統計", action: "執筆統計", note: "今日の字数だけは作品一覧の上にも出す" },
+          { label: "執筆統計", action: "執筆統計" },
           { label: "書き出し・広報", action: "新話投稿" },
         ],
       },
       {
         title: "設定",
-        how: "［ほか］→ 設定（H）",
         items: [
-          { label: "AI", action: "AI設定", note: "使う AI・鍵・機能ごとの割り当て" },
-          { label: "GitHub と同期", note: "アカウント・同期（6章）" },
-          { label: "表示", note: "書体・字の大きさ・縦横の既定" },
+          { label: "AI", action: "AI設定" },
+          { label: "GitHub と同期" },
+          { label: "表示" },
           { label: "確認省略解除・初回設定" },
         ],
       },
@@ -179,8 +165,8 @@ export const TABS: readonly PlannedTab[] = [
         title: "ヘルプ",
         items: [
           { label: "使い方", action: "使い方" },
-          { label: "動作確認ページ", built: "check", note: "縦書き・ルビ・保存・通信・git の確かめ（開発用）" },
-          { label: "バージョン確認", built: "check", action: "バージョン確認", note: "動作確認ページの1番に出る" },
+          { label: "動作確認ページ", built: "check" },
+          { label: "バージョン確認", built: "check", action: "バージョン確認" },
         ],
       },
     ],

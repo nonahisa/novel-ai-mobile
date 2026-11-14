@@ -315,7 +315,8 @@ button {
   margin: 4px 0 8px;
 }
 /* まとまりの見出しは、見本の章の見出し（小さく、字間を空けた補いの色） */
-.menu-section h2 {
+.menu-section h2,
+.menu-group {
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.08em;

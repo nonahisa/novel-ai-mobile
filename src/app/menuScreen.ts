@@ -49,39 +49,50 @@ export function renderAppBar(title: string, options: { back?: boolean; sub?: str
   return `<header class="appbar">${back}<span class="appbar-title">${escapeHtml(title)}${sub}</span></header>`;
 }
 
-/** タブの画面 */
+/**
+ * タブの画面。題はタブと同じ名前。版（`version`）は渡されたときだけ題の下に出す（［ほか］だけ）。
+ * 説明の行は置かない：灰色と「未」の印で、作っていないことは見える（2026-11-14 作者「不要なセカンダリラベルや
+ * 説明を避け、レイアウトに説明させてください」。設計書 4.6）
+ */
 export function renderTab(tab: PlannedTab, version?: string): string {
   const sections = tab.sections
     .map(
       (section) => `
       <section class="menu-section">
         <h2>${escapeHtml(section.title)}</h2>
-        ${section.how ? `<p class="menu-how">${escapeHtml(section.how)}</p>` : ""}
         <div class="menu-items">${section.items.map(itemButton).join("")}</div>
       </section>`
     )
     .join("");
   return `
-    ${renderAppBar(tab.screen, version ? { sub: version } : {})}
-    <p class="menu-lead">設計書 4.3・4.4 の【案】のとおりに並べています。灰色の項目は、まだ作っていません。</p>
+    ${renderAppBar(tab.label, version ? { sub: version } : {})}
     ${sections}`;
 }
 
-/** 「すべての機能」の行 */
+/**
+ * 「すべての機能」の行。**大分類の見出しで束ね**、行には名前と置き場だけを出す（分類を行ごとに書かない。
+ * 2026-11-14 作者の答え。設計書 4.6）。並びは渡された順のまま（同じ大分類が続くところで見出しを1つ）
+ */
 export function renderActionRows(entries: readonly ActionEntry[]): string {
   if (entries.length === 0) return `<p class="menu-empty">当てはまる機能がありません</p>`;
-  return entries
-    .map((entry) => {
-      const path = [entry.group, entry.section].filter(Boolean).join(" › ");
-      const ai = entry.usesAI ? `<span class="menu-ai">AI</span>` : "";
-      const sub = `<span class="menu-note">${escapeHtml(path)}　置き場：${escapeHtml(entry.place)}</span>`;
-      if (entry.built) {
-        return `<button class="menu-item built" data-screen="${entry.built}">${escapeHtml(entry.label)}${ai}${sub}</button>`;
-      }
+  let html = "";
+  let group: string | undefined;
+  for (const entry of entries) {
+    if (entry.group !== group) {
+      if (group !== undefined) html += "</div>";
+      group = entry.group;
+      html += `<h2 class="menu-group">${escapeHtml(group)}</h2><div class="menu-items">`;
+    }
+    const ai = entry.usesAI ? `<span class="menu-ai">AI</span>` : "";
+    const place = `<span class="menu-note">${escapeHtml(entry.place)}</span>`;
+    if (entry.built) {
+      html += `<button class="menu-item built" data-screen="${entry.built}">${escapeHtml(entry.label)}${ai}${place}</button>`;
+    } else {
       const tell = `${NOT_BUILT_MESSAGE}。置く予定の所：${entry.place}`;
-      return `<button class="menu-item planned" aria-disabled="true" data-planned="${escapeHtml(tell)}">${escapeHtml(entry.label)}${ai}<span class="menu-badge">未</span>${sub}</button>`;
-    })
-    .join("");
+      html += `<button class="menu-item planned" aria-disabled="true" data-planned="${escapeHtml(tell)}">${escapeHtml(entry.label)}${ai}<span class="menu-badge">未</span>${place}</button>`;
+    }
+  }
+  return html + "</div>";
 }
 
 /** 下のタブ */

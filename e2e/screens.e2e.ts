@@ -113,15 +113,35 @@ test.describe("上のバーと下のタブ（見本の並び）", () => {
     await expect(page.locator('.tab[data-tab="works"]')).toHaveCSS("color", rgb(TOKENS[scheme]["--muted"]));
   });
 
-  test("タブを押すと画面が替わり、題の下に版が出る", async ({ page }, info) => {
+  test("タブを押すと画面が替わり、題はタブの名前。版は［ほか］の題の下だけ", async ({ page }, info) => {
     await open(page, "#/works");
-    await expect(page.locator(".appbar-title small")).toContainText("モバイル版");
+    await expect(page.locator(".appbar-title")).toHaveText("作品");
+    await expect(page.locator(".appbar-title small")).toHaveCount(0);
     const touch = info.project.use.hasTouch;
     const tab = page.locator('.tab[data-tab="write"]');
     if (touch) await tab.tap();
     else await tab.click();
     await expect(page).toHaveURL(/#\/write$/);
     await expect(page.locator('.tab[aria-current="page"]')).toHaveAttribute("data-tab", "write");
+    await open(page, "#/other");
+    await expect(page.locator(".appbar-title small")).toContainText("モバイル版");
+  });
+
+  test("説明はレイアウトに任せる：設計書の番号・説明の行を画面に出さない（設計書 4.6）", async ({ page }) => {
+    for (const hash of ["#/works", "#/write", "#/proposals", "#/other", "#/all"]) {
+      await open(page, hash);
+      await expect(page.locator(".menu-lead, .menu-section .menu-how")).toHaveCount(0);
+      expect(await page.locator("main").innerText()).not.toMatch(/設計書|【案】|（[A-I]）|の\d段目|（\d\.\d/);
+    }
+  });
+
+  test("すべての機能は大分類の見出しで束ね、行には置き場だけ", async ({ page }) => {
+    await open(page, "#/all");
+    await expect(page.locator("#actionRows .menu-group").first()).toBeVisible();
+    await expect(page.locator("#actionCount")).toHaveText(/^\d+件$/);
+    const note = await page.locator("#actionRows .menu-note").first().innerText();
+    expect(note).not.toContain("置き場：");
+    await expect(page.locator("#actionSearch")).toHaveAttribute("placeholder", "探す");
   });
 
   test("［戻る］は丸い押し口（44×44）で、押すと開いていたタブへ戻る", async ({ page }) => {

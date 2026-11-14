@@ -69,7 +69,7 @@ test.describe("C 組んで書く", () => {
     const pane = page.locator("#draftComposed");
     await expect(pane).toHaveCSS("writing-mode", "vertical-rl");
     await expect(page.locator('[data-mode="C"]')).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator("#modeNote")).toContainText("組んで書く");
+    await expect(page.locator("#modeNote")).toContainText("組んだまま");
     await expect(pane.locator(".chunk-ruby rt").first()).toHaveText("わがはい");
     await expect(pane.locator(".chunk-em .bouten").first()).toHaveText("頓と");
     await expect(pane.locator(".chunk").first()).toHaveAttribute("contenteditable", "false");

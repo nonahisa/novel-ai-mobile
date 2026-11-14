@@ -144,7 +144,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     switch (route.kind) {
       case "tab":
         lastTabHash = `#/${route.tab.id}`;
-        screen.innerHTML = renderTab(route.tab, `モバイル版 ${__APP_VERSION__}（本体の部品 ${SHARED_VERSION}）`);
+        screen.innerHTML = renderTab(route.tab, route.tab.id === "other" ? `モバイル版 ${__APP_VERSION__}（本体の部品 ${SHARED_VERSION}）` : undefined);
         return;
       case "all":
         mountAllActions(screen);
@@ -169,9 +169,9 @@ function mountAllActions(screen: HTMLElement): void {
   const hidden = hiddenActions();
   screen.innerHTML = `
     ${renderAppBar("すべての機能", { back: true })}
-    <input class="menu-search" id="actionSearch" type="search" placeholder="2〜3文字で絞る（例：誤字・相関）" aria-label="機能を探す" />
+    <input class="menu-search" id="actionSearch" type="search" placeholder="探す" aria-label="機能を探す" />
     <p class="menu-how" id="actionCount"></p>
-    <div class="menu-items" id="actionRows"></div>
+    <div id="actionRows"></div>
     <details class="menu-hidden">
       <summary>モバイル版では出さない機能（${hidden.length}件）</summary>
       <ul>${hidden.map((h) => `<li>${escapeHtml(h.label)}：${escapeHtml(h.reason)}</li>`).join("")}</ul>
@@ -182,8 +182,7 @@ function mountAllActions(screen: HTMLElement): void {
   const update = () => {
     const found = searchActions(list, search.value);
     rows.innerHTML = renderActionRows(found);
-    const built = found.filter((e) => e.built).length;
-    countEl.textContent = `${found.length}件（作ってあるもの ${built}件）。名前は本体の詳細メニューと同じ字です`;
+    countEl.textContent = `${found.length}件`;
   };
   search.addEventListener("input", update);
   update();
@@ -191,12 +190,13 @@ function mountAllActions(screen: HTMLElement): void {
 
 /* ---------- 縦書き・横書きの試し（A：いまの形・B：右傍線・C：組んで書く） ---------- */
 
+/** 形ごとの1行（2026-11-14 作者の答え「試しの画面の説明も縮める」。設計書 4.6） */
 const MODE_NOTES = {
-  A: "A：いまの形。入力欄はブラウザのもの（本体の原稿エディターと同じ contenteditable）で、変換中の線もブラウザが描きます（縦書きでは行の左に出ます）。候補の窓は縦になります。",
-  B: "B：右傍線の形（EditContext）。字と変換中の線をこの画面が描きます（縦書きでは右、横書きでは下）。文節ごとの太い線・細い線も出ます。入力欄の中ではルビ・傍点は記法の字のまま出ます（下の表示で見られます）。選択・元に戻すはまだありません。",
-  C: "C：組んで書く（本体の原稿エディターと同じ形）。ルビ・傍点を振り仮名・圏点で組んだまま打ちます。ルビ・傍点は1つの塊で、中には打てません。塊のすぐ前・すぐ後には打てます。用語の色はこの形ではまだ付けません。",
-  composeFailed: "C：組んで書く。本文を組んで記法へ戻したら元と合わなかったので、組まずに記法のまま出しています（本体と同じ安全弁）。",
-  sink: "B：右傍線の形（見えない受け口）。カーソルの位置に重ねた透明な欄で日本語入力を受け、字と変換中の線をこの画面が描きます（縦書きでは右、横書きでは下）。線は変換中の字全体に1本で、文節ごとの太い線・細い線は出ません。入力欄の中ではルビ・傍点は記法の字のまま出ます。選択・元に戻すはまだありません。",
+  A: "A：ブラウザの入力欄。変換中の線は左",
+  B: "B：字と変換中の線をこの画面が描く（EditContext）。線は右",
+  C: "C：ルビ・傍点を組んだまま打つ。ルビ・傍点は1つの塊",
+  composeFailed: "C：組めなかったので、記法のまま出しています",
+  sink: "B：見えない受け口で受け、字と線をこの画面が描く。線は右",
 } as const;
 
 /** 画面を離れる前に確かめること */
@@ -257,11 +257,9 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
     </div>
     <p class="draft-result" id="draftResult" role="status"></p>
     <details class="menu-hidden term-box" open><summary>色を付ける語（人物・場所・能力・組織）</summary>
-      <p class="menu-how">語を読点（、）で区切って打つと、上の欄の中のその語に色が付きます。「名・姓」のように中黒で区切った名前は、片方だけでも色が付きます（本体と同じ）。作品を開けるようになったら、設定資料の語を使います。</p>
-      ${TERM_KINDS.map((k) => `<label class="term-row"><span class="term-${k}">${TERM_KIND_LABELS[k]}</span><input class="term-input" data-term="${k}" type="text" lang="ja" autocomplete="off" /></label>`).join("")}
+      ${TERM_KINDS.map((k) => `<label class="term-row"><span class="term-${k}">${TERM_KIND_LABELS[k]}</span><input class="term-input" data-term="${k}" type="text" lang="ja" autocomplete="off" placeholder="読点で区切る" /></label>`).join("")}
     </details>
     <h2 class="draft-h">ルビと傍点の表示</h2>
-    <p class="menu-how">ルビは {漢字|かんじ}、傍点は {{語}} と打ちます。字数は本体と同じ数え方（改行とルビの読みは数えない）です。</p>
     <div class="tategaki-view draft-preview vertical" id="draftPreview"></div>
     <details class="menu-hidden"><summary>変換の知らせの記録</summary>
       <label class="sink-show"><input type="checkbox" id="showSink" /> 見えない受け口を薄い赤で見せる（位置が合っているかを見る）</label>

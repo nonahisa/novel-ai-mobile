@@ -251,8 +251,14 @@ describe("別ファイルへ書き出すときの符号化", () => {
     );
   });
 
-  test("Shift_JISで表せない文字があれば書き出さない", () => {
-    expect(encodeForNewFile("𠮟る\n", original({ encoding: "shift_jis" }))).toBeUndefined();
+  test("Shift_JIS に符号の無い字は表の字へ置き換えて書く（本体 1.0.0。𠮟 → 叱）", () => {
+    const bytes = encodeForNewFile("𠮟る\n", original({ encoding: "shift_jis" }));
+    expect(bytes).toBeDefined();
+    expect(decodeBytes(bytes!).text).toBe("叱る\n");
+  });
+
+  test("置き換えても Shift_JIS で表せない字（絵文字など）があれば書き出さない", () => {
+    expect(encodeForNewFile("猫🐈\n", original({ encoding: "shift_jis" }))).toBeUndefined();
   });
 });
 

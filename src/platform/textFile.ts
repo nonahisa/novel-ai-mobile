@@ -10,6 +10,11 @@ import {
   encodePreservingFormat,
   encodeTextFragment,
 } from "novel-ai-assistant/src/core/textEncodePreserving";
+import {
+  describeSubstitutions,
+  describeUnencodable,
+  substituteForShiftJis,
+} from "novel-ai-assistant/src/core/sjisFallback";
 import { FileExistsError, dirname, joinStorePath, normalizeStorePath, type FileStore } from "./fileStore";
 
 /**
@@ -34,6 +39,16 @@ import { FileExistsError, dirname, joinStorePath, normalizeStorePath, type FileS
  */
 
 export type { TextFileContent };
+
+/**
+ * Shift_JIS の原稿へ書くため字を置き換えたときの記録の書き手（本体 1.0.0 から。本体は `logLine` に残し、
+ * 作者には知らせない〈本体の作者の決定 2026-11-08「黙って」〉）。本体の `logger.ts` は vscode に頼るので
+ * 借りられず、書き手は差し替えられる形にする。何もしなければ残さない
+ */
+let substitutionLog: (line: string) => void = () => undefined;
+export function setTextFileLog(write: (line: string) => void): void {
+  substitutionLog = write;
+}
 
 export const RECOVERY_DIRECTORY_NAME = ".novelai-recovery";
 export const RECOVERY_GENERATIONS_PER_FILE = 5;
@@ -77,11 +92,22 @@ export async function writeTextFilePreservingFormat(
   if (decodeBytes(current).hasConflictMarkers) return { ok: false, reason: "conflict_markers" };
   if (hashBytes(current) !== expectedHash) return { ok: false, reason: "modified_externally" };
 
-  const bytes = encodePreservingFormat(current, newText, original, {
+  // 本体 1.0.0 から：Shift_JIS に符号の無い字は表（`sjisFallback.ts`）の字へ置き換えてから書く。
+  // 置き換えても書けない字（♡・絵文字など）が残れば書かず、どの字がどこにあるかを detail に添える
+  const encoded = encodePreservingFormat(current, newText, original, {
     rewriteEol: options.rewriteEol === true,
   });
-  // Shift_JIS で表せない字が入った。代わりの字に置き換えて「保存できた」にすると本文が壊れる
-  if (!bytes) return { ok: false, reason: "encoding_error" };
+  if (!encoded.ok) {
+    return {
+      ok: false,
+      reason: "encoding_error",
+      ...(encoded.unencodable.length > 0 ? { detail: `Shift_JIS で書けない字：${describeUnencodable(encoded.unencodable)}` } : {}),
+    };
+  }
+  if (encoded.substitutions.length > 0) {
+    substitutionLog(`Shift_JIS の原稿へ書くため、字を置き換えました（${filePath.split("/").pop()}）：${describeSubstitutions(encoded.substitutions)}`);
+  }
+  const bytes = encoded.bytes;
 
   let recoveryPath: string;
   try {
@@ -136,7 +162,7 @@ export async function writeTextFilePreservingFormat(
  *
  * 本体の関数は `vscode` に頼る `textFile.ts` の中にあるので借りられず、ここに同じものを置く。
  * **元のファイルと同じ文字コード・改行で書く**（片方だけ UTF-8・LF になると、見比べたとき全行が違って見える）。
- * Shift_JIS で表せない字があれば `undefined`（代わりの字に置き換えると本文が壊れる）。
+ * Shift_JIS に符号の無い字は表の字へ置き換え（本体 1.0.0 と同じ）、それでも表せない字があれば `undefined`。
  */
 export function encodeForNewFile(
   text: string,
@@ -147,6 +173,14 @@ export function encodeForNewFile(
     normalized += "\n";
   } else if (!original.hasTrailingNewline) {
     normalized = normalized.replace(/\n+$/, "");
+  }
+  // 新しく作る話も、書き戻しと同じ表で置き換える（本体 1.0.0 と同じ）
+  if (original.encoding === "shift_jis") {
+    const substituted = substituteForShiftJis(normalized);
+    normalized = substituted.text;
+    if (substituted.substitutions.length > 0) {
+      substitutionLog(`Shift_JIS の新しいファイルへ書くため、字を置き換えました：${describeSubstitutions(substituted.substitutions)}`);
+    }
   }
   const body = encodeTextFragment(normalized.replace(/\n/g, original.eol), original.encoding);
   if (!body) return undefined;

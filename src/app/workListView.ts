@@ -19,6 +19,20 @@ import type { ScannedWork, WorkListItem } from "../platform/workScan";
  *   （話は `compareEpisodes` の順、最初の章より前の話を先に、開始の話が見つからない章は最後）
  */
 
+/**
+ * 本体の文の、パソコンの画面を指す言い回しを、モバイル版の言い方に置き換える
+ * （2026-11-16 作者の答え「モバイル版の中で言い方を置き換える」）。
+ * スマホには作品別設定の画面がまだ無いので、パソコンで直して同期してもらう
+ */
+const PC_WORDINGS: readonly [RegExp, string][] = [
+  [/詳細メニューの作品別設定の「([^」]+)」で選び直すか、手で直してください/g, "パソコンで作品別設定の「$1」を選び直してから、同期してください"],
+  [/詳細メニューの作品別設定/g, "パソコンの作品別設定"],
+  [/(?<!パソコンの)詳細メニュー/g, "パソコンの詳細メニュー"],
+];
+export function mobileWording(text: string): string {
+  return PC_WORDINGS.reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), text);
+}
+
 /** 作品一覧の1枚 */
 export interface WorkCard {
   root: string;
@@ -30,7 +44,7 @@ export interface WorkCard {
 }
 
 export function workCard(item: WorkListItem, now: Date): WorkCard {
-  if (!item.ok) return { root: item.root, title: item.title, meta: [], flags: [{ text: `⚠ ${item.error}`, tone: "shu" }] };
+  if (!item.ok) return { root: item.root, title: item.title, meta: [], flags: [{ text: `⚠ ${mobileWording(item.error)}`, tone: "shu" }] };
   const { work } = item;
   const meta = [`${work.stats.episodeCount}話`, `${formatCount(work.stats.totals.net)}字`];
   if (work.lastWrittenAt !== undefined) meta.push(`最後に書いた日：${dayLabel(new Date(work.lastWrittenAt), now)}`);

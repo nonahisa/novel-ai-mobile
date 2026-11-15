@@ -1,4 +1,4 @@
-import { INTERNAL_EMPHASIS_SOURCE, INTERNAL_RUBY_SOURCE, countChars, formatCount, rubyToHtml } from "../shared";
+import { INTERNAL_EMPHASIS_SOURCE, INTERNAL_RUBY_SOURCE, countChars, formatCount, rubyToHtml, type MemoMarkers } from "../shared";
 import { FileNotFoundError, type FileStore } from "../platform/fileStore";
 import {
   encodeForNewFile,
@@ -56,9 +56,12 @@ export function previewHtml(text: string): string {
   return html.replace(/\r?\n/g, "<br>");
 }
 
-/** 字数の表示（本体と同じ数え方） */
-export function countLabel(text: string): string {
-  const counts = countChars(text);
+/**
+ * 字数の表示（本体と同じ数え方）。メモの行は数えない。どの印をメモとみなすかは作品ごと（`markers`。
+ * 省けば既定の `//`・`／／`。作品を開けるようになったら `readWorkMemoMarkers` で読んだものを渡す）
+ */
+export function countLabel(text: string, markers?: MemoMarkers): string {
+  const counts = countChars(text, true, markers);
   return `${formatCount(counts.gross)} 字（空白を除くと ${formatCount(counts.net)} 字）`;
 }
 

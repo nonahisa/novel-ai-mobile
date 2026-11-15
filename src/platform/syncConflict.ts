@@ -3,7 +3,7 @@ import git from "isomorphic-git";
 import { sideFileName } from "novel-ai-assistant/src/core/conflictFile";
 import { hashBytes } from "novel-ai-assistant/src/core/hash";
 import { decodeBytes, type TextFileContent } from "novel-ai-assistant/src/core/textDecode";
-import { FileExistsError, dirname, joinStorePath, type FileStore } from "./fileStore";
+import { FileExistsError, dirname, joinStorePath, normalizeStorePath, type FileStore } from "./fileStore";
 import type { createGitFs } from "./gitFs";
 import { gitHttp } from "./gitHttp";
 import { encodeForNewFile, writeTextFilePreservingFormat, type WriteTextFailureReason } from "./textFile";
@@ -29,6 +29,10 @@ import { collectChanges } from "./workPush";
  * - **書きかけの話を黙って上書きしない。** isomorphic-git の「変わったか」は大きさと時刻で見るので見落とす
  *   （`git.test.ts` の【限界】）。あちらが変えた話は、こちらの中身を読んで名前（`oid`）を数えて比べ、
  *   書く直前にもう一度読む
+ * - **開いている話は、取り込む前に保存を済ませる**（2026-11-16 作者の答え A「保存してから取り込む」）。
+ *   `integrateIncoming` の `openStories` に自動保存の係（`src/app/autoSave.ts`）を渡すと、先に `flush()` し、
+ *   1つでも「保存済み」にならなければ何も動かさずに止める。取り込みで書き換えた開いている話は `reopen` に返すので、
+ *   呼ぶ側は読み直して自動保存の係を作り直す（古いハッシュのままだと次の保存が「外で変わりました」になる）
  * - **選ぶまで、競合した話には AI を当てない**（呼ぶ側が `plan.undecided` を見る）
  * - 原稿をこちらから書き換えるのは［あちら］を選んだときだけで、`writeTextFilePreservingFormat`
  *   を通す（文字コード・改行を保つ。外で変わっていたら書かない）
@@ -201,16 +205,32 @@ export async function planIncoming(input: IncomingInput): Promise<IncomingPlan> 
 }
 
 /** 置き場（`FileStore`）の側で、作品フォルダーがどこにあるか */
+/**
+ * 開いている話（自動保存の係が持っている話）。`AutoSave` がそのまま当てはまる形
+ * （`path` は置き場の根からの道、`flush()` は保存を済ませてそのときの状態を返す）
+ */
+export interface OpenStory {
+  readonly path: string;
+  flush(): Promise<string>;
+}
+
+/** 自動保存の「保存済み」（`src/app/autoSave.ts` の `AutoSaveStatus` と同じ字） */
+const SAVED = "保存済み";
+
 export interface StoreSide {
   store: FileStore;
   /** 置き場の根からの作品フォルダーの道（git の `dir` と同じ所を指す。例 `作品`） */
   storeDir: string;
+  /** 開いている話。取り込む前に保存を済ませる（2026-11-16 作者の答え A） */
+  openStories?: readonly OpenStory[];
 }
 
 export type IntegrateResult =
   | { kind: "up_to_date" }
   /** 選んでいない競合がある。何も動かしていない */
   | { kind: "conflicts"; plan: IncomingPlan }
+  /** 開いている話の保存が済まなかった（外で変わった・書けない字など）。何も動かしていない */
+  | { kind: "open_unsaved"; path: string; status: string }
   /** 書く直前に読み直したら、こちらで書き換わっていた。HEAD は動かしていない（もう一度 `planIncoming` から） */
   | { kind: "changed_meanwhile"; path: string }
   | {
@@ -222,6 +242,8 @@ export type IntegrateResult =
       taken: string[];
       /** こちらの文を残した話（こちらだけ変えた話・［こちら］［両方残す］を選んだ話）。送るとあちらへ届く */
       kept: string[];
+      /** 取り込みで書き換えた、開いている話（置き場の道）。読み直して自動保存の係を作り直す */
+      reopen: string[];
     };
 
 /**
@@ -232,6 +254,11 @@ export type IntegrateResult =
  */
 export async function integrateIncoming(input: IncomingInput & StoreSide): Promise<IntegrateResult> {
   const { fs, dir, store, storeDir } = input;
+  // 開いている話の書きかけを先に保存する（その字は「こちらの変更」として比べられる）
+  for (const story of input.openStories ?? []) {
+    const status = await story.flush();
+    if (status !== SAVED) return { kind: "open_unsaved", path: story.path, status };
+  }
   const plan = await planIncoming(input);
   if (plan.theirs === plan.base) return { kind: "up_to_date" };
   if (plan.undecided.length > 0) return { kind: "conflicts", plan };
@@ -265,7 +292,9 @@ export async function integrateIncoming(input: IncomingInput & StoreSide): Promi
   await clearChoices(fs, dir);
 
   const kept = plan.entries.filter((entry) => entry.kind === "ours_only" || entry.kind === "conflict").map((entry) => entry.path);
-  return { kind: "integrated", head: plan.theirs, fastForward: kept.length === 0, taken, kept };
+  const open = new Set((input.openStories ?? []).map((story) => normalizeStorePath(story.path)));
+  const reopen = taken.map((path) => joinStorePath(storeDir, path)).filter((path) => open.has(path));
+  return { kind: "integrated", head: plan.theirs, fastForward: kept.length === 0, taken, kept, reopen };
 }
 
 /** 競合した話の片側 */

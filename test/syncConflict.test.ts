@@ -11,6 +11,8 @@ import {
   type IncomingPlan,
 } from "../src/platform/syncConflict";
 import { collectChanges, pushWork } from "../src/platform/workPush";
+import { createAutoSave } from "../src/app/autoSave";
+import { readTextFile } from "../src/platform/textFile";
 import { FakeGitHub, author } from "./support/fakeGitHub";
 import { GitFsFileStore } from "./support/gitFsFileStore";
 
@@ -462,3 +464,51 @@ async function dirOf(fs: Fs): Promise<string> {
     return DIR;
   }
 }
+
+describe("開いている話は、取り込む前に保存を済ませる（2026-11-16 作者の答え A）", () => {
+  const open = async (store: GitFsFileStore, path: string) => {
+    const story = `${WORK}/${path}`;
+    return createAutoSave({ store, path: story, opened: await readTextFile(store, story) });
+  };
+
+  test("開いている話の書きかけを先に保存し、こちらの変更として残したまま取り込む", async () => {
+    const { fs, store, theirs, io } = await setup();
+    await theirs({ "本文/第1話.txt": "吾輩は猫である。\n名前はもう有る。\n" });
+    const second = await open(store, "本文/第2話.txt");
+    second.edit("どこで生れたか、スマホで書き足した\n");
+    const result = await integrateIncoming({ ...io, openStories: [second] });
+    expect(result).toMatchObject({ kind: "integrated", taken: ["本文/第1話.txt"], kept: ["本文/第2話.txt"], reopen: [] });
+    expect(second.status()).toBe("保存済み");
+    expect(textOf(await readWork(fs, "本文/第2話.txt"))).toBe("どこで生れたか、スマホで書き足した\n");
+    expect(textOf(await readWork(fs, "本文/第1話.txt"))).toBe("吾輩は猫である。\n名前はもう有る。\n");
+  });
+
+  test("取り込みで書き換えた開いている話は reopen に返す（読み直して係を作り直す）", async () => {
+    const { store, theirs, io } = await setup();
+    await theirs({ "本文/第1話.txt": "吾輩は猫である。\n名前はもう有る。\n" });
+    const first = await open(store, "本文/第1話.txt");
+    const result = await integrateIncoming({ ...io, openStories: [first] });
+    expect(result).toMatchObject({ kind: "integrated", reopen: [`${WORK}/本文/第1話.txt`] });
+  });
+
+  test("開いている話で書いた字と、あちらの変更がぶつかれば競合になる（書きかけは保存済み）", async () => {
+    const { fs, store, theirs, io } = await setup();
+    await theirs({ "本文/第1話.txt": "吾輩は猫である。\n名前はもう有る。\n" });
+    const first = await open(store, "本文/第1話.txt");
+    first.edit("吾輩は猫である。\n名前はスマホで付けた。\n");
+    const result = await integrateIncoming({ ...io, openStories: [first] });
+    expect(result).toMatchObject({ kind: "conflicts" });
+    expect(textOf(await readWork(fs, "本文/第1話.txt"))).toBe("吾輩は猫である。\n名前はスマホで付けた。\n");
+  });
+
+  test("開いている話を保存できなければ、何も動かさずに止める", async () => {
+    const { fs, store, theirs, io, base } = await setup();
+    await theirs({ "本文/第1話.txt": "吾輩は猫である。\n名前はもう有る。\n" });
+    const third = await open(store, "本文/第3話.txt");
+    third.edit("とんと見当がつかぬ。🐈\n"); // Shift_JIS で書けない字
+    const result = await integrateIncoming({ ...io, openStories: [third] });
+    expect(result).toEqual({ kind: "open_unsaved", path: `${WORK}/本文/第3話.txt`, status: "保存待ち" });
+    expect(await git.resolveRef({ fs, dir: DIR, ref: "HEAD" })).toBe(base);
+    expect(textOf(await readWork(fs, "本文/第1話.txt"))).toBe("吾輩は猫である。\n名前はまだ無い。\n");
+  });
+});

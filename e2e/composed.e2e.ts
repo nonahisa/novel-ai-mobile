@@ -210,4 +210,42 @@ test.describe("C 組んで書く", () => {
     await expect(pane.locator(".chunk-em")).toHaveCount(ems);
     await expect(page.locator("#imeLog")).toContainText("傍点を外した（名前）");
   });
+  test("［取り消し］［やり直し］：ルビを振った手を戻し、もう一度当てる", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    const rubies = await pane.locator(".chunk-ruby").count();
+    await expect(page.locator("#composedUndo")).toBeDisabled();
+    await selectAfterFirstChunk(page, 1, 2); // 「猫」
+    await page.locator("#composedRuby").click();
+    await page.locator("#dialogInput").fill("ねこ");
+    await page.locator('.dialog [data-answer="yes"]').click();
+    await expect(pane.locator(".chunk-ruby")).toHaveCount(rubies + 1);
+    await page.locator("#composedUndo").click();
+    await expect(pane.locator(".chunk-ruby")).toHaveCount(rubies);
+    await expect(page.locator("#imeLog")).toContainText("C 取り消した");
+    await expect(page.locator("#composedRedo")).toBeEnabled();
+    await page.locator("#composedRedo").click();
+    await expect(pane.locator(".chunk-ruby")).toHaveCount(rubies + 1);
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("{吾輩|わがはい}は{猫|ねこ}である。")).toBe(true);
+  });
+
+  test("［取り消し］：⌫ で消した塊が戻り、続けて打った字は1手で消える", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    const chunks = await pane.locator(".chunk").count();
+    await caretBesideFirstChunk(page, "after");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.insertText("我");
+    await page.keyboard.insertText("が");
+    await page.keyboard.insertText("輩");
+    await page.locator("#composedUndo").click();
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("は猫である。")).toBe(true);
+    await page.locator('[data-mode="C"]').click();
+    await page.locator("#composedUndo").click();
+    await expect(pane.locator(".chunk")).toHaveCount(chunks);
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("{吾輩|わがはい}は猫である。")).toBe(true);
+  });
 });

@@ -27,7 +27,7 @@ import type { createGitFs } from "./gitFs";
  * 中身を読んで HEAD の中身の名前と比べる。
  *
  * 向こうが先へ進んでいた（`behind`）ときは、何も動かさずに返す。受け取って見比べるのは
- * 食い違いの扱い（まだ作っていない）。
+ * 食い違いの扱い（`syncConflict.ts`。取ってきて `integrateIncoming` で取り込んでから、もう一度送る）。
  */
 
 /** isomorphic-git の `fs` の形（`createGitFs` が返すもの） */

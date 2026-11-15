@@ -21,7 +21,7 @@ describe("作品一覧と話の一覧の HTML", () => {
     store.putExternally("猫<b>_確認用/本文/第1話 <i>夜.txt", enc("猫"));
     const work = await scanWorkFolder(store, "猫<b>_確認用");
     const html = renderEpisodeList(work);
-    expect(html).toContain(`class="ep" data-planned="${NOT_BUILT_MESSAGE}"`);
+    expect(html).toContain(`class="ep" aria-disabled="true" data-planned="${NOT_BUILT_MESSAGE}"`);
     expect(html).toContain("&lt;i&gt;夜");
     expect(renderWorkList([{ ok: true, work }], new Date())).toContain("猫&lt;b&gt;_確認用");
   });

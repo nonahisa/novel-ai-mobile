@@ -39,7 +39,7 @@ function rowHtml(row: EpisodeListRow): string {
     return `<h2 class="chap">${escapeHtml(row.name)}${missing}</h2>`;
   }
   const chars = row.conflict ? `<span class="flag shu">競合</span>` : escapeHtml(row.chars);
-  return `<button class="ep" data-planned="${NOT_BUILT_MESSAGE}"><span class="no">${escapeHtml(row.no)}</span><span class="name">${escapeHtml(row.name)}</span><span class="chars">${chars}</span></button>`;
+  return `<button class="ep" aria-disabled="true" data-planned="${NOT_BUILT_MESSAGE}"><span class="no">${escapeHtml(row.no)}</span><span class="name">${escapeHtml(row.name)}</span><span class="chars">${chars}</span></button>`;
 }
 
 /** 読めなかった作品の話の一覧（理由だけ） */

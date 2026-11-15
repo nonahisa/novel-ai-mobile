@@ -89,34 +89,42 @@ export interface ScanOptions {
 }
 
 /**
- * 置き場の中の作品のフォルダー。**直下のフォルダーのうち、`.git` か `.aiwriter` を持つもの**。
+ * 置き場の中の作品のフォルダー（置き場の根から。書庫の中の作品は `書庫/作品`）。
  *
- * 作品は GitHub から取り寄せる（`.git` がある）か、新しく作る（本体と同じく `.aiwriter/config.json` を置く）。
+ * - 直下のフォルダーの**中のフォルダーに `.aiwriter` を持つもの**があれば、そのフォルダーは書庫（本体の書庫は
+ *   「作品を並べただけ」の浅い形で、まるごと1つのリポジトリにできる。本体の `core/syncTarget.ts`）。`.aiwriter` を持つ
+ *   中のフォルダーを1つずつ作品にする
+ * - そうでなければ、`.git` か `.aiwriter` を持つ直下のフォルダーを作品にする（GitHub から取り寄せた作品には `.git`、
+ *   新しく作った作品には本体と同じく `.aiwriter/config.json` がある）
+ *
  * 置き場の直下には縦書きの試し（`試し/`）・動作確認ページの取得（`確認_git/`）・書きかけの控え（`.novelai-drafts/`）も
  * あるので、ただのフォルダーは作品と見ない。並びはフォルダーの名前の順。
  */
 export async function findWorkRoots(store: FileStore): Promise<string[]> {
-  let top;
-  try {
-    top = await store.listEntries("");
-  } catch (error) {
-    if (error instanceof FileNotFoundError) return [];
-    throw error;
-  }
+  const top = await listDirectories(store, "");
+  if (top === undefined) return [];
   const roots: string[] = [];
-  for (const [name, kind] of top) {
-    if (kind !== "directory" || name.startsWith(".")) continue;
-    let inside;
-    try {
-      inside = await store.listEntries(name);
-    } catch {
-      continue;
+  for (const name of top) {
+    if (name.startsWith(".")) continue;
+    const inside = (await listDirectories(store, name)) ?? [];
+    const libraryWorks: string[] = [];
+    for (const child of inside) {
+      if (child.startsWith(".")) continue;
+      if ((await listDirectories(store, joinStorePath(name, child)))?.includes(AIWRITER_DIR)) libraryWorks.push(`${name}/${child}`);
     }
-    if (inside.some(([child, childKind]) => childKind === "directory" && (child === ".git" || child === AIWRITER_DIR))) {
-      roots.push(name);
-    }
+    if (libraryWorks.length > 0) roots.push(...libraryWorks);
+    else if (inside.includes(".git") || inside.includes(AIWRITER_DIR)) roots.push(name);
   }
   return roots.sort((a, b) => a.localeCompare(b, "ja"));
+}
+
+/** フォルダーの中のフォルダーの名前。読めなければ undefined */
+async function listDirectories(store: FileStore, path: string): Promise<string[] | undefined> {
+  try {
+    return (await store.listEntries(path)).filter(([, kind]) => kind === "directory").map(([name]) => name);
+  } catch {
+    return undefined;
+  }
 }
 
 /** 作品の一覧。1作品が読めなくても、ほかの作品は読む */
@@ -211,7 +219,9 @@ export async function scanWorkFolder(store: FileStore, root: string, options: Sc
   const formatOnce = () => (formatRead ??= readFormat(store, layout.settings));
 
   const episodes: EpisodeFile[] = [];
-  for (const file of await readTree(store, targetLoc, accept)) {
+  // 置き場の場所は場所の文字列から戻さずに持ち回る（名前に `%` がある原稿を取り違えないため）
+  const targetPath = targetLoc === rootLoc ? root : layout.manuscript;
+  for (const file of await readTree(store, targetLoc, targetPath, accept)) {
     const filePath = file.location;
     const fileName = basename(filePath);
     const ext = extname(fileName).toLowerCase();
@@ -389,26 +399,31 @@ interface TreeFile {
 async function readTree(
   store: FileStore,
   dirLoc: string,
+  dirPath: string,
   accept: ReturnType<typeof acceptManuscriptEntry>,
   depth = 0
 ): Promise<TreeFile[]> {
   if (depth > MANUSCRIPT_TREE_DEPTH) return [];
-  const entries = await listOf(store, dirLoc);
-  if (!entries) return [];
+  let entries;
+  try {
+    entries = await store.listEntries(dirPath);
+  } catch {
+    return [];
+  }
   const found: TreeFile[] = [];
   for (const [name, kind] of entries) {
     if (name.startsWith(".")) continue;
     const location = join(dirLoc, name);
+    const path = joinStorePath(dirPath, name);
     if (kind === "file") {
       if (!accept(name, "file", location)) continue;
-      const path = toStorePath(location);
       try {
-        found.push({ location, bytes: path === undefined ? undefined : await store.readFile(path) });
+        found.push({ location, bytes: await store.readFile(path) });
       } catch {
         found.push({ location });
       }
     } else if (kind === "directory" && accept(name, "directory", location)) {
-      found.push(...(await readTree(store, location, accept, depth + 1)));
+      found.push(...(await readTree(store, location, path, accept, depth + 1)));
     }
   }
   return found;

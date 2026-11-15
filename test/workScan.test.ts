@@ -44,6 +44,19 @@ describe("作品のフォルダーを見つける", () => {
   test("置き場が空なら作品は無い", async () => {
     expect(await listWorks(new MemoryFileStore())).toEqual([]);
   });
+
+  test("書庫（作品を並べた1つのリポジトリ）は、中の作品を1つずつ作品にする", async () => {
+    const store = put(new MemoryFileStore(), {
+      "書庫_確認用/.git/HEAD": "ref: refs/heads/main\n",
+      "書庫_確認用/.aiwriter/logs/sync.log": "",
+      ...work("書庫_確認用/甲_確認用", { "本文/第1話.txt": "猫" }),
+      ...work("書庫_確認用/乙_確認用", { "本文/第1話.txt": "犬" }),
+      "書庫_確認用/README.md": "# 書庫",
+    });
+    expect(await findWorkRoots(store)).toEqual(["書庫_確認用/乙_確認用", "書庫_確認用/甲_確認用"]);
+    const items = await listWorks(store);
+    expect(items.map((item) => item.ok && item.work.episodes.length)).toEqual([1, 1]);
+  });
 });
 
 describe("1作品を読む（本体の走査と同じ決まり）", () => {
@@ -108,6 +121,20 @@ describe("1作品を読む（本体の走査と同じ決まり）", () => {
     expect(scanned.stats.totals.net).toBe(1);
     expect(episodeListRows(scanned)[1]).toMatchObject({ conflict: true });
     expect(workCard({ ok: true, work: scanned }, new Date()).flags).toEqual([{ text: "競合：1話", tone: "shu" }]);
+  });
+
+  test("名前に % や %25 がある原稿も読み、章立ての開始の話に当たる", async () => {
+    const chapters = { chapters: [{ name: "第一章", startEpisodePath: "本文/第2話 100%25.txt" }] };
+    const store = put(
+      new MemoryFileStore(),
+      work(WORK, { "本文/第1話 50%.txt": "猫", "本文/第2話 100%25.txt": "犬犬", "設定/章立て.json": JSON.stringify(chapters) })
+    );
+    const scanned = await scanWorkFolder(store, WORK);
+    expect(scanned.episodes.map((e) => [e.fileName, e.counts.net])).toEqual([
+      ["第1話 50%.txt", 1],
+      ["第2話 100%25.txt", 2],
+    ]);
+    expect(episodeListRows(scanned).map((row) => row.type)).toEqual(["episode", "chapter", "episode"]);
   });
 
   test("Shift_JIS の原稿も字数を数える", async () => {

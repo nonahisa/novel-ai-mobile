@@ -71,7 +71,9 @@ export function parseRoute(hash: string): Route {
   if (name.startsWith("work/")) {
     try {
       const root = decodeURIComponent(name.slice("work/".length));
-      if (root && !root.includes("/") && !root.startsWith(".")) return { kind: "work", root };
+      // 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない
+      const parts = root.split("/");
+      if (parts.length <= 2 && parts.every((part) => part !== "" && !part.startsWith("."))) return { kind: "work", root };
     } catch {
       /* 読めない名前は作品一覧へ */
     }
@@ -108,9 +110,14 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   let lastTabHash = "#/works";
   /** 描くたびに増やす。作品を読み終えたとき、もう別の画面へ移っていたら描かない */
   let renderSeq = 0;
-  /** 最後に書いた日は git の最後の版の日（端末の置き場のときだけ。git の置き場も同じ `works` を指す） */
+  /**
+   * 最後に書いた日は git の最後の版の日（端末の置き場のときだけ。git の置き場も同じ `works` を指す）。
+   * 書庫の中の作品（`書庫/作品`）は出さない：書庫は1つのリポジトリなので、最後の版はほかの作品のものかもしれない
+   */
   const scanOptions: ScanOptions =
-    store instanceof CapacitorFileStore ? { lastWrittenOf: (root) => lastCommitTime(`/${root}`) } : {};
+    store instanceof CapacitorFileStore
+      ? { lastWrittenOf: async (root) => (root.includes("/") ? undefined : lastCommitTime(`/${root}`)) }
+      : {};
 
   const toast = (text: string) => {
     toastEl.textContent = text;

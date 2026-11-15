@@ -291,7 +291,8 @@ test.describe("作品一覧（A）と話の一覧（B）", () => {
     // 長い題の話も1行に収める（行の外へはみ出さない。狭い幅では省く）
     expect(await rows.nth(1).evaluate((el) => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().height < 60)).toBe(true);
 
-    await rows.nth(0).click();
+    // 灰色の項目と同じく aria-disabled なので、Playwright は押せないものと見る。force で押す
+    await rows.nth(0).click({ force: true });
     await expect(page.locator("#toast")).toHaveClass(/shown/);
     await expect(page.locator("#toast")).toHaveText("まだ作っていません");
 
@@ -305,5 +306,14 @@ test.describe("作品一覧（A）と話の一覧（B）", () => {
     await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
     await expect(page.locator(".ep-list .ep")).toHaveCount(4);
     expect(await page.locator("main").innerText()).not.toMatch(/設計書|【案】|（[A-I]）/);
+  });
+
+  test("壊れた設定の作品を開くと、話の代わりに理由だけを出す（はみ出さない）", async ({ page }) => {
+    await openWithWorks(page, "#/works");
+    await page.locator(".work-card", { hasText: "壊れた設定_確認用" }).click();
+    await expect(page.locator("#episodeSlot .flag.shu")).toContainText("作品設定を読み込めません");
+    await expect(page.locator(".ep-list")).toHaveCount(0);
+    await expect(page.locator(".appbar-title")).toContainText("壊れた設定_確認用");
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 });

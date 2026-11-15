@@ -39,7 +39,7 @@ describe("本文形式を保持した保存（モバイル版）", () => {
     if (result.ok) {
       expect(result.recoveryPath).toContain(`${RECOVERY_DIRECTORY_NAME}/`);
       // 退避先には書き換える前の本文がそのまま残る
-      expect(new TextDecoder().decode(store.peek(result.recoveryPath))).toBe("吾輩は猫である。\n名前はまだ無い。\n");
+      expect(new TextDecoder().decode(store.peek(result.recoveryPath!))).toBe("吾輩は猫である。\n名前はまだ無い。\n");
     }
   });
 
@@ -142,5 +142,104 @@ describe("本文形式を保持した保存（モバイル版）", () => {
     }
     const recoveries = await store.listFiles(`作品_確認用/原稿/${RECOVERY_DIRECTORY_NAME}`);
     expect(recoveries).toHaveLength(6);
+  });
+});
+
+describe("退避を作らない保存（自動保存の2回目から。skipRecovery。設計書 5.4）", () => {
+  const recoveryDir = `作品_確認用/原稿/${RECOVERY_DIRECTORY_NAME}`;
+
+  /** 消す手が呼ばれたかを数える置き場（退避なしの保存は「消してから作る」を使わない） */
+  class CountingStore extends MemoryFileStore {
+    deletes = 0;
+    override async deleteFile(path: string): Promise<void> {
+      this.deletes += 1;
+      return super.deleteFile(path);
+    }
+  }
+
+  test("退避を作らず、元を消さずに書き換え、書いたもののハッシュを返す", async () => {
+    const store = new CountingStore();
+    store.putExternally(FILE, utf8("吾輩は猫である。\n"));
+    const read = await readTextFile(store, FILE);
+    const result = await writeTextFilePreservingFormat(store, FILE, "吾輩は犬である。\n", read, read.hash, {
+      skipRecovery: true,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.recoveryPath).toBeFalsy();
+    expect(new TextDecoder().decode(store.peek(FILE))).toBe("吾輩は犬である。\n");
+    expect(store.deletes).toBe(0);
+    await expect(store.listFiles(recoveryDir)).rejects.toThrow();
+    // 返したハッシュは、読み直したときのハッシュと同じ（次の保存の expectedHash に使える）
+    expect(result.ok ? result.hash : "").toBe((await readTextFile(store, FILE)).hash);
+  });
+
+  test("返したハッシュで続けて保存でき、退避は最初の1つだけ残る", async () => {
+    const store = storeWith(utf8("0\n"));
+    const read = await readTextFile(store, FILE);
+    const first = await writeTextFilePreservingFormat(store, FILE, "1\n", read, read.hash);
+    expect(first.ok).toBe(true);
+    let hash = first.ok ? first.hash : "";
+    for (let i = 2; i <= 7; i += 1) {
+      const result = await writeTextFilePreservingFormat(store, FILE, `${i}\n`, read, hash, { skipRecovery: true });
+      expect(result.ok).toBe(true);
+      hash = result.ok ? result.hash : "";
+    }
+    const recoveries = await store.listFiles(recoveryDir);
+    expect(recoveries).toHaveLength(1);
+    // 退避には開く前の本文が残る（押し出されない）
+    expect(new TextDecoder().decode(store.peek(`${recoveryDir}/${recoveries[0]}`))).toBe("0\n");
+    expect(new TextDecoder().decode(store.peek(FILE))).toBe("7\n");
+  });
+
+  test("Shift_JIS・CRLF の原稿は、退避なしでもそのまま書き戻す", async () => {
+    const store = storeWith(shiftJis("吾輩は猫である。\r\n名前はまだ無い。\r\n"));
+    const read = await readTextFile(store, FILE);
+    const result = await writeTextFilePreservingFormat(
+      store, FILE, "吾輩は犬である。\n名前はまだ無い。\n", read, read.hash, { skipRecovery: true }
+    );
+    expect(result.ok).toBe(true);
+    expect(bytesOf(store.peek(FILE))).toEqual(bytesOf(shiftJis("吾輩は犬である。\r\n名前はまだ無い。\r\n")));
+  });
+
+  test("外で書き換えられていたら、退避なしでも書かない", async () => {
+    const store = storeWith(utf8("元の本文\n"));
+    const read = await readTextFile(store, FILE);
+    store.putExternally(FILE, utf8("パソコンで直した本文\n"));
+    const result = await writeTextFilePreservingFormat(store, FILE, "スマホで直した本文\n", read, read.hash, {
+      skipRecovery: true,
+    });
+    expect(result).toMatchObject({ ok: false, reason: "modified_externally" });
+    expect(new TextDecoder().decode(store.peek(FILE))).toBe("パソコンで直した本文\n");
+  });
+
+  test("消えていたら、退避なしでも作り直さない", async () => {
+    const store = storeWith(utf8("本文\n"));
+    const read = await readTextFile(store, FILE);
+    await store.deleteFile(FILE);
+    const result = await writeTextFilePreservingFormat(store, FILE, "直した本文\n", read, read.hash, {
+      skipRecovery: true,
+    });
+    expect(result).toMatchObject({ ok: false, reason: "modified_externally" });
+    expect(store.peek(FILE)).toBeUndefined();
+  });
+
+  test("競合の印のある本文・Shift_JIS で書けない字は、退避なしでも書かない", async () => {
+    const original = shiftJis("本文\r\n");
+    const store = storeWith(original);
+    const read = await readTextFile(store, FILE);
+    const conflicted = "<<<<<<< HEAD\nこちら\n=======\nあちら\n>>>>>>> origin/main\n";
+    expect(
+      await writeTextFilePreservingFormat(store, FILE, conflicted, read, read.hash, { skipRecovery: true })
+    ).toMatchObject({ ok: false, reason: "conflict_markers" });
+    expect(
+      await writeTextFilePreservingFormat(store, FILE, "本文🐈\n", read, read.hash, { skipRecovery: true })
+    ).toMatchObject({ ok: false, reason: "encoding_error" });
+    expect(bytesOf(store.peek(FILE))).toEqual(bytesOf(original));
+  });
+
+  test("置き場の overwrite は、無いファイルを作らない", async () => {
+    const store = new MemoryFileStore();
+    await expect(store.writeFile(FILE, utf8("本文\n"), { mode: "overwrite" })).rejects.toThrow();
+    expect(store.peek(FILE)).toBeUndefined();
   });
 });

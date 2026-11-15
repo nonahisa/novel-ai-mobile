@@ -107,3 +107,30 @@ test.describe("2章：画面の大きさが変わっても書きかけを保つ"
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   });
 });
+
+test.describe("3章：止められたとき（設計書 5.3 の4・5.4）", () => {
+  test("保存しないまま止められても、開き直すと書きかけが戻る。読み直しを選べば捨てる", async ({ page }, info) => {
+    test.skip(info.project.name !== "phone-light", "スマホの幅で1回だけ見る");
+    await open(page, "#/tategaki");
+    await caretToEnd(page);
+    await page.keyboard.insertText("止められる前の続き");
+    const text = await paneText(page);
+    // 裏に回った（控えをすぐ書く）あと、止められて開き直した
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await page.waitForTimeout(200);
+    await page.reload();
+    await expect(page.locator("#draftResult")).toContainText("保存していない書きかけを戻しました");
+    expect(await paneText(page)).toBe(text);
+    // ［読み直す］で捨てると、控えも消え、開き直しても戻らない
+    await page.locator("#draftReload").click();
+    await page.locator('.dialog [data-answer="yes"]').click();
+    await expect(page.locator("#draftResult")).not.toContainText("戻しました");
+    await page.reload();
+    await expect(page.locator("#draftResult")).not.toBeEmpty();
+    await expect(page.locator("#draftResult")).not.toContainText("戻しました");
+    expect(await paneText(page)).not.toContain("止められる前の続き");
+  });
+});

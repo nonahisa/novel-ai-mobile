@@ -27,8 +27,11 @@ import {
  *   1つめの保存を「外で変わった」と取り違え、自動保存が止まる）
  * - 外で変わった（`modified_externally`）ら書かずに止め、書きかけを残したまま「外で変わりました」にする。
  *   **上書きの道は作らない**。以後の自動保存も止める（作者が［あちらを見る］などを選ぶ。画面はまだ無い）
- * - ほかの失敗（Shift_JIS で書けない字・競合の印など）は「保存待ち」のまま書きかけを残し、
+ * - ほかの失敗（Shift_JIS で書けない字・競合の印・置き場の失敗）は「保存待ち」のまま書きかけを残し、
  *   `lastFailure()` で理由を見せる。次に打ったとき・`flush()` のときにまた試す（続けて試し続けない）
+ * - **ほかの失敗は、その場で真ん中の窓で知らせる**（2026-11-15 作者の答え。上のバーではない）。
+ *   `onFailure` の聞き手に渡す。同じ理由で続けて失敗しても、知らせるのは1回だけ（2秒ごとに窓を出さない）。
+ *   保存が済むか失敗の種類が変われば、次の失敗でまた知らせる。窓の文は `failureMessage`
  *
  * 状態を返し、変わったら知らせるだけ。画面には載せない（作品の画面がまだ無い）。
  */
@@ -80,6 +83,8 @@ export interface AutoSave {
   flush(): Promise<AutoSaveStatus>;
   /** 裏に回ったら保存する。外す関数を返す。既定は `document` */
   watchVisibility(source?: VisibilitySource): () => void;
+  /** 外で変わった以外の失敗を知らせる（呼ぶ側が真ん中の窓で出す）。同じ理由が続くあいだは1回だけ。外す関数を返す */
+  onFailure(listener: (failure: AutoSaveFailure) => void): () => void;
   /** 状態が変わったら知らせる。外す関数を返す */
   onStatusChange(listener: (status: AutoSaveStatus) => void): () => void;
   /** 時計と聞き手を外す（保存はしない。要るなら先に `flush()`） */
@@ -107,6 +112,9 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
   let handle: unknown;
   let queue: Promise<void> = Promise.resolve();
   const listeners = new Set<(status: AutoSaveStatus) => void>();
+  const failureListeners = new Set<(failure: AutoSaveFailure) => void>();
+  /** 最後に知らせた失敗の種類（同じ種類なら、保存が済むまで2度は知らせない。detail は書き足した字の所で変わるので見ない） */
+  let toldFailure: string | undefined;
   const detachers = new Set<() => void>();
 
   const status = (): AutoSaveStatus =>
@@ -142,7 +150,13 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
   }
 
   async function saveIfNeeded(): Promise<void> {
-    if (stopped || draft === savedText) return;
+    if (stopped) return;
+    if (draft === savedText) {
+      // 保存した字へ戻した：書くものが無いので、前の失敗はもう当たらない
+      failure = undefined;
+      toldFailure = undefined;
+      return;
+    }
     const text = draft;
     try {
       const result = await writeTextFilePreservingFormat(store, path, text, format, hash, {
@@ -153,6 +167,7 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
         hash = result.hash;
         recovered = true;
         failure = undefined;
+        toldFailure = undefined;
         // 保存のあいだに打った字（前に保存した字へ戻したときも）が残っていて、時計が回っていなければ回す
         if (handle === undefined) schedule();
       } else {
@@ -166,6 +181,21 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
       failure = { reason: "path_conflict", detail: error instanceof Error ? error.message : String(error) };
     }
     emit();
+    tellFailure();
+  }
+
+  function tellFailure(): void {
+    if (!failure || stopped) return;
+    const key = failure.reason;
+    if (key === toldFailure) return;
+    toldFailure = key;
+    for (const listener of [...failureListeners]) {
+      try {
+        listener(failure);
+      } catch {
+        // 聞き手が投げても保存の列を止めない
+      }
+    }
   }
 
   function flush(): Promise<AutoSaveStatus> {
@@ -199,6 +229,10 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
       detachers.add(detach);
       return detach;
     },
+    onFailure(listener) {
+      failureListeners.add(listener);
+      return () => failureListeners.delete(listener);
+    },
     onStatusChange(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -208,6 +242,21 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
       clearTimer();
       for (const detach of [...detachers]) detach();
       listeners.clear();
+      failureListeners.clear();
     },
   };
+}
+
+/**
+ * 外で変わった以外の失敗の、真ん中の窓の文（2026-11-15 作者の答え「その場で真ん中の窓」）。
+ * 書きかけは残っていることも添える（原稿を失わないかが作者の気がかり）
+ */
+export function failureMessage(failure: AutoSaveFailure): string {
+  const head =
+    failure.reason === "encoding_error"
+      ? "Shift_JIS の原稿に書けない字があるので、保存していません"
+      : failure.reason === "conflict_markers"
+        ? "競合の印（<<<<<<< など）があるので、保存していません"
+        : "保存できませんでした";
+  return [head, failure.detail, "書きかけは残っています"].filter((line): line is string => !!line).join("\n");
 }

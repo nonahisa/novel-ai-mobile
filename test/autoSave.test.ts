@@ -1,6 +1,6 @@
 import iconv from "iconv-lite";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createAutoSave, type AutoSaveStatus, type VisibilitySource } from "../src/app/autoSave";
+import { createAutoSave, failureMessage, type AutoSaveStatus, type VisibilitySource } from "../src/app/autoSave";
 import { MemoryFileStore } from "../src/platform/memoryFileStore";
 import { RECOVERY_DIRECTORY_NAME, readTextFile } from "../src/platform/textFile";
 
@@ -313,5 +313,55 @@ describe("自動保存：状態の知らせ", () => {
     expect(autoSave.status()).toBe("保存済み");
     expect(autoSave.lastFailure()).toBeUndefined();
     expect([...store.peek(FILE)!]).toEqual([...sjis("本文の猫\r\n")]);
+  });
+});
+
+describe("自動保存：外で変わった以外の失敗は真ん中の窓で知らせる（2026-11-15 作者の答え）", () => {
+  const sjis = (text: string): Uint8Array => new Uint8Array(iconv.encode(text, "shift_jis"));
+
+  test("同じ理由で続けて失敗しても知らせるのは1回。保存が済んだあとの失敗はまた知らせる", async () => {
+    const { autoSave } = await open(sjis("本文\r\n"));
+    const told: string[] = [];
+    autoSave.onFailure((failure) => told.push(failureMessage(failure)));
+    autoSave.edit("本文🐈\n");
+    await autoSave.flush();
+    autoSave.edit("本文🐈あ\n");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(told).toHaveLength(1);
+    expect(told[0]).toContain("Shift_JIS の原稿に書けない字があるので、保存していません");
+    expect(told[0]).toContain("🐈");
+    expect(told[0]).toContain("書きかけは残っています");
+    autoSave.edit("本文\n");
+    expect(await autoSave.flush()).toBe("保存済み");
+    autoSave.edit("本文🐈\n");
+    await autoSave.flush();
+    expect(told).toHaveLength(2);
+  });
+
+  test("外で変わったときは窓の知らせを出さない（「外で変わりました」の状態で見せる）", async () => {
+    const { store, autoSave } = await open();
+    const told: unknown[] = [];
+    autoSave.onFailure((failure) => told.push(failure));
+    store.putExternally(FILE, utf8("パソコンで直した\n"));
+    autoSave.edit("スマホで直した\n");
+    expect(await autoSave.flush()).toBe("外で変わりました");
+    expect(told).toHaveLength(0);
+  });
+
+  test("聞き手が投げても保存は止まらず、外せば知らせない", async () => {
+    const { autoSave } = await open(sjis("本文\r\n"));
+    const off = autoSave.onFailure(() => {
+      throw new Error("窓が開けなかった");
+    });
+    autoSave.edit("本文🐈\n");
+    expect(await autoSave.flush()).toBe("保存待ち");
+    off();
+    autoSave.edit("本文\n");
+    expect(await autoSave.flush()).toBe("保存済み");
+  });
+
+  test("窓の文：競合の印・置き場の失敗", () => {
+    expect(failureMessage({ reason: "conflict_markers" })).toBe("競合の印（<<<<<<< など）があるので、保存していません\n書きかけは残っています");
+    expect(failureMessage({ reason: "path_conflict", detail: "置き場が一杯です" })).toBe("保存できませんでした\n置き場が一杯です\n書きかけは残っています");
   });
 });

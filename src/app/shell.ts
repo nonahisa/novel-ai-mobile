@@ -23,6 +23,7 @@ import {
 import { TABS, buildActionList, hiddenActions, searchActions, type PlannedTab } from "./menuPlan";
 import { escapeHtml, renderActionRows, renderAppBar, renderTab, renderTabBar } from "./menuScreen";
 import {
+  DRAFT_PATH,
   SAMPLE_TEXT,
   TRIAL_PREFS_KEY,
   countLabel,
@@ -34,6 +35,7 @@ import {
   type TrialPrefs,
 } from "./tategakiDraft";
 import { askChoice } from "./dialog";
+import { createDraftJournal, shouldRestore } from "./draftJournal";
 
 /**
  * アプリの外枠（下のタブ4つと、画面の切り替え）。設計書 4.3 の狭い段。
@@ -332,9 +334,20 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
     logFile.add(`${time} ${line}`);
     logEl.textContent = `${time} ${line}\n${logEl.textContent ?? ""}`.slice(0, 12000);
   };
+  /** 書きかけの控え（設計書 5.3 の4。止められても次に開いたとき戻す） */
+  const journal = createDraftJournal(store, DRAFT_PATH, { onError: (error) => log(`控えを書けなかった：${error instanceof Error ? error.message : String(error)}`) });
+  /** 読み終わるまでは控えに触らない（読む前の空の本文で控えを消さない） */
+  let journalReady = false;
+  const onHidden = () => {
+    if (document.visibilityState === "hidden") void journal.flush();
+  };
+  document.addEventListener("visibilitychange", onHidden);
   const update = () => {
     countEl.textContent = countLabel(text);
     preview.innerHTML = previewHtml(text);
+    if (!journalReady) return;
+    if (text !== (savedText ?? SAMPLE_TEXT)) journal.note(text);
+    else void journal.clear();
   };
   const showText = () => {
     if (mode === "A") editable.setText(text);
@@ -479,9 +492,17 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
       result.textContent = loaded
         ? `前に保存した原稿を読みました（${loaded.encoding}・${loaded.eol === "\r\n" ? "CRLF" : "LF"}）`
         : "まだ保存していません。見本の文が入っています。";
+      // 止められる前の書きかけが控えにあれば戻す
+      const kept = await journal.read();
+      if (shouldRestore(kept, text)) {
+        text = kept;
+        result.textContent += "\n保存していない書きかけを戻しました";
+        log(`控えから書きかけを戻した（${kept.length}字）`);
+      }
     } catch (error) {
       result.textContent = `❌ 読めませんでした：${error instanceof Error ? error.message : String(error)}`;
     }
+    journalReady = true;
     showText();
   };
 
@@ -495,6 +516,8 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
       }
       loaded = saved.readBack;
       savedText = text;
+      // 保存が済んだので控えは要らない
+      void journal.clear();
       result.textContent = [
         saved.same ? "✅ 保存して読み戻しました。書いた本文と読み戻した本文は同じです" : "❌ 読み戻した本文が、書いた本文と違います",
         `形：${saved.readBack.encoding}・${saved.readBack.eol === "\r\n" ? "CRLF" : "LF"}${saved.created ? "（はじめての保存なので新しく作りました）" : "（前と同じ形で書き戻しました）"}`,
@@ -509,6 +532,8 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   screen.querySelector<HTMLButtonElement>("#draftReload")!.addEventListener("click", () => {
     void (async () => {
       if (text !== (savedText ?? SAMPLE_TEXT) && !(await askChoice("保存していない書き換えを捨てて、読み直しますか？", "捨てて読み直す", "やめる"))) return;
+      // 捨てると選んだので、控えも捨てる（読み直しで戻さない）
+      await journal.clear();
       await load();
     })();
   });
@@ -520,6 +545,10 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   return {
     isDirty: () => text !== (savedText ?? SAMPLE_TEXT),
     destroy() {
+      // 離れるのは、保存したか「保存しないで戻る」を選んだとき。どちらも控えは要らない
+      // （止められたときは destroy が呼ばれないので、控えが残って次に開いたとき戻る）
+      document.removeEventListener("visibilitychange", onHidden);
+      void journal.clear();
       pane?.destroy();
       composedPane?.destroy();
       editable.destroy();

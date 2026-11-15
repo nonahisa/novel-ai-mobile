@@ -117,7 +117,22 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
     const now = status();
     if (now === lastStatus) return;
     lastStatus = now;
-    for (const listener of [...listeners]) listener(now);
+    for (const listener of [...listeners]) {
+      try {
+        listener(now);
+      } catch {
+        // 聞き手が投げても保存の列を止めない
+      }
+    }
+  }
+
+  function schedule(): void {
+    clearTimer();
+    if (stopped || disposed || draft === savedText) return;
+    handle = timer.setTimeout(() => {
+      handle = undefined;
+      void flush();
+    }, delayMs);
   }
 
   function clearTimer(): void {
@@ -138,6 +153,8 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
         hash = result.hash;
         recovered = true;
         failure = undefined;
+        // 保存のあいだに打った字（前に保存した字へ戻したときも）が残っていて、時計が回っていなければ回す
+        if (handle === undefined) schedule();
       } else {
         failure = { reason: result.reason, ...(result.detail !== undefined ? { detail: result.detail } : {}) };
         if (result.reason === "modified_externally") {
@@ -153,7 +170,7 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
 
   function flush(): Promise<AutoSaveStatus> {
     clearTimer();
-    queue = queue.then(saveIfNeeded);
+    queue = queue.then(saveIfNeeded, saveIfNeeded);
     return queue.then(status);
   }
 
@@ -164,13 +181,7 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
     lastFailure: () => failure,
     edit(text: string): void {
       draft = text;
-      clearTimer();
-      if (!stopped && !disposed && draft !== savedText) {
-        handle = timer.setTimeout(() => {
-          handle = undefined;
-          void flush();
-        }, delayMs);
-      }
+      schedule();
       emit();
     },
     flush,

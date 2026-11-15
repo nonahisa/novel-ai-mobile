@@ -174,6 +174,34 @@ describe("自動保存：退避とハッシュ", () => {
     expect(autoSave.lastFailure()).toBeUndefined();
   });
 
+  test("保存のあいだに前の字へ戻しても、保存が済んだあと2秒で書き戻す", async () => {
+    // 書く手を止めておける置き場（保存の途中に打つ）
+    let release: () => void = () => undefined;
+    let holding = false;
+    const store = new (class extends MemoryFileStore {
+      override async writeFile(path: string, bytes: Uint8Array, options: { mode: "create" | "overwrite" }) {
+        if (holding && !path.includes(RECOVERY_DIRECTORY_NAME)) {
+          await new Promise<void>((resolve) => (release = resolve));
+        }
+        return super.writeFile(path, bytes, options);
+      }
+    })();
+    store.putExternally(FILE, utf8("甲\n"));
+    const autoSave = createAutoSave({ store, path: FILE, opened: await readTextFile(store, FILE) });
+    holding = true;
+    autoSave.edit("乙\n");
+    const saving = autoSave.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    autoSave.edit("甲\n");
+    release();
+    holding = false;
+    expect(await saving).toBe("保存待ち");
+    expect(textOf(store.peek(FILE))).toBe("乙\n");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(textOf(store.peek(FILE))).toBe("甲\n");
+    expect(autoSave.status()).toBe("保存済み");
+  });
+
   test("時計と flush() と裏に回るのが重なっても、1つずつ保存する", async () => {
     const { store, autoSave } = await open();
     const visibility = new FakeVisibility();
@@ -257,6 +285,18 @@ describe("自動保存：状態の知らせ", () => {
     off();
     autoSave.edit("四");
     expect(seen).toHaveLength(4);
+  });
+
+  test("聞き手が投げても、保存は止まらない", async () => {
+    const { store, autoSave } = await open();
+    autoSave.onStatusChange(() => {
+      throw new Error("聞き手の失敗");
+    });
+    autoSave.edit("一\n");
+    expect(await autoSave.flush()).toBe("保存済み");
+    autoSave.edit("二\n");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(textOf(store.peek(FILE))).toBe("二\n");
   });
 
   test("外で変わった以外の失敗（Shift_JIS で書けない字）は「保存待ち」のまま理由を見せ、直せば保存する", async () => {

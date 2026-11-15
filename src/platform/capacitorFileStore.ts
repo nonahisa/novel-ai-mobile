@@ -4,6 +4,7 @@ import {
   FileNotFoundError,
   normalizeStorePath,
   type FileStore,
+  type StoreEntry,
   type WriteMode,
 } from "./fileStore";
 
@@ -71,6 +72,16 @@ export class CapacitorFileStore implements FileStore {
     try {
       const { files } = await Filesystem.readdir({ path: this.full(path), directory: this.directory });
       return files.filter((file) => file.type === "file").map((file) => file.name);
+    } catch (error) {
+      if (await this.missing(path)) throw new FileNotFoundError(path);
+      throw error;
+    }
+  }
+
+  async listEntries(path: string): Promise<StoreEntry[]> {
+    try {
+      const { files } = await Filesystem.readdir({ path: this.full(path), directory: this.directory });
+      return files.map((file) => [file.name, file.type === "directory" ? "directory" : "file"] as const);
     } catch (error) {
       if (await this.missing(path)) throw new FileNotFoundError(path);
       throw error;

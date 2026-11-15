@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import { openWithWorks } from "./support/fakeWorks";
 
 /**
  * **画面の写真を撮る**（`pnpm run shots`。2026-11-12 作者「画面ショットの撮影は自動化してほしい。
@@ -9,7 +10,8 @@ import { expect, test } from "@playwright/test";
  * リポジトリには入れない。`pnpm run e2e` は `screens` のファイルだけを走らせるので、そのときは撮らない。
  */
 
-const SCREENS: { name: string; hash: string; prepare?: string; mode?: string }[] = [
+/** `works` は作り物の作品（`support/fakeWorks.ts`）を置いて開く。`open` はその題の作品を押して話の一覧を開く */
+const SCREENS: { name: string; hash: string; prepare?: string; mode?: string; works?: boolean; open?: string }[] = [
   { name: "01-作品", hash: "#/works" },
   { name: "02-書く", hash: "#/write" },
   { name: "03-提案", hash: "#/proposals" },
@@ -19,12 +21,20 @@ const SCREENS: { name: string; hash: string; prepare?: string; mode?: string }[]
   { name: "07-縦書きの試し-横", hash: "#/tategaki", prepare: "horizontal" },
   { name: "08-動作確認ページ", hash: "#/check" },
   { name: "09-縦書きの試し-C組んで書く", hash: "#/tategaki", prepare: "vertical", mode: "C" },
+  { name: "10-作品一覧", hash: "#/works", works: true },
+  { name: "11-話の一覧", hash: "#/works", works: true, open: "灯台守の手紙_確認用" },
 ];
 
 for (const screen of SCREENS) {
   test(`写真：${screen.name}`, async ({ page }, info) => {
-    await page.goto(`/${screen.hash}`);
+    if (screen.works) await openWithWorks(page, screen.hash);
+    else await page.goto(`/${screen.hash}`);
     await expect(page.locator(".appbar")).toBeVisible();
+    if (screen.works) await expect(page.locator(".work-card").first()).toBeVisible();
+    if (screen.open) {
+      await page.locator(".work-card", { hasText: screen.open }).click();
+      await expect(page.locator(".ep-list .ep").first()).toBeVisible();
+    }
     if (screen.prepare) await page.locator(`[data-orient="${screen.prepare}"]`).click();
     if (screen.mode) {
       await expect(page.locator("#draftResult")).not.toBeEmpty();

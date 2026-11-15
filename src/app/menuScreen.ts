@@ -52,9 +52,9 @@ export function renderAppBar(title: string, options: { back?: boolean; sub?: str
 /**
  * タブの画面。題はタブと同じ名前。版（`version`）は渡されたときだけ題の下に出す（［ほか］だけ）。
  * 説明の行は置かない：灰色と「未」の印で、作っていないことは見える（2026-11-14 作者「不要なセカンダリラベルや
- * 説明を避け、レイアウトに説明させてください」。設計書 4.6）
+ * 説明を避け、レイアウトに説明させてください」。設計書 4.6）。`lead` は題の下・まとまりの上に置く HTML（［作品］の作品一覧）
  */
-export function renderTab(tab: PlannedTab, version?: string): string {
+export function renderTab(tab: PlannedTab, version?: string, lead = ""): string {
   const sections = tab.sections
     .map(
       (section) => `
@@ -66,6 +66,7 @@ export function renderTab(tab: PlannedTab, version?: string): string {
     .join("");
   return `
     ${renderAppBar(tab.label, version ? { sub: version } : {})}
+    ${lead}
     ${sections}`;
 }
 

@@ -36,13 +36,18 @@ import {
 } from "./tategakiDraft";
 import { askChoice } from "./dialog";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
+import { listWorks, scanWorkFolder, type ScanOptions } from "../platform/workScan";
+import { lastCommitTime } from "../platform/git";
+import { workSummary } from "./workListView";
+import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
 
 /**
  * アプリの外枠（下のタブ4つと、画面の切り替え）。設計書 4.3 の狭い段。
  *
  * 画面は URL の `#/…` で切り替える（端末の［戻る］で前の画面へ戻れるように）。
  *
- * | `#/works` ほか | 下のタブの画面（`menuPlan.ts` の `TABS`） |
+ * | `#/works` ほか | 下のタブの画面（`menuPlan.ts` の `TABS`）。［作品］の頭に作品一覧（A） |
+ * | `#/work/<作品>` | 話の一覧（B）。下のタブは出したまま、［←］で作品一覧へ |
  * | `#/all` | すべての機能（検索欄つきの一覧） |
  * | `#/tategaki` | 縦書きの試し |
  * | `#/check` | 動作確認ページ（開発用） |
@@ -51,17 +56,38 @@ import { createDraftJournal, shouldRestore } from "./draftJournal";
  * 開いているあいだ、下のタブは隠してよい」）。上の［←］で戻る。
  */
 
-type Route = { kind: "tab"; tab: PlannedTab } | { kind: "all" } | { kind: "tategaki" } | { kind: "check" };
+type Route =
+  | { kind: "tab"; tab: PlannedTab }
+  | { kind: "work"; root: string }
+  | { kind: "all" }
+  | { kind: "tategaki" }
+  | { kind: "check" };
 
 export function parseRoute(hash: string): Route {
   const name = hash.replace(/^#\/?/, "");
   if (name === "all") return { kind: "all" };
   if (name === "tategaki") return { kind: "tategaki" };
   if (name === "check") return { kind: "check" };
+  if (name.startsWith("work/")) {
+    try {
+      const root = decodeURIComponent(name.slice("work/".length));
+      // 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない
+      const parts = root.split("/");
+      if (parts.length <= 2 && parts.every((part) => part !== "" && !part.startsWith("."))) return { kind: "work", root };
+    } catch {
+      /* 読めない名前は作品一覧へ */
+    }
+    return { kind: "tab", tab: TABS[0] };
+  }
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
 const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all" } as const;
+
+/** 話の一覧を開く場所 */
+export function workHash(root: string): string {
+  return `#/work/${encodeURIComponent(root)}`;
+}
 
 export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFileStore()): void {
   root.innerHTML = `
@@ -82,6 +108,16 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   let leaveConfirmed = false;
   /** いちばん最近に開いた下のタブ（［←］はここへ戻る） */
   let lastTabHash = "#/works";
+  /** 描くたびに増やす。作品を読み終えたとき、もう別の画面へ移っていたら描かない */
+  let renderSeq = 0;
+  /**
+   * 最後に書いた日は git の最後の版の日（端末の置き場のときだけ。git の置き場も同じ `works` を指す）。
+   * 書庫の中の作品（`書庫/作品`）は出さない：書庫は1つのリポジトリなので、最後の版はほかの作品のものかもしれない
+   */
+  const scanOptions: ScanOptions =
+    store instanceof CapacitorFileStore
+      ? { lastWrittenOf: async (root) => (root.includes("/") ? undefined : lastCommitTime(`/${root}`)) }
+      : {};
 
   const toast = (text: string) => {
     toastEl.textContent = text;
@@ -91,8 +127,12 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   };
 
   root.addEventListener("click", (event) => {
-    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-screen],[data-planned],[data-tab],[data-back]");
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-screen],[data-planned],[data-tab],[data-back],[data-work]");
     if (!target) return;
+    if (target.dataset.work) {
+      location.hash = workHash(target.dataset.work);
+      return;
+    }
     if (target.dataset.planned) return toast(target.dataset.planned);
     if (target.dataset.screen) {
       location.hash = SCREEN_HASH[target.dataset.screen as keyof typeof SCREEN_HASH];
@@ -135,7 +175,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const route = parseRoute(location.hash);
     const full = route.kind === "tategaki" || route.kind === "check";
     tabbar.hidden = full;
-    const currentTab = route.kind === "tab" ? route.tab.id : route.kind === "all" ? "other" : undefined;
+    const currentTab =
+      route.kind === "tab" ? route.tab.id : route.kind === "work" ? "works" : route.kind === "all" ? "other" : undefined;
+    const seq = ++renderSeq;
+    const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
     screen.scrollTop = 0;
     // 送っているのはページ（body）なので、移るたびに頭へ戻す（前の画面の送り位置が残っていた。2026-11-07 Mac）
@@ -146,7 +189,16 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     switch (route.kind) {
       case "tab":
         lastTabHash = `#/${route.tab.id}`;
-        screen.innerHTML = renderTab(route.tab, route.tab.id === "other" ? `モバイル版 ${__APP_VERSION__}（本体の部品 ${SHARED_VERSION}）` : undefined);
+        screen.innerHTML = renderTab(
+          route.tab,
+          route.tab.id === "other" ? `モバイル版 ${__APP_VERSION__}（本体の部品 ${SHARED_VERSION}）` : undefined,
+          route.tab.id === "works" ? `<div id="workListSlot" aria-busy="true"></div>` : undefined
+        );
+        if (route.tab.id === "works") mountWorkList(screen.querySelector<HTMLElement>("#workListSlot")!, store, scanOptions, stillHere);
+        return;
+      case "work":
+        lastTabHash = "#/works";
+        mountEpisodeList(screen, store, route.root, scanOptions, stillHere);
         return;
       case "all":
         mountAllActions(screen);
@@ -162,6 +214,41 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   };
   window.addEventListener("hashchange", render);
   render();
+}
+
+/* ---------- 作品一覧（A）と話の一覧（B） ---------- */
+
+/** 作品を読み終えたら一覧を描く（読む間は空の枠のまま） */
+function mountWorkList(slot: HTMLElement, store: FileStore, options: ScanOptions, stillHere: () => boolean): void {
+  const show = (html: string) => {
+    if (!stillHere()) return;
+    slot.innerHTML = html;
+    slot.removeAttribute("aria-busy");
+  };
+  listWorks(store, options).then(
+    (items) => show(renderWorkList(items, new Date())),
+    (error) => show(renderWorkError(error instanceof Error ? error.message : String(error)))
+  );
+}
+
+/** 話の一覧。題と字数は読み終えてから上のバーへ入れる（読む間はフォルダーの名前） */
+function mountEpisodeList(screen: HTMLElement, store: FileStore, root: string, options: ScanOptions, stillHere: () => boolean): void {
+  screen.innerHTML = `${renderAppBar(root, { back: true, subId: "workSummary" })}<div id="episodeSlot" aria-busy="true"></div>`;
+  const slot = screen.querySelector<HTMLElement>("#episodeSlot")!;
+  const show = (html: string) => {
+    if (!stillHere()) return;
+    slot.innerHTML = html;
+    slot.removeAttribute("aria-busy");
+  };
+  scanWorkFolder(store, root, options).then(
+    (work) => {
+      if (!stillHere()) return;
+      screen.querySelector<HTMLElement>(".appbar-title")!.firstChild!.textContent = work.title;
+      screen.querySelector<HTMLElement>("#workSummary")!.textContent = workSummary(work);
+      show(renderEpisodeList(work));
+    },
+    (error) => show(renderWorkError(error instanceof Error ? error.message : String(error)))
+  );
 }
 
 /* ---------- すべての機能 ---------- */

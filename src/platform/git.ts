@@ -61,3 +61,17 @@ export async function removeTree(backend: GitFsBackend, dir: string): Promise<vo
   for (const name of await backend.readdir(dir)) await removeTree(backend, `${dir}/${name}`);
   await backend.rmdir(dir);
 }
+
+/**
+ * 作品の最後の版の日（ミリ秒。作品一覧の「最後に書いた日」）。git の置き場でなければ undefined。
+ * 浅い取得でも最後の1版は手元にあるので読める。`dir` は `/` で始まる場所（`works` の下）
+ */
+export async function lastCommitTime(dir: string, backend: GitFsBackend = new CapacitorGitFsBackend()): Promise<number | undefined> {
+  if (!(await backend.stat(`${dir}/.git`))) return undefined;
+  try {
+    const [latest] = await git.log({ fs: createGitFs(backend), dir, depth: 1 });
+    return latest ? latest.commit.committer.timestamp * 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+}

@@ -66,3 +66,40 @@ export {
   type TermMatch,
 } from "novel-ai-assistant/src/core/termIndex";
 export { TERM_COLORS, type TermColorPair } from "novel-ai-assistant/src/core/termColors";
+/*
+  作品一覧（A）と話の一覧（B）：作品の走査（本体の `core/scanner.ts`）は vscode に頼るので、
+  走査が使う vscode に触らない部品を同じ順に通す（`platform/workScan.ts`）。写さない
+*/
+export {
+  acceptManuscriptEntry,
+  isKnownNonManuscript,
+  resolveManuscriptDirAsync,
+  MANUSCRIPT_TREE_DEPTH,
+  type EntryKind,
+  type Listing,
+} from "novel-ai-assistant/src/core/manuscriptFolderRule";
+export { parseEpisodeFileName } from "novel-ai-assistant/src/core/episodeParser";
+export { parseEpisodeMetadata } from "novel-ai-assistant/src/core/metadataParser";
+export { parseCollectedFile } from "novel-ai-assistant/src/core/collectedFile";
+export { isWorkInfoFile } from "novel-ai-assistant/src/core/workInfoFile";
+export { inferChapterHint, toChapterHintNote } from "novel-ai-assistant/src/core/episodeChapterHint";
+export { containsConflictMarkers } from "novel-ai-assistant/src/core/mergeGuard";
+export { countEpisodeChars, episodeBodyForCount } from "novel-ai-assistant/src/core/episodeCharCount";
+export { addCounts, emptyCounts } from "novel-ai-assistant/src/core/charCount";
+export { compareEpisodes } from "novel-ai-assistant/src/core/episodeOrder";
+export { detectEol } from "novel-ai-assistant/src/core/eolAudit";
+export { decodeBytes } from "novel-ai-assistant/src/core/textDecode";
+export { parsePlotMarkdown } from "novel-ai-assistant/src/core/plotDoc";
+export { matchWorkFormat, type WorkFormatKey } from "novel-ai-assistant/src/core/workFormat";
+export { CHAPTERS_FILE, parseChapterSet, type Chapter } from "novel-ai-assistant/src/models/chapter";
+export { groupEpisodesByChapter, type ChapterGrouping } from "novel-ai-assistant/src/core/chapterGrouping";
+export { episodeTitle, formatChapterLabel, episodeListLabel, isCollectedFile } from "novel-ai-assistant/src/core/episodeLabel";
+export {
+  AIWRITER_DIR,
+  CONFIG_FILE,
+  DEFAULT_MANUSCRIPT_DIR,
+  DEFAULT_SETTINGS_DIR,
+  PLOT_FILE,
+  type CharCounts,
+  type EpisodeFile,
+} from "novel-ai-assistant/src/models/types";

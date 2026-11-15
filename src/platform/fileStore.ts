@@ -29,7 +29,15 @@ export interface FileStore {
   createDirectory(path: string): Promise<void>;
   /** フォルダーの中のファイルの名前。フォルダーが無ければ `FileNotFoundError` */
   listFiles(path: string): Promise<string[]>;
+  /**
+   * フォルダーの中の名前と種類（ファイル・フォルダー）。フォルダーが無ければ `FileNotFoundError`。
+   * 作品の一覧と、本文フォルダーの中を歩くのに使う（本体の走査と同じ歩き方。`workScan.ts`）
+   */
+  listEntries(path: string): Promise<StoreEntry[]>;
 }
+
+/** フォルダーの中の1つ（名前と種類） */
+export type StoreEntry = readonly [name: string, kind: "file" | "directory"];
 
 export type WriteMode = "create" | "overwrite";
 

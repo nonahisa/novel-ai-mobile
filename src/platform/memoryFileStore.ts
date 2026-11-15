@@ -4,6 +4,7 @@ import {
   dirname,
   normalizeStorePath,
   type FileStore,
+  type WriteMode,
 } from "./fileStore";
 
 /**
@@ -34,8 +35,13 @@ export class MemoryFileStore implements FileStore {
     return bytes.slice();
   }
 
-  async writeFile(path: string, bytes: Uint8Array, _options: { mode: "create" }): Promise<void> {
+  async writeFile(path: string, bytes: Uint8Array, options: { mode: WriteMode }): Promise<void> {
     const key = normalizeStorePath(path);
+    if (options.mode === "overwrite") {
+      if (!this.files.has(key)) throw new FileNotFoundError(path);
+      this.files.set(key, bytes.slice());
+      return;
+    }
     if (this.files.has(key)) throw new FileExistsError(path);
     if (!this.directories.has(dirname(key))) throw new FileNotFoundError(dirname(key));
     this.files.set(key, bytes.slice());

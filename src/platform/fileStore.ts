@@ -14,10 +14,15 @@ export interface FileStore {
   /** 読む。無ければ `FileNotFoundError` を投げる */
   readFile(path: string): Promise<Uint8Array>;
   /**
-   * 書く。`create` は「無いときだけ作る」——在れば `FileExistsError` を投げる。
-   * 本体の `atomicWriteFile(..., { mode: "create" })` と同じ約束で、黙って上書きしない
+   * 書く。
+   *
+   * - `create` は「無いときだけ作る」——在れば `FileExistsError` を投げる。
+   *   本体の `atomicWriteFile(..., { mode: "create" })` と同じ約束で、黙って上書きしない
+   * - `overwrite` は「在るものを1手で書き換える」——無ければ `FileNotFoundError` を投げる（消えたものを
+   *   作り直さない）。自動保存の2回目からの保存（退避を作らない。設計書 5.4）だけが使う。
+   *   「消してから作る」2手と違い、原稿の無い時間を作らない
    */
-  writeFile(path: string, bytes: Uint8Array, options: { mode: "create" }): Promise<void>;
+  writeFile(path: string, bytes: Uint8Array, options: { mode: WriteMode }): Promise<void>;
   /** 消す。無ければ `FileNotFoundError` を投げる */
   deleteFile(path: string): Promise<void>;
   /** フォルダーを作る（途中のフォルダーも。在ってもよい） */
@@ -25,6 +30,8 @@ export interface FileStore {
   /** フォルダーの中のファイルの名前。フォルダーが無ければ `FileNotFoundError` */
   listFiles(path: string): Promise<string[]>;
 }
+
+export type WriteMode = "create" | "overwrite";
 
 export class FileNotFoundError extends Error {
   constructor(readonly path: string) {

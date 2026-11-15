@@ -15,7 +15,7 @@ import {
   describeUnencodable,
   substituteForShiftJis,
 } from "novel-ai-assistant/src/core/sjisFallback";
-import { FileExistsError, dirname, joinStorePath, normalizeStorePath, type FileStore } from "./fileStore";
+import { FileExistsError, FileNotFoundError, dirname, joinStorePath, normalizeStorePath, type FileStore } from "./fileStore";
 
 /**
  * 本文の読み書き（設計書 2.3。本体の `core/textFile.ts` の差し替え）。
@@ -26,6 +26,7 @@ import { FileExistsError, dirname, joinStorePath, normalizeStorePath, type FileS
  * - 競合の印のある本文は書かない（`conflict_markers`）
  * - 文字コード・改行・変わらなかった所の元のバイトを保つ（本体の `encodePreservingFormat` をそのまま使う）
  * - 書く前の本文を `.novelai-recovery` へ退避し、1ファイル5世代まで残す
+ *   （モバイル版の自動保存は、話を開いて最初の保存のときだけ退避する。`skipRecovery`。設計書 5.4）
  *
  * 本体から借りるのは `vscode` に頼らない部品だけ（`hash`・`runtime`・`textDecode`・
  * `textEncodePreserving`）。**手順は本体の `writeTextFilePreservingFormat` を写して並べ直した**
@@ -59,8 +60,13 @@ export type WriteTextFailureReason =
   | "conflict_markers"
   | "encoding_error";
 
+/**
+ * 書けたときは、書いたバイト列のハッシュ（`hash`）を返す。次の保存の `expectedHash` に使う
+ * （書いたあとに読み直して取ると、その間に外で変わったものを自分の保存と取り違える）。
+ * 退避を作らなかったとき（`skipRecovery`）は `recoveryPath` が無い。
+ */
 export type WriteTextFileResult =
-  | { ok: true; recoveryPath: string }
+  | { ok: true; hash: string; recoveryPath?: string }
   | { ok: false; reason: WriteTextFailureReason; detail?: string; recoveryPaths?: string[] };
 
 export async function readTextFile(store: FileStore, filePath: string): Promise<TextFileContent> {
@@ -70,7 +76,11 @@ export async function readTextFile(store: FileStore, filePath: string): Promise<
 /**
  * 読み込み時と同じ形式で書き戻す。
  *
- * @param expectedHash 読み込み時のハッシュ（`readTextFile` の `hash`）
+ * @param expectedHash 読み込み時のハッシュ（`readTextFile` の `hash`。2回目からは前の保存が返した `hash`）
+ * @param options.skipRecovery 退避を作らない（自動保存の2回目から。設計書 5.4「退避は話を開いて最初の
+ *   保存のときだけ」）。ハッシュの確かめ・競合の印・文字コードと改行を保つ守りは同じに通し、
+ *   「消してから作る」の代わりに置き場の `overwrite` で1手で書き換える（退避が無いので、元を消すと
+ *   失敗したときに原稿が残らない）
  */
 export async function writeTextFilePreservingFormat(
   store: FileStore,
@@ -78,7 +88,7 @@ export async function writeTextFilePreservingFormat(
   newText: string,
   original: Pick<TextFileContent, "encoding" | "eol" | "hasTrailingNewline">,
   expectedHash: string,
-  options: { rewriteEol?: boolean } = {}
+  options: { rewriteEol?: boolean; skipRecovery?: boolean } = {}
 ): Promise<WriteTextFileResult> {
   if (hasConflictMarkers(newText)) return { ok: false, reason: "conflict_markers" };
 
@@ -108,6 +118,8 @@ export async function writeTextFilePreservingFormat(
     substitutionLog(`Shift_JIS の原稿へ書くため、字を置き換えました（${filePath.split("/").pop()}）：${describeSubstitutions(encoded.substitutions)}`);
   }
   const bytes = encoded.bytes;
+
+  if (options.skipRecovery === true) return overwriteWithoutRecovery(store, filePath, bytes, expectedHash);
 
   let recoveryPath: string;
   try {
@@ -154,7 +166,35 @@ export async function writeTextFilePreservingFormat(
   // 本体 0.130 から：退避の写しが1つ増えたことを知らせる（本体ではタイムラインの欄が聞く。
   // モバイル版にはまだ聞き手がいないが、手順は本体とそろえる。引継ぎ書 2章の7）
   notifyWorkRecordWritten(filePath);
-  return { ok: true, recoveryPath };
+  return { ok: true, hash: hashBytes(bytes), recoveryPath };
+}
+
+/**
+ * 退避を作らずに書く（`skipRecovery`）。書く直前にもう一度ハッシュを確かめ、1手で書き換える。
+ * 退避の写しは増えないので、片付け（`pruneRecoveries`）も知らせ（`notifyWorkRecordWritten`）もしない
+ */
+async function overwriteWithoutRecovery(
+  store: FileStore,
+  filePath: string,
+  bytes: Uint8Array,
+  expectedHash: string
+): Promise<WriteTextFileResult> {
+  let recheck: Uint8Array;
+  try {
+    recheck = await store.readFile(filePath);
+  } catch {
+    return { ok: false, reason: "modified_externally" };
+  }
+  if (hashBytes(recheck) !== expectedHash) return { ok: false, reason: "modified_externally" };
+
+  try {
+    await store.writeFile(filePath, bytes, { mode: "overwrite" });
+  } catch (error) {
+    // 確かめてから書くまでの間に消えた
+    if (error instanceof FileNotFoundError) return { ok: false, reason: "modified_externally" };
+    return { ok: false, reason: "path_conflict", detail: describe(error) };
+  }
+  return { ok: true, hash: hashBytes(bytes) };
 }
 
 /**

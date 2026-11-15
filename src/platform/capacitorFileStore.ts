@@ -4,6 +4,7 @@ import {
   FileNotFoundError,
   normalizeStorePath,
   type FileStore,
+  type WriteMode,
 } from "./fileStore";
 
 /**
@@ -32,10 +33,15 @@ export class CapacitorFileStore implements FileStore {
     return base64ToBytes(data);
   }
 
-  async writeFile(path: string, bytes: Uint8Array, _options: { mode: "create" }): Promise<void> {
+  async writeFile(path: string, bytes: Uint8Array, options: { mode: WriteMode }): Promise<void> {
     // Capacitor の書き込みには「無いときだけ」が無い。直前に確かめる（本体の `create` と同じ約束にそろえる）。
     // 確かめてから書くまでの間に別の道から書かれる隙は残る——モバイル版ではこの領域へ書くのはアプリだけ
-    if (!(await this.missing(path))) throw new FileExistsError(path);
+    const missing = await this.missing(path);
+    if (options.mode === "create" && !missing) throw new FileExistsError(path);
+    // `overwrite` は在るものだけを書き換える（消えたものを作り直さない）。Capacitor の writeFile は
+    // 在るファイルを1手で書き換える。【確かめる】端末で書いている途中に止められたとき、半分だけ書かれた
+    // ファイルが残らないか（Android・iOS の中の書き方による）
+    if (options.mode === "overwrite" && missing) throw new FileNotFoundError(path);
     await Filesystem.writeFile({
       path: this.full(path),
       directory: this.directory,

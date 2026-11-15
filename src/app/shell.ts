@@ -243,7 +243,9 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
     </div>
     ${support.ok ? "" : `<p class="menu-how" id="sinkWhy" hidden>${escapeHtml(support.reason)}</p>`}
     <p class="menu-lead" id="modeNote"></p>
-    <div class="seg" role="group" aria-label="ルビと傍点" id="composedTools" hidden>
+    <div class="seg" role="group" aria-label="道具" id="composedTools" hidden>
+      <button id="composedUndo" disabled>取り消し</button>
+      <button id="composedRedo" disabled>やり直し</button>
       <button id="composedRuby">ルビ</button>
       <button id="composedEm">傍点</button>
     </div>
@@ -284,6 +286,16 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   screen.querySelector<HTMLButtonElement>("#composedEm")!.addEventListener("click", () => {
     tellComposed("");
     composedPane?.toggleEmphasis(tellComposed);
+  });
+  const undoButton = screen.querySelector<HTMLButtonElement>("#composedUndo")!;
+  const redoButton = screen.querySelector<HTMLButtonElement>("#composedRedo")!;
+  undoButton.addEventListener("click", () => {
+    tellComposed("");
+    composedPane?.undo();
+  });
+  redoButton.addEventListener("click", () => {
+    tellComposed("");
+    composedPane?.redo();
   });
   const countEl = screen.querySelector<HTMLElement>("#draftCount")!;
   const preview = screen.querySelector<HTMLElement>("#draftPreview")!;
@@ -433,8 +445,14 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
         text = changed;
         update();
       },
-      log
+      log,
+      (state) => {
+        undoButton.disabled = !state.canUndo;
+        redoButton.disabled = !state.canRedo;
+      }
     );
+    undoButton.disabled = true;
+    redoButton.disabled = true;
   }
 
   /** B の入力欄を、選んでいる受け口で作る */

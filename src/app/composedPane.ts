@@ -17,6 +17,7 @@ import {
 } from "./composedText";
 import { askText } from "./dialog";
 import { LINE_SUPPORT, plainValue, replaceRange } from "./editableText";
+import { UndoHistory } from "./undoHistory";
 
 /**
  * **C（組んで書く）の入力欄**（2026-11-13 作者の答え「まず縦書きの試しで、本体と同じ『塊』の形を試す」）。
@@ -34,6 +35,8 @@ import { LINE_SUPPORT, plainValue, replaceRange } from "./editableText";
  * - カーソルが塊の中や欄の直下に来たら、近いほうの塊の外（字の節の中）へ置き直す
  * - 押した・変換の始まり・確定のあと・⌫ で塊を消した、を記録（trial-log）に残す。塊の直前・直後に
  *   打てたかを、実機の確かめで記録から裏付ける
+ * - 取り消し・やり直しはアプリが手を積んで持つ（設計書 5.5。`undoHistory.ts`）。変換は確定して1手、
+ *   ルビ・傍点・改行・貼り付けも1手。ブラウザの取り消し（Ctrl+Z など）もこちらの手で戻す
  * - 用語の色は、この形ではまだ付けない
  */
 export interface ComposedPane {
@@ -45,6 +48,12 @@ export interface ComposedPane {
   addRuby(notify: (message: string) => void): Promise<void>;
   /** ［傍点］：選んだ字に付ける。傍点の所なら外す。付けられなければ notify に訳 */
   toggleEmphasis(notify: (message: string) => void): void;
+  /** ［取り消し］：1手戻す（変換中は何もしない） */
+  undo(): void;
+  /** ［やり直し］：戻した手をもう一度当てる */
+  redo(): void;
+  canUndo(): boolean;
+  canRedo(): boolean;
   destroy(): void;
 }
 
@@ -52,7 +61,9 @@ export function mountComposedPane(
   element: HTMLElement,
   text: string,
   onChange: (text: string) => void,
-  log: (line: string) => void = () => undefined
+  log: (line: string) => void = () => undefined,
+  /** 取り消し・やり直しができるかが変わったら呼ぶ（ボタンを押せる・押せないに） */
+  onHistory: (state: { canUndo: boolean; canRedo: boolean }) => void = () => undefined
 ): ComposedPane {
   element.contentEditable = "true";
   element.setAttribute("role", "textbox");
@@ -68,6 +79,18 @@ export function mountComposedPane(
   let lastSel: { start: number; end: number } | undefined;
   /** いまの選択（焦点が外れていれば、欄の中の最後の選択） */
   const currentSel = () => selectionOffsets() ?? lastSel ?? { start: current.length, end: current.length };
+
+  const history = new UndoHistory();
+  /** 最後に手を積んだときの本文（変換中に変わった分は、確定のときにまとめて1手にする） */
+  let settled = text;
+  const tellHistory = () => onHistory({ canUndo: history.canUndo(), canRedo: history.canRedo() });
+  /** settled から今の本文までを1手として積む */
+  const commit = (kind: "type" | "other") => {
+    if (current === settled) return;
+    history.record(settled, current, kind, Date.now());
+    settled = current;
+    tellHistory();
+  };
 
   /** 欄を本文から組み直す。往復が合わなければ記法のまま出す */
   const write = (next: string) => {
@@ -146,7 +169,10 @@ export function mountComposedPane(
   const replace = (start: number, end: number, inserted: string, why: string) => {
     const wide = widenToChunks(tokens, start, end);
     const done = replaceRange(current, wide.start, wide.end, inserted);
+    // 打ちかけの手を先に閉じてから、この操作を1手として積む
+    commit("type");
     write(done.text);
+    commit("other");
     placeCaret(done.caret);
     onChange(current);
     log(`C ${why}：${wide.start}〜${wide.end}字目 → カーソル ${done.caret}字目${wide.start !== start || wide.end !== end ? "（塊にかかったので塊ごと）" : ""}`);
@@ -186,12 +212,37 @@ export function mountComposedPane(
       } else {
         tokens = composed ? fresh : [{ kind: "text", start: 0, text: next }];
       }
+      commit("type");
     }
     onChange(current);
   };
 
+  /** 取り消し・やり直しの結果を欄へ出す */
+  const step = (which: "undo" | "redo") => {
+    if (composing) return;
+    commit("type");
+    const back = which === "undo" ? history.undo(current) : history.redo(current);
+    if (!back) {
+      tellHistory();
+      return;
+    }
+    write(back.text);
+    settled = current;
+    placeCaret(back.caret);
+    onChange(current);
+    tellHistory();
+    log(`C ${which === "undo" ? "取り消した" : "やり直した"}：カーソル ${back.caret}字目`);
+    requestAnimationFrame(() => revealCaret(caretMark(), element));
+  };
+
   const onBeforeInput = (e: InputEvent) => {
     if (e.isComposing || composing) return;
+    // ブラウザの取り消し（Ctrl+Z・iPad の取り消しのキーなど）は使わず、こちらの手で戻す
+    if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
+      e.preventDefault();
+      step(e.inputType === "historyUndo" ? "undo" : "redo");
+      return;
+    }
     const sel = selectionOffsets();
     if (!sel) return;
     if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") {
@@ -294,7 +345,15 @@ export function mountComposedPane(
     setText(next) {
       if (next === current && element.childNodes.length > 0) return;
       write(next);
+      // よそから本文が替わったら、積んだ手は当たらなくなるので捨てる
+      settled = current;
+      history.clear();
+      tellHistory();
     },
+    undo: () => step("undo"),
+    redo: () => step("redo"),
+    canUndo: () => history.canUndo(),
+    canRedo: () => history.canRedo(),
     isComposed: () => composed,
     async addRuby(notify) {
       if (composing) return notify("変換を確定してから押してください");

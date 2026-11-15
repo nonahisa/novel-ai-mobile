@@ -5,7 +5,7 @@ import { MemoryFileStore } from "../src/platform/memoryFileStore";
 import { MemoryGitFsBackend, createGitFs } from "../src/platform/gitFs";
 import { lastCommitTime } from "../src/platform/git";
 import { findWorkRoots, listWorks, scanWorkFolder } from "../src/platform/workScan";
-import { dayLabel, episodeListRows, workCard, workSummary } from "../src/app/workListView";
+import { dayLabel, episodeListRows, mobileWording, workCard, workSummary } from "../src/app/workListView";
 import { GitFsFileStore } from "./support/gitFsFileStore";
 
 /**
@@ -168,6 +168,18 @@ describe("壊れた設定は、その作品だけ止める（本体と同じ）"
     const card = workCard(items[1], new Date());
     expect(card.meta).toEqual([]);
     expect(card.flags[0].text).toMatch(/^⚠ 作品設定を読み込めません/);
+  });
+
+  test("パソコンの画面を指す言い回しは、モバイル版の言い方に置き換える（2026-11-16 作者の答え）", async () => {
+    const store = put(new MemoryFileStore(), work("C_確認用", { "本文/第1話.txt": "猫" }, { workTitle: "C", memoMarkers: "percent" }));
+    const [item] = await listWorks(store);
+    expect(item.ok).toBe(false);
+    if (!item.ok) expect(item.error).toContain("詳細メニューの作品別設定");
+    const text = workCard(item, new Date()).flags[0].text;
+    expect(text).not.toContain("詳細メニュー");
+    expect(text).toContain("パソコンで作品別設定の「メモの印」を選び直してから、同期してください");
+    expect(mobileWording("詳細メニューから選びます")).toBe("パソコンの詳細メニューから選びます");
+    expect(mobileWording("パソコンの詳細メニュー")).toBe("パソコンの詳細メニュー");
   });
 });
 

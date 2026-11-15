@@ -1,5 +1,5 @@
 import { NOT_BUILT_MESSAGE, escapeHtml } from "./menuScreen";
-import { episodeListRows, workCard, type EpisodeListRow, type WorkCard } from "./workListView";
+import { episodeListRows, mobileWording, workCard, type EpisodeListRow, type WorkCard } from "./workListView";
 import type { ScannedWork, WorkListItem } from "../platform/workScan";
 
 /**
@@ -26,7 +26,7 @@ function cardHtml(card: WorkCard): string {
 
 /** 話の一覧（B）の中身（上のバーは `shell.ts`） */
 export function renderEpisodeList(work: ScannedWork): string {
-  const warn = work.chapterError ? `<p class="flag shu long work-warn">${escapeHtml(`⚠ 章立てを読めません：${work.chapterError}`)}</p>` : "";
+  const warn = work.chapterError ? `<p class="flag shu long work-warn">${escapeHtml(`⚠ 章立てを読めません：${mobileWording(work.chapterError)}`)}</p>` : "";
   const rows = episodeListRows(work);
   if (rows.length === 0) return `${warn}<div class="ep-list"><div class="work-empty" aria-hidden="true"></div></div>`;
   const next = `<button class="newep planned" aria-disabled="true" data-planned="${NOT_BUILT_MESSAGE}">続きを書く<span class="menu-badge">未</span></button>`;

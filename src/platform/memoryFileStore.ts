@@ -4,6 +4,7 @@ import {
   dirname,
   normalizeStorePath,
   type FileStore,
+  type StoreEntry,
   type WriteMode,
 } from "./fileStore";
 
@@ -63,6 +64,16 @@ export class MemoryFileStore implements FileStore {
     return [...this.files.keys()]
       .filter((file) => file.startsWith(prefix) && !file.slice(prefix.length).includes("/"))
       .map((file) => file.slice(prefix.length));
+  }
+
+  async listEntries(path: string): Promise<StoreEntry[]> {
+    const key = normalizeStorePath(path);
+    const files = (await this.listFiles(path)).map((name) => [name, "file"] as const);
+    const prefix = key === "" ? "" : `${key}/`;
+    const folders = [...this.directories]
+      .filter((dir) => dir !== key && dir.startsWith(prefix) && !dir.slice(prefix.length).includes("/"))
+      .map((dir) => [dir.slice(prefix.length), "directory"] as const);
+    return [...folders, ...files];
   }
 
   private ensureParents(filePath: string): void {

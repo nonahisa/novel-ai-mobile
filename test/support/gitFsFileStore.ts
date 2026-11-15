@@ -1,4 +1,4 @@
-import { FileExistsError, FileNotFoundError, dirname, normalizeStorePath, type FileStore, type WriteMode } from "../../src/platform/fileStore";
+import { FileExistsError, FileNotFoundError, dirname, normalizeStorePath, type FileStore, type StoreEntry, type WriteMode } from "../../src/platform/fileStore";
 import type { GitFsBackend } from "../../src/platform/gitFs";
 
 /**
@@ -51,5 +51,16 @@ export class GitFsFileStore implements FileStore {
       if ((await this.backend.stat(`${key === "/" ? "" : key}/${name}`))?.type === "file") names.push(name);
     }
     return names;
+  }
+
+  async listEntries(path: string): Promise<StoreEntry[]> {
+    const key = this.key(path);
+    if ((await this.backend.stat(key))?.type !== "dir") throw new FileNotFoundError(path);
+    const entries: StoreEntry[] = [];
+    for (const name of await this.backend.readdir(key)) {
+      const type = (await this.backend.stat(`${key === "/" ? "" : key}/${name}`))?.type;
+      if (type) entries.push([name, type === "dir" ? "directory" : "file"]);
+    }
+    return entries;
   }
 }

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openWithWorks } from "./support/fakeWorks";
 
 /**
  * **画面の自動テスト**（設計書 9章）。見た目が画面の見本（アーティファクト「Android版 画面デザイン」＝
@@ -242,5 +243,67 @@ test.describe("打つ欄（iOS が画面を拡大しないか・原稿の欄を�
     await expect(sinkSeg).toBeVisible();
     await page.locator('[data-mode="A"]').click();
     await expect(sinkSeg).toBeHidden();
+  });
+});
+
+test.describe("作品一覧（A）と話の一覧（B）", () => {
+  test("作品が1つも無いときは空の形だけ（説明の文を並べない）", async ({ page }) => {
+    await open(page, "#/works");
+    await expect(page.locator(".work-list .work-empty")).toBeVisible();
+    await expect(page.locator("#workListSlot")).toHaveText("");
+    await expect(page.locator(".work-card")).toHaveCount(0);
+  });
+
+  test("端末の中の作品を題・話数・字数で並べ、壊れた設定の作品だけ知らせる。横にはみ出さない", async ({ page }) => {
+    await openWithWorks(page, "#/works");
+    const cards = page.locator(".work-card");
+    await expect(cards).toHaveCount(3);
+    // 試し/ は作品にしない
+    expect((await cards.locator(".work-title").allInnerTexts()).sort()).toEqual(
+      ["壊れた設定_確認用", "灯台守の手紙_確認用", "雨の駅でいつまでも待ち続けている人と、その人を見送る駅員の長い長い物語_確認用"].sort()
+    );
+    // 4話（競合の印のある第4話は字数に入れない）。付箋（// の行）は数えない
+    const lighthouse = cards.filter({ hasText: "灯台守の手紙_確認用" });
+    await expect(lighthouse.locator(".work-meta span")).toHaveText(["4話", "22字"]);
+    await expect(lighthouse.locator(".flag.shu")).toHaveText("競合：1話");
+    const broken = cards.filter({ hasText: "壊れた設定_確認用" });
+    await expect(broken.locator(".work-meta")).toHaveCount(0);
+    await expect(broken.locator(".flag.shu")).toContainText("作品設定を読み込めません");
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test("作品を押すと章ごとの話の一覧。話を押すと「まだ作っていません」、［←］で作品一覧へ", async ({ page }, info) => {
+    await openWithWorks(page, "#/works");
+    const card = page.locator(".work-card", { hasText: "灯台守の手紙_確認用" });
+    if (info.project.use.hasTouch) await card.tap();
+    else await card.click();
+    await expect(page).toHaveURL(/#\/work\//);
+    await expect(page.locator(".appbar-title")).toContainText("灯台守の手紙_確認用");
+    await expect(page.locator("#workSummary")).toHaveText("4話・22字");
+    // 下のタブは出したまま、［作品］が選ばれている
+    await expect(page.locator('.tab[aria-current="page"]')).toHaveAttribute("data-tab", "works");
+    await expect(page.locator(".ep-list .chap")).toHaveText(["第一章　灯", "第二章　港"]);
+    const rows = page.locator(".ep-list .ep");
+    await expect(rows.locator(".no")).toHaveText(["第1話", "第2話", "第3話", "第4話"]);
+    await expect(rows.nth(0).locator(".chars")).toHaveText("10字");
+    await expect(rows.nth(3).locator(".flag.shu")).toHaveText("競合");
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    // 長い題の話も1行に収める（行の外へはみ出さない。狭い幅では省く）
+    expect(await rows.nth(1).evaluate((el) => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().height < 60)).toBe(true);
+
+    await rows.nth(0).click();
+    await expect(page.locator("#toast")).toHaveClass(/shown/);
+    await expect(page.locator("#toast")).toHaveText("まだ作っていません");
+
+    await page.locator(".appbar-back").click();
+    await expect(page).toHaveURL(/#\/works$/);
+    await expect(page.locator(".work-card")).toHaveCount(3);
+  });
+
+  test("話の一覧も設計書の番号・説明の行を出さない", async ({ page }) => {
+    await openWithWorks(page, "#/works");
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await expect(page.locator(".ep-list .ep")).toHaveCount(4);
+    expect(await page.locator("main").innerText()).not.toMatch(/設計書|【案】|（[A-I]）/);
   });
 });

@@ -41,6 +41,7 @@ import { lastCommitTime } from "../platform/git";
 import { workSummary } from "./workListView";
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
 import { mountEpisodeScreen } from "./episodeScreen";
+import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastEpisode } from "./lastEpisode";
 
 /**
  * アプリの外枠（下のタブ4つと、画面の切り替え）。設計書 4.3 の狭い段。
@@ -119,6 +120,17 @@ export function workHash(root: string): string {
 export function episodeHash(root: string, path: string): string {
   if (!path.startsWith(`${root}/`)) throw new Error(`作品の外の話です: ${path}`);
   return `#/episode/${encodeURIComponent(root)}/${encodeURIComponent(path.slice(root.length + 1))}`;
+}
+
+/** 覚えていた最後の話。作品の外・隠したフォルダーを指していたら捨てる */
+function lastEpisodeInWorks(): LastEpisode | undefined {
+  const entry = readLastEpisode(globalThis.localStorage);
+  if (!entry) return undefined;
+  try {
+    return parseRoute(episodeHash(entry.root, entry.path)).kind === "episode" ? entry : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFileStore()): void {
@@ -250,7 +262,11 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         screen.innerHTML = renderTab(
           route.tab,
           route.tab.id === "other" ? `モバイル版 ${__APP_VERSION__}（本体の部品 ${SHARED_VERSION}）` : undefined,
-          route.tab.id === "works" ? `<div id="workListSlot" aria-busy="true"></div>` : undefined
+          route.tab.id === "works"
+            ? `<div id="workListSlot" aria-busy="true"></div>`
+            : route.tab.id === "write"
+              ? renderLastEpisodeCard(lastEpisodeInWorks())
+              : undefined
         );
         if (route.tab.id === "works") mountWorkList(screen.querySelector<HTMLElement>("#workListSlot")!, store, scanOptions, stillHere);
         return;
@@ -261,6 +277,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "episode":
         // ［←］は話の一覧へ（話の一覧の［←］は作品一覧へ）
         lastTabHash = workHash(route.root);
+        rememberLastEpisode(globalThis.localStorage, { root: route.root, path: route.path });
         leaveGuard = mountEpisodeScreen(screen, store, route.path, { toast, stillHere });
         return;
       case "all":

@@ -986,3 +986,7 @@ button {
   overflow-x: hidden;
   overflow-y: auto;
 }
+/* ［書く］の頭の、最後に開いた話の札 */
+.last-episode {
+  margin: 12px 0 4px;
+}

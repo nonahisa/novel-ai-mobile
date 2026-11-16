@@ -43,6 +43,7 @@ import { createGitFs, CapacitorGitFsBackend } from "../platform/gitFs";
 import { latestUnsentTime, readWorkSync, type WorkSyncState } from "../platform/workSync";
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
 import { mountEpisodeScreen } from "./episodeScreen";
+import { renderSyncScreen } from "./syncScreen";
 import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastEpisode } from "./lastEpisode";
 
 /**
@@ -64,6 +65,7 @@ import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastE
 type Route =
   | { kind: "tab"; tab: PlannedTab }
   | { kind: "work"; root: string }
+  | { kind: "sync"; root: string }
   | { kind: "episode"; root: string; path: string }
   | { kind: "all" }
   | { kind: "tategaki" }
@@ -99,6 +101,15 @@ export function parseRoute(hash: string): Route {
   if (name === "all") return { kind: "all" };
   if (name === "tategaki") return { kind: "tategaki" };
   if (name === "check") return { kind: "check" };
+  if (name.startsWith("sync/")) {
+    try {
+      const root = decodeURIComponent(name.slice("sync/".length));
+      if (isWorkRoot(root)) return { kind: "sync", root };
+    } catch {
+      /* 読めない名前は作品一覧へ */
+    }
+    return { kind: "tab", tab: TABS[0] };
+  }
   if (name.startsWith("work/")) {
     try {
       const root = decodeURIComponent(name.slice("work/".length));
@@ -116,6 +127,11 @@ const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/a
 /** 話の一覧を開く場所 */
 export function workHash(root: string): string {
   return `#/work/${encodeURIComponent(root)}`;
+}
+
+/** 作品の同期の画面（G）を開く場所 */
+export function syncHash(root: string): string {
+  return `#/sync/${encodeURIComponent(root)}`;
 }
 
 /** 話を原稿エディターで開く場所。`path` は置き場の根から（`root` の中） */
@@ -173,7 +189,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   };
 
   root.addEventListener("click", (event) => {
-    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-screen],[data-planned],[data-tab],[data-back],[data-work],[data-episode]");
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-screen],[data-planned],[data-tab],[data-back],[data-work],[data-episode],[data-sync]");
     if (!target) return;
     if (target.dataset.episode && target.dataset.root) {
       location.hash = episodeHash(target.dataset.root, target.dataset.episode);
@@ -181,6 +197,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     }
     if (target.dataset.work) {
       location.hash = workHash(target.dataset.work);
+      return;
+    }
+    if (target.dataset.sync) {
+      location.hash = syncHash(target.dataset.sync);
       return;
     }
     if (target.dataset.planned) return toast(target.dataset.planned);
@@ -248,7 +268,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "episode" ? "works" : route.kind === "all" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "episode" ? "works" : route.kind === "all" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
@@ -275,6 +295,11 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "work":
         lastTabHash = "#/works";
         mountEpisodeList(screen, store, route.root, scanOptions, stillHere);
+        return;
+      case "sync":
+        // ［←］は話の一覧へ
+        lastTabHash = workHash(route.root);
+        mountSyncScreen(screen, store, route.root, stillHere);
         return;
       case "episode":
         // ［←］は話の一覧へ（話の一覧の［←］は作品一覧へ）
@@ -316,6 +341,25 @@ async function syncStateOf(store: FileStore, root: string): Promise<WorkSyncStat
 function flagHtml(state: WorkSyncState | undefined, extraClass = ""): string {
   const flag = syncFlag(state);
   return flag ? `<span class="flag ${flag.tone}${extraClass}" data-sync-flag>${escapeHtml(flag.text)}</span>` : "";
+}
+
+/** 話の一覧の頭の印。押すと同期の画面（G） */
+function flagButtonHtml(state: WorkSyncState | undefined, root: string): string {
+  const flag = syncFlag(state);
+  return flag
+    ? `<button class="flag ${flag.tone} work-warn sync-open" data-sync-flag data-sync="${escapeHtml(root)}">${escapeHtml(flag.text)}</button>`
+    : "";
+}
+
+/** 同期の画面（G）。数え終えるまでは空の枠 */
+function mountSyncScreen(screen: HTMLElement, store: FileStore, root: string, stillHere: () => boolean): void {
+  screen.innerHTML = `${renderAppBar("同期", { back: true, sub: root })}<div id="syncSlot" aria-busy="true"></div>`;
+  const slot = screen.querySelector<HTMLElement>("#syncSlot")!;
+  void syncStateOf(store, root).then((state) => {
+    if (!stillHere()) return;
+    slot.innerHTML = renderSyncScreen(root, state);
+    slot.removeAttribute("aria-busy");
+  });
 }
 
 /**
@@ -369,7 +413,7 @@ function mountEpisodeList(screen: HTMLElement, store: FileStore, root: string, o
       screen.querySelector<HTMLElement>("#workSummary")!.textContent = workSummary(work);
       show(renderEpisodeList(work));
       void syncStateOf(store, root).then((state) => {
-        const flag = flagHtml(state, " work-warn");
+        const flag = flagButtonHtml(state, root);
         if (flag && stillHere()) slot.insertAdjacentHTML("afterbegin", flag);
       });
     },

@@ -59,3 +59,26 @@ test.describe("作品の同期の状態", () => {
     await expect(page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).locator("[data-sync-flag]")).toHaveText("同期済み");
   });
 });
+
+test.describe("同期の画面（G）", () => {
+  test("話の一覧の印を押すと開き、送っていない話を並べる。［送る］は灰色、話を押すと開く", async ({ page }) => {
+    await openWithWorks(page, "#/works", await workAsRepo({ [`${WORK}/本文/第1話 手紙.txt`]: "書き足した。\n" }));
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await page.locator("#episodeSlot [data-sync-flag]").click();
+    await expect(page).toHaveURL(/#\/sync\//);
+    await expect(page.locator(".appbar-title")).toContainText("同期");
+    await expect(page.locator("#tabbar")).toBeVisible();
+    await expect(page.locator(".sync-list .chap")).toHaveText("送っていない話：1");
+    await page.locator(".sync-actions button", { hasText: "送る" }).dispatchEvent("click");
+    await expect(page.locator("#toast")).toHaveText("まだ作っていません");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    await page.locator(".sync-list .ep", { hasText: "第1話 手紙" }).click();
+    await expect(page.locator("#msEditor")).toHaveValue("書き足した。\n");
+  });
+
+  test("そろっていれば「同期済み」だけ", async ({ page }) => {
+    await openWithWorks(page, `#/sync/${encodeURIComponent(WORK)}`, await workAsRepo());
+    await expect(page.locator(".sync-state")).toHaveText("同期済み");
+    await expect(page.locator(".sync-list")).toHaveCount(0);
+  });
+});

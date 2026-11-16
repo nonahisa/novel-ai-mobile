@@ -272,7 +272,7 @@ test.describe("作品一覧（A）と話の一覧（B）", () => {
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
-  test("作品を押すと章ごとの話の一覧。話を押すと「まだ作っていません」、［←］で作品一覧へ", async ({ page }, info) => {
+  test("作品を押すと章ごとの話の一覧。競合の話は開かない。話を押すと原稿エディター、［←］で作品一覧へ", async ({ page }, info) => {
     await openWithWorks(page, "#/works");
     const card = page.locator(".work-card", { hasText: "灯台守の手紙_確認用" });
     if (info.project.use.hasTouch) await card.tap();
@@ -291,10 +291,17 @@ test.describe("作品一覧（A）と話の一覧（B）", () => {
     // 長い題の話も1行に収める（行の外へはみ出さない。狭い幅では省く）
     expect(await rows.nth(1).evaluate((el) => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().height < 60)).toBe(true);
 
-    // 灰色の項目と同じく aria-disabled なので、Playwright は押せないものと見る。force で押す
-    await rows.nth(0).click({ force: true });
+    // 競合の話は aria-disabled なので、Playwright は押せないものと見る。force で押す
+    await rows.nth(3).click({ force: true });
     await expect(page.locator("#toast")).toHaveClass(/shown/);
-    await expect(page.locator("#toast")).toHaveText("まだ作っていません");
+    await expect(page.locator("#toast")).toHaveText("競合が残っているので開けません");
+    await expect(page).toHaveURL(/#\/work\//);
+
+    await rows.nth(0).click();
+    await expect(page).toHaveURL(/#\/episode\//);
+    await expect(page.locator("#msEditor")).toBeVisible();
+    await page.locator(".appbar-back").click();
+    await expect(page).toHaveURL(/#\/work\//);
 
     await page.locator(".appbar-back").click();
     await expect(page).toHaveURL(/#\/works$/);

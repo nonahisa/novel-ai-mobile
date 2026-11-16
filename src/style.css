@@ -736,6 +736,7 @@ button {
   color: var(--fg);
 }
 .dialog-message {
+  white-space: pre-line;
   margin: 0 0 14px;
 }
 .dialog-actions {
@@ -932,4 +933,56 @@ button {
 .newep {
   font-weight: 400;
   cursor: pointer;
+}
+
+/* ---------- 原稿エディター（C）の土台：書く面（textarea）。設計書 5.1〜5.4 ---------- */
+
+/* 上のバーの右の押し口（［横で書く］［縦で書く］。見本の .pill） */
+.appbar-action {
+  flex: none;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+/* 保存の状態（題の下の小さい補い）。止まったときだけ朱 */
+.appbar-title small[data-state="外で変わりました"] {
+  color: var(--shu);
+}
+.ms-host {
+  margin: 0 -4px;
+}
+.ms-editor {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  /* 上のバー（52px）と下の余白を除いた高さ。キーボードが出たら WebView が縮む */
+  height: calc(100dvh - 52px - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height: 240px;
+  padding: 14px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: "Hiragino Mincho ProN", "Noto Serif JP", "Yu Mincho", serif;
+  font-size: 18px;
+  line-height: 1.9;
+  resize: none;
+  outline: none;
+}
+.ms-editor.vertical {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  text-spacing-trim: space-all;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.ms-editor.horizontal {
+  writing-mode: horizontal-tb;
+  overflow-x: hidden;
+  overflow-y: auto;
 }

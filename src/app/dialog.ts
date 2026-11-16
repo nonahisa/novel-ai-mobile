@@ -89,3 +89,28 @@ export function askText(
     input.select();
   });
 }
+
+/**
+ * **画面の中に出す、知らせるだけの窓**（ボタン1つ。自動保存が止まった・保存できなかったとき。
+ * 2026-11-15 作者の答え「その場で真ん中の窓」）。閉じたら解ける
+ */
+export function tell(message: string, okLabel = "閉じる"): Promise<void> {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "dialog-backdrop";
+    backdrop.innerHTML = `<div class="dialog" role="alertdialog" aria-modal="true"><p class="dialog-message"></p><div class="dialog-actions"><button type="button" class="primary" data-answer="ok"></button></div></div>`;
+    backdrop.querySelector<HTMLElement>(".dialog-message")!.textContent = message;
+    const ok = backdrop.querySelector<HTMLButtonElement>('[data-answer="ok"]')!;
+    ok.textContent = okLabel;
+    const close = () => {
+      backdrop.remove();
+      resolve();
+    };
+    ok.addEventListener("click", close);
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) close();
+    });
+    document.body.appendChild(backdrop);
+    ok.focus({ preventScroll: true });
+  });
+}

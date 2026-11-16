@@ -134,6 +134,27 @@ export function mountComposedPane(
     const selection = window.getSelection();
     if (!selection) return;
     const wanted = snapOutOfChunk(tokens, Math.min(Math.max(offset, 0), current.length));
+    const range = document.createRange();
+    const point = domPoint(wanted);
+    range.setStart(point.node, point.index);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
+  /** 本文の start〜end 字目を選ぶ（塊の境目なら、塊の外の字の節に端を置く） */
+  const placeRange = (start: number, end: number) => {
+    const selection = window.getSelection();
+    if (!selection) return;
+    const head = domPoint(start);
+    const tail = domPoint(end);
+    const range = document.createRange();
+    range.setStart(head.node, head.index);
+    range.setEnd(tail.node, tail.index);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
+  /** 本文の wanted 字目の DOM の位置（字の節の中。塊の直前と直後の両方に当たるときは、うしろの字の節） */
+  const domPoint = (wanted: number): { node: Node; index: number } => {
     let at = 0;
     let target: { node: Node; index: number } | undefined;
     for (const child of Array.from(element.childNodes)) {
@@ -157,12 +178,7 @@ export function mountComposedPane(
         at += child.dataset.src.length;
       }
     }
-    const range = document.createRange();
-    if (target) range.setStart(target.node, target.index);
-    else range.setStart(element, element.childNodes.length);
-    range.collapse(true);
-    selection.removeAllRanges();
-    selection.addRange(range);
+    return target ?? { node: element, index: element.childNodes.length };
   };
 
   /** 本文を変えて組み直し、カーソルを置く（Enter・貼り付け・切り取り） */
@@ -322,11 +338,32 @@ export function mountComposedPane(
     if (touching) return;
     scheduleSnap();
   };
+  /**
+   * 範囲の頭や末が塊の中（書けない所）にあれば、塊ごと選び直す（2026-11-17 iPad の試し9）。
+   * 頭が塊の中にあると、iOS は範囲の色を出さず、⌫ も効かなかった
+   */
+  const widenSelectionOutOfChunks = (range: Range) => {
+    if (!element.contains(range.startContainer) || !element.contains(range.endContainer)) return;
+    const chunkOf = (node: Node) => (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>("[data-src]");
+    const headChunk = chunkOf(range.startContainer);
+    const tailChunk = chunkOf(range.endContainer);
+    if (!headChunk && !tailChunk) return;
+    const indexIn = (child: Node) => Array.prototype.indexOf.call(element.childNodes, child) as number;
+    const start = headChunk ? offsetOf(element, indexIn(headChunk)) : offsetOf(range.startContainer, range.startOffset);
+    const end = tailChunk ? offsetOf(element, indexIn(tailChunk) + 1) : offsetOf(range.endContainer, range.endOffset);
+    const wide = widenToChunks(tokens, start, end);
+    placeRange(wide.start, wide.end);
+    log(`C 塊にかかった範囲を塊ごと選び直した：${wide.start}〜${wide.end}字目`);
+  };
   const snapCaretOutOfChunk = () => {
     snapTimer = undefined;
     if (composing || touching) return;
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return;
+    if (!selection || selection.rangeCount === 0) return;
+    if (!selection.isCollapsed) {
+      widenSelectionOutOfChunks(selection.getRangeAt(0));
+      return;
+    }
     const node = selection.anchorNode;
     if (!node || !element.contains(node)) return;
     const inChunk = (node instanceof Element ? node : node.parentElement)?.closest("[data-src]");

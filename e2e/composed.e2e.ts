@@ -185,6 +185,35 @@ test.describe("C 組んで書く", () => {
     await expect(page.locator("#imeLog")).not.toContainText("塊の外へ置き直した");
   });
 
+  test("塊の中から始めた範囲は、指を離すと塊ごと選び直し、⌫ で選んだ所が消える（iPad の試し9）", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    await pane.click();
+    // iPad：「吾」（塊の中）を長押しして「猫」までなぞった形。範囲の頭が塊の中（書けない所）にあると、
+    // iOS は範囲の色も出さず、⌫ も効かなかった
+    await pane.evaluate((el) => {
+      el.dispatchEvent(new Event("touchstart", { bubbles: true }));
+      const chunk = el.querySelector(".chunk")!;
+      const inside = document.createTreeWalker(chunk, NodeFilter.SHOW_TEXT).nextNode()!;
+      const range = document.createRange();
+      range.setStart(inside, 0);
+      range.setEnd(chunk.nextSibling!, 2); // 「は猫」の後ろ
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+      el.dispatchEvent(new Event("touchend", { bubbles: true }));
+    });
+    await expect(page.locator("#imeLog")).toContainText("塊にかかった範囲を塊ごと選び直した");
+    const picked = await pane.evaluate((el) => {
+      const r = window.getSelection()!.getRangeAt(0);
+      const chunk = el.querySelector(".chunk")!;
+      return { startOutside: !chunk.contains(r.startContainer), endOutside: !chunk.contains(r.endContainer) };
+    });
+    expect(picked).toEqual({ startOutside: true, endOutside: true });
+    await page.keyboard.press("Backspace");
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("である。")).toBe(true);
+  });
+
   test("指を離したあとも塊の中に残ったカーソルは、塊の外へ置き直す", async ({ page }) => {
     await openC(page);
     const pane = page.locator("#draftComposed");

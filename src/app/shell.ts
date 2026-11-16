@@ -40,12 +40,13 @@ import { listWorks, scanWorkFolder, type ScanOptions } from "../platform/workSca
 import { lastCommitTime } from "../platform/git";
 import { dayLabel, syncFlag, workSummary } from "./workListView";
 import { createGitFs, CapacitorGitFsBackend } from "../platform/gitFs";
-import { latestUnsentTime, readWorkSync, type WorkSyncState } from "../platform/workSync";
+import { latestUnsentTime, readWorkSync, workRepo, type WorkSyncState } from "../platform/workSync";
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
 import { mountEpisodeScreen } from "./episodeScreen";
-import { renderSyncScreen } from "./syncScreen";
-import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen } from "./githubScreen";
-import { DeviceSecretVault, MemorySecretVault, type SecretVault } from "../platform/secretVault";
+import { renderSyncScreen, type SyncAccess } from "./syncScreen";
+import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
+import { DeviceSecretVault, GITHUB_TOKEN_SECRET, MemorySecretVault, type SecretVault } from "../platform/secretVault";
+import { fetchWork, githubIdentity, outcomeText, pushMessage, readRepoTarget, sendWork } from "../platform/workSyncRun";
 import { nativePostForm } from "../platform/githubDeviceFlow";
 import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastEpisode } from "./lastEpisode";
 
@@ -384,15 +385,65 @@ function flagButtonHtml(state: WorkSyncState | undefined, root: string): string 
     : "";
 }
 
-/** 同期の画面（G）。数え終えるまでは空の枠 */
+/** ［取ってくる］［送る］が押せるか（サインイン・作品の GitHub の置き場） */
+async function syncAccessOf(store: FileStore, root: string): Promise<SyncAccess> {
+  if (!(store instanceof CapacitorFileStore)) return "noRemote";
+  try {
+    const target = await readRepoTarget(createGitFs(new CapacitorGitFsBackend()), workRepo(root).dir);
+    if (!target) return "noRemote";
+    return (await secretVault().get(GITHUB_TOKEN_SECRET)) ? "ready" : "signedOut";
+  } catch {
+    return "noRemote";
+  }
+}
+
+/**
+ * 同期の画面（G）。数え終えるまでは空の枠。［取ってくる］［送る］を押すと、済むまで両方を押せなくし、
+ * 結果を1行出して、送っていない話を数え直す（引継ぎ書 59章）
+ */
 function mountSyncScreen(screen: HTMLElement, store: FileStore, root: string, stillHere: () => boolean): void {
   screen.innerHTML = `${renderAppBar("同期", { back: true, sub: root })}<div id="syncSlot" aria-busy="true"></div>`;
   const slot = screen.querySelector<HTMLElement>("#syncSlot")!;
-  void syncStateOf(store, root).then((state) => {
+  let state: WorkSyncState | undefined;
+  let running = false;
+  const paint = async (result?: string) => {
+    const [next, access] = await Promise.all([syncStateOf(store, root), syncAccessOf(store, root)]);
     if (!stillHere()) return;
-    slot.innerHTML = renderSyncScreen(root, state);
+    state = next;
+    slot.innerHTML = renderSyncScreen(root, state, access);
+    if (result) slot.querySelector<HTMLElement>("#syncResult")!.textContent = result;
     slot.removeAttribute("aria-busy");
+  };
+  const run = async (kind: "fetch" | "send"): Promise<string> => {
+    const token = await secretVault().get(GITHUB_TOKEN_SECRET);
+    if (!token) return outcomeText({ kind: "failed", reason: "sign_in_again" });
+    const fs = createGitFs(new CapacitorGitFsBackend());
+    if (kind === "fetch") return outcomeText(await fetchWork({ fs, root, token, store }));
+    let user = readGithubUser(globalThis.localStorage);
+    if (!user) {
+      user = await fetchGithubLogin(token);
+      writeGithubUser(globalThis.localStorage, user);
+    }
+    if (!user) return outcomeText({ kind: "failed", reason: "offline" });
+    const message = pushMessage((state?.unsent ?? []).map((file) => file.path));
+    return outcomeText(await sendWork({ fs, root, token, author: githubIdentity(user.login, user.id), message }));
+  };
+  slot.addEventListener("click", (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-sync-run]");
+    if (!target || running) return;
+    running = true;
+    slot.setAttribute("aria-busy", "true");
+    for (const button of slot.querySelectorAll<HTMLButtonElement>("[data-sync-run]")) button.disabled = true;
+    slot.querySelector<HTMLElement>("#syncResult")!.textContent = "";
+    const kind = target.dataset.syncRun === "fetch" ? "fetch" : "send";
+    void run(kind)
+      .catch(() => outcomeText({ kind: "failed", reason: "unknown" }))
+      .then((result) => {
+        running = false;
+        return paint(result);
+      });
   });
+  void paint();
 }
 
 /**

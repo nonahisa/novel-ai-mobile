@@ -104,6 +104,8 @@ export interface WorkPushInput extends RepoRef {
   author: CommitIdentity;
   /** アプリが書いた道 */
   touched?: readonly string[];
+  /** 送る道を絞る（書庫の中の1つの作品だけ） */
+  filter?: (path: string) => boolean;
   /** 送れた版を手元へ取り込む（省けば git の取得）。テストで替える */
   adopt?: (commit: string) => Promise<void>;
   fetcher?: ApiFetch;
@@ -143,7 +145,7 @@ async function hasCommit(fs: GitFs, dir: string, oid: string): Promise<boolean> 
 /** 手元の作品を送る */
 export async function pushWork(input: WorkPushInput): Promise<WorkPushResult> {
   const { fs, dir } = input;
-  const changes = await collectChanges(fs, dir, input.touched ?? []);
+  const changes = await collectChanges(fs, dir, input.touched ?? [], input.filter);
   if (changes.length === 0) return { kind: "nothing_to_push" };
 
   const baseCommit = await git.resolveRef({ fs, dir, ref: "HEAD" });

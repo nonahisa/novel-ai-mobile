@@ -26,6 +26,13 @@ export const GITHUB_CLIENT_ID = "";
 
 /** GitHub の名前（秘密ではない。サインイン済みの所に出す） */
 export const GITHUB_LOGIN_KEY = "novelai.github.login";
+/** GitHub の番号（秘密ではない。送る版の書き手のアドレス `<番号>+<名前>@users.noreply.github.com`） */
+export const GITHUB_ID_KEY = "novelai.github.id";
+
+export interface GithubUser {
+  login: string;
+  id?: number;
+}
 
 export const FAILURE_TEXT: Readonly<Record<DeviceFailureKind, string>> = {
   expired: "時間切れになりました",
@@ -73,7 +80,7 @@ export function renderGithubView(view: GithubView): string {
   }
 }
 
-export type FetchUser = (token: string) => Promise<string | undefined>;
+export type FetchUser = (token: string) => Promise<GithubUser | undefined>;
 
 /** 合言葉で GitHub の名前を訊く（`api.github.com` は CORS を許す） */
 export const fetchGithubLogin: FetchUser = async (token) => {
@@ -82,8 +89,9 @@ export const fetchGithubLogin: FetchUser = async (token) => {
       headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` },
     });
     if (!response.ok) return undefined;
-    const data = (await response.json()) as { login?: unknown };
-    return typeof data.login === "string" ? data.login : undefined;
+    const data = (await response.json()) as { login?: unknown; id?: unknown };
+    if (typeof data.login !== "string") return undefined;
+    return { login: data.login, ...(typeof data.id === "number" ? { id: data.id } : {}) };
   } catch {
     return undefined;
   }
@@ -94,22 +102,30 @@ export interface GithubScreenDeps {
   post: PostForm;
   clientId: string;
   fetchUser: FetchUser;
-  storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  storage?: UserStorage;
   stillHere: () => boolean;
 }
 
-function readLogin(storage: GithubScreenDeps["storage"]): string | undefined {
+type UserStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+/** 覚えている GitHub の名前と番号 */
+export function readGithubUser(storage: UserStorage | undefined): GithubUser | undefined {
   try {
-    return storage?.getItem(GITHUB_LOGIN_KEY) ?? undefined;
+    const login = storage?.getItem(GITHUB_LOGIN_KEY);
+    if (!login) return undefined;
+    const id = Number(storage?.getItem(GITHUB_ID_KEY));
+    return Number.isInteger(id) && id > 0 ? { login, id } : { login };
   } catch {
     return undefined;
   }
 }
 
-function writeLogin(storage: GithubScreenDeps["storage"], login: string | undefined): void {
+export function writeGithubUser(storage: UserStorage | undefined, user: GithubUser | undefined): void {
   try {
-    if (login) storage?.setItem(GITHUB_LOGIN_KEY, login);
+    if (user) storage?.setItem(GITHUB_LOGIN_KEY, user.login);
     else storage?.removeItem(GITHUB_LOGIN_KEY);
+    if (user?.id) storage?.setItem(GITHUB_ID_KEY, String(user.id));
+    else storage?.removeItem(GITHUB_ID_KEY);
   } catch {
     /* 名前を覚えられなくても、サインインは済んでいる */
   }
@@ -147,9 +163,9 @@ export function mountGithubScreen(screen: HTMLElement, deps: GithubScreenDeps): 
       if (result.kind === "stopped") return;
       if (result.kind === "failed") return show({ kind: "signedOut", clientReady, failure: result.reason });
       await deps.vault.set(GITHUB_TOKEN_SECRET, result.token);
-      const login = await deps.fetchUser(result.token);
-      writeLogin(deps.storage, login);
-      show({ kind: "signedIn", login });
+      const user = await deps.fetchUser(result.token);
+      writeGithubUser(deps.storage, user);
+      show({ kind: "signedIn", login: user?.login });
     });
   };
 
@@ -175,7 +191,7 @@ export function mountGithubScreen(screen: HTMLElement, deps: GithubScreenDeps): 
         void askChoice(SIGN_OUT_QUESTION, "サインアウト", "やめる").then(async (yes) => {
           if (!yes) return;
           await deps.vault.remove(GITHUB_TOKEN_SECRET);
-          writeLogin(deps.storage, undefined);
+          writeGithubUser(deps.storage, undefined);
           show({ kind: "signedOut", clientReady });
         });
         return;
@@ -184,7 +200,7 @@ export function mountGithubScreen(screen: HTMLElement, deps: GithubScreenDeps): 
 
   show({ kind: "busy" });
   void deps.vault.get(GITHUB_TOKEN_SECRET).then(
-    (token) => show(token ? { kind: "signedIn", login: readLogin(deps.storage) } : { kind: "signedOut", clientReady }),
+    (token) => show(token ? { kind: "signedIn", login: readGithubUser(deps.storage)?.login } : { kind: "signedOut", clientReady }),
     () => show({ kind: "signedOut", clientReady })
   );
 

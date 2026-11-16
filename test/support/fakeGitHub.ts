@@ -53,6 +53,21 @@ export class FakeGitHub {
     return out;
   }
 
+  /** もう1台が送ったことにする（枝の今の版の上に積む。null は消した） */
+  async commitFiles(files: Record<string, string | null>): Promise<string> {
+    const { commit } = await git.readCommit({ fs: this.fs, dir: this.dir, oid: this.head });
+    const tree = await this.buildTree(
+      await this.flatten(commit.tree),
+      Object.entries(files).map(([path, s]) => (s === null ? { path, oid: null } : { path, bytes: text(s) }))
+    );
+    this.head = await git.writeCommit({
+      fs: this.fs,
+      dir: this.dir,
+      commit: { message: "もう1台\n", tree, parent: [this.head], author, committer: author },
+    });
+    return this.head;
+  }
+
   private async flatten(tree: string, prefix = "", out = new Map<string, string>()): Promise<Map<string, string>> {
     const { tree: entries } = await git.readTree({ fs: this.fs, dir: this.dir, oid: tree });
     for (const entry of entries) {

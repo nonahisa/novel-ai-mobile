@@ -25,7 +25,7 @@ async function fakeGitHub(page: Page, tokenAnswers: object[]) {
     return route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify(answer) });
   });
   await page.route("https://api.github.com/user", (route) =>
-    route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ login: "sakka-kakuninyou" }) })
+    route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ login: "sakka-kakuninyou", id: 4321 }) })
   );
   return seen;
 }

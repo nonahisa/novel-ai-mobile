@@ -1041,6 +1041,17 @@ button.sync-open {
 .sync-state {
   margin: 4px 0;
 }
+/* 押した結果の1行。何も無いときは場所を取らない */
+.sync-result {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.sync-result:empty {
+  display: none;
+}
+#syncSlot[aria-busy="true"] .sync-actions button {
+  opacity: 0.6;
+}
 /* GitHub と同期（サインイン）。コードは大きく、押す所は縦に1つずつ */
 .gh-panel {
   display: flex;

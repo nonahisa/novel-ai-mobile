@@ -1,11 +1,13 @@
-import { NOT_BUILT_MESSAGE, escapeHtml } from "./menuScreen";
+import { escapeHtml } from "./menuScreen";
 import type { WorkSyncState } from "../platform/workSync";
 
 /**
  * **同期の画面（G）**（設計書 6章。画面の見本は無いので、作品一覧・話の一覧の札と一覧の形にそろえる）。
  * 文字列で作るので、DOM の無いテストでも中身を確かめられる。配線は `shell.ts`（`#/sync/<作品>`）。
  *
- * - いちばん上に［取ってくる］［送る］。どちらも GitHub のサインインが要るので、いまは灰色（押すと「まだ作っていません」）
+ * - いちばん上に［取ってくる］［送る］（引継ぎ書 59章）。サインインしていなければ、押すと［GitHub と同期］を開く。
+ *   GitHub の置き場が分からない作品（origin が無い・GitHub でない・git で持っていない）では灰色
+ * - その下に、押した結果の1行（`#syncResult`）
  * - その下に、送っていない話の一覧（話を押すと原稿エディターで開く。消した話は押せない）
  * - 送っていない話が無ければ「同期済み」の印だけ（説明の文を並べない。設計書 4.6）
  * - 競合の［こちら］［あちら］［両方残す］は次の段（取ってこられるようになってから）
@@ -14,10 +16,33 @@ import type { WorkSyncState } from "../platform/workSync";
 /** 消した話の印 */
 export const DELETED_STORY_LABEL = "消した";
 
-export function renderSyncScreen(root: string, state: WorkSyncState | undefined): string {
-  const planned = (label: string) =>
-    `<button class="planned" aria-disabled="true" data-planned="${NOT_BUILT_MESSAGE}">${escapeHtml(label)}<span class="menu-badge">未</span></button>`;
-  const actions = `<div class="seg sync-actions">${planned("取ってくる")}${planned("送る")}</div>`;
+/** GitHub の置き場が分からない作品で、灰色の［取ってくる］［送る］を押したとき */
+export const NO_REMOTE_MESSAGE = "この作品の GitHub の置き場が分かりません";
+
+/**
+ * ［取ってくる］［送る］が押せるか。`checking` は調べ終えるまで（灰色・押しても何も言わない）、
+ * `signedOut` は押すとサインインの画面、`noRemote` は灰色
+ */
+export type SyncAccess = "checking" | "ready" | "signedOut" | "noRemote";
+
+function actionButtons(access: SyncAccess): string {
+  const button = (label: string, run: "fetch" | "send") => {
+    switch (access) {
+      case "ready":
+        return `<button data-sync-run="${run}">${escapeHtml(label)}</button>`;
+      case "signedOut":
+        return `<button data-screen="github">${escapeHtml(label)}</button>`;
+      case "noRemote":
+        return `<button class="planned" aria-disabled="true" data-planned="${NO_REMOTE_MESSAGE}">${escapeHtml(label)}</button>`;
+      case "checking":
+        return `<button class="planned" aria-disabled="true">${escapeHtml(label)}</button>`;
+    }
+  };
+  return `<div class="seg sync-actions">${button("取ってくる", "fetch")}${button("送る", "send")}</div><p class="sync-result" id="syncResult" role="status"></p>`;
+}
+
+export function renderSyncScreen(root: string, state: WorkSyncState | undefined, access: SyncAccess = "checking"): string {
+  const actions = actionButtons(state ? access : "noRemote");
   if (!state) return `${actions}<div class="ep-list"><div class="work-empty" aria-hidden="true"></div></div>`;
   const others = state.otherCount > 0 ? `<span class="flag warn">${escapeHtml(`ほかの変更：${state.otherCount}`)}</span>` : "";
   if (state.unsent.length === 0) {

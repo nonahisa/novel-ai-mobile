@@ -51,7 +51,10 @@ import { createTouchedRecorder } from "../platform/touchedPaths";
 import { createAutoFetch } from "./autoFetch";
 import { DeviceFontShelf } from "../platform/fontShelf";
 import { CLOUD_PROVIDERS, checkApiKey, keyCheckText, saveApiKey, validateApiKeyFormat, type CloudProviderId } from "../platform/aiKeys";
-import { keyPrompt, removeQuestion, renderAiScreen, renderKeyRows, type KeyRow } from "./aiScreen";
+import { keyPrompt, removeQuestion, renderAiScreen, renderAssignmentSections, renderKeyRows, type KeyRow } from "./aiScreen";
+import { PAID_ASSIGN_NOTICE, describeChoice, featureRows, readAiChoices, saveDefaultChoice, saveFeatureChoice } from "../platform/aiAssignment";
+import { DeviceSettings, capacitorPreferencesBackend } from "../platform/deviceSettings";
+import type { AssignableFeature } from "../shared";
 import { MINCHO_FONT, downloadFont, readVerifiedFont, useFont } from "../platform/fontDownload";
 import { FONT_FAILURE, renderDisplayScreen, renderFontRow, renderLicenses, type FontView } from "./displayScreen";
 import { importWork, listGithubRepos, progressLabel, type GithubRepo } from "../platform/workImport";
@@ -418,7 +421,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         return;
       case "ai":
         lastTabHash = "#/other";
-        mountAiScreen(screen, stillHere);
+        mountAiScreen(screen, stillHere, toast);
         return;
       case "display":
         lastTabHash = "#/other";
@@ -811,19 +814,82 @@ function mountImportScreen(screen: HTMLElement, store: FileStore, stillHere: () 
 
 /* ---------- 設定 → AI（クラウドの AI の鍵。引継ぎ書 71章） ---------- */
 
-function mountAiScreen(screen: HTMLElement, stillHere: () => boolean): void {
-  screen.innerHTML = `${renderAppBar("AI", { back: true })}${renderAiScreen([])}`;
+function mountAiScreen(screen: HTMLElement, stillHere: () => boolean, toast: (text: string) => void): void {
+  screen.innerHTML = `${renderAppBar("AI", { back: true })}${renderAiScreen([])}<div id="aiAssign"></div>`;
   const slot = screen.querySelector<HTMLElement>("#aiKeys")!;
+  const assignSlot = screen.querySelector<HTMLElement>("#aiAssign")!;
   const results = new Map<CloudProviderId, { text: string; ok: boolean }>();
+  // 機能ごとの割り当て（引継ぎ書 74章）。端末の設定に置く（同期しない）
+  const loaded = DeviceSettings.load(capacitorPreferencesBackend).then(({ settings }) => settings);
+  const models = new Map<CloudProviderId, string[]>();
+  const registeredSet = async (): Promise<Set<CloudProviderId>> => {
+    const usable = new Set<CloudProviderId>();
+    for (const provider of CLOUD_PROVIDERS) if ((await secretVault().get(provider.secret)) !== undefined) usable.add(provider.id);
+    return usable;
+  };
   const paint = async () => {
     const rows: KeyRow[] = [];
+    const usable = await registeredSet();
     for (const provider of CLOUD_PROVIDERS) {
-      const registered = (await secretVault().get(provider.secret)) !== undefined;
       const result = results.get(provider.id);
-      rows.push({ provider, registered, ...(result ? { result } : {}) });
+      rows.push({ provider, registered: usable.has(provider.id), ...(result ? { result } : {}) });
     }
-    if (stillHere()) slot.innerHTML = renderKeyRows(rows);
+    const settings = await loaded;
+    const { assignments, defaultChoice } = readAiChoices(settings);
+    const defaultText =
+      defaultChoice.provider && defaultChoice.model ? describeChoice({ provider: defaultChoice.provider, model: defaultChoice.model }) : undefined;
+    if (!stillHere()) return;
+    slot.innerHTML = renderKeyRows(rows);
+    assignSlot.innerHTML = renderAssignmentSections(defaultText, featureRows(assignments, defaultChoice, usable));
   };
+  /** 鍵のある AI を選び、そのモデルを選ぶ。`keepDefault` なら頭に「既定のまま」（"default" を返す） */
+  const chooseAi = async (keepDefault: boolean): Promise<{ provider: CloudProviderId; model: string } | "default" | undefined> => {
+    const usable = await registeredSet();
+    if (usable.size === 0) {
+      toast("先に APIキーを登録してください");
+      return undefined;
+    }
+    const picked = await chooseFrom([
+      ...(keepDefault ? [{ id: "default", label: "既定のまま" }] : []),
+      ...CLOUD_PROVIDERS.filter((provider) => usable.has(provider.id)).map((provider) => ({ id: provider.id, label: provider.displayName })),
+    ]);
+    if (!picked || picked === "default") return picked as "default" | undefined;
+    const provider = CLOUD_PROVIDERS.find((candidate) => candidate.id === picked)!;
+    let list = models.get(provider.id);
+    if (!list) {
+      const key = await secretVault().get(provider.secret);
+      const check = key ? await checkApiKey(provider.id, key) : ({ kind: "bad_key" } as const);
+      if (check.kind !== "ok" || check.models.length === 0) {
+        toast(check.kind === "ok" ? "選べるモデルがありません" : keyCheckText(check));
+        return undefined;
+      }
+      list = check.models;
+      models.set(provider.id, list);
+    }
+    const model = await chooseFrom(list.map((name) => ({ id: name, label: name })));
+    return model ? { provider: provider.id, model } : undefined;
+  };
+  assignSlot.addEventListener("click", (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-ai-default],[data-ai-feature]");
+    if (!target) return;
+    void (async () => {
+      const settings = await loaded;
+      if (target.dataset.aiDefault !== undefined) {
+        const choice = await chooseAi(false);
+        if (!choice || choice === "default") return;
+        await saveDefaultChoice(settings, choice);
+        toast(PAID_ASSIGN_NOTICE);
+      } else {
+        const feature = target.dataset.aiFeature as AssignableFeature;
+        const choice = await chooseAi(true);
+        if (!choice) return;
+        const { assignments } = readAiChoices(settings);
+        await saveFeatureChoice(settings, assignments, feature, choice === "default" ? undefined : choice);
+        if (choice !== "default") toast(PAID_ASSIGN_NOTICE);
+      }
+      await paint();
+    })();
+  });
   slot.addEventListener("click", (event) => {
     const target = (event.target as HTMLElement).closest<HTMLElement>("[data-ai-set],[data-ai-check],[data-ai-remove]");
     if (!target) return;

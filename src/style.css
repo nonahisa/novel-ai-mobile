@@ -1325,3 +1325,14 @@ a.gh-open {
   min-height: 32px;
   cursor: pointer;
 }
+/* 長い一覧（モデルを選ぶ窓）は窓の中で送る */
+.dialog-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.ai-features .ep .chars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}

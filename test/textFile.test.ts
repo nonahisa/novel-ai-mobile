@@ -157,6 +157,17 @@ describe("退避を作らない保存（自動保存の2回目から。skipRecov
     }
   }
 
+  test("退避を作る保存も、元を消さずに置き換える（消してから作るまでの間に止められると、原稿が無くなり退避だけが残っていた。引継ぎ書 63章）", async () => {
+    const store = new CountingStore();
+    store.putExternally(FILE, utf8("吾輩は猫である。\n"));
+    const read = await readTextFile(store, FILE);
+    const result = await writeTextFilePreservingFormat(store, FILE, "吾輩は犬である。\n", read, read.hash);
+    expect(result.ok && result.recoveryPath).toBeTruthy();
+    expect(new TextDecoder().decode(store.peek(FILE))).toBe("吾輩は犬である。\n");
+    expect(store.deletes).toBe(0);
+    expect(await store.listFiles(recoveryDir)).toHaveLength(1);
+  });
+
   test("退避を作らず、元を消さずに書き換え、書いたもののハッシュを返す", async () => {
     const store = new CountingStore();
     store.putExternally(FILE, utf8("吾輩は猫である。\n"));

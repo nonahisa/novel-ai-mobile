@@ -40,6 +40,27 @@ async function signIn(page: Page): Promise<string[]> {
 }
 
 test.describe("GitHub から取り寄せる", () => {
+  test("作品一覧の右下の［＋］：取り寄せる／新しく作る（未）を選ぶ。端末の［戻る］で閉じる", async ({ page }) => {
+    await openWithWorks(page, "#/works");
+    const add = page.locator("#addWork");
+    await expect(add).toBeVisible();
+    // 下のタブの上に浮いていて、最後の札を隠さない
+    const fab = (await add.boundingBox())!;
+    const tabbar = (await page.locator("#tabbar").boundingBox())!;
+    expect(fab.y + fab.height).toBeLessThanOrEqual(tabbar.y);
+    await add.click();
+    await expect(page.locator(".dialog-list [data-choice]")).toHaveText(["GitHub から取り寄せる", "新しく作る未"]);
+    await page.evaluate(() => document.dispatchEvent(new Event("backbutton")));
+    await expect(page.locator(".dialog-backdrop")).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/works$/);
+    await add.click();
+    await page.locator("[data-choice=new]").click();
+    await expect(page.locator("#toast")).toHaveText("まだ作っていません");
+    await add.click();
+    await page.locator("[data-choice=import]").click();
+    await expect(page).toHaveURL(/#\/import$/);
+  });
+
   test("［作品］から開く。サインインしていなければ、サインインの画面へ", async ({ page }) => {
     await openWithWorks(page, "#/works");
     await page.getByRole("button", { name: /GitHub から取り寄せる/ }).click();

@@ -13,7 +13,7 @@ import { ACTION_TREE, isItemShownInActionList, type ActionGroup, type ActionItem
  */
 
 /** 開ける画面 */
-export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import";
+export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses";
 
 /** メニューの1項目 */
 export interface PlannedItem {
@@ -157,7 +157,7 @@ export const TABS: readonly PlannedTab[] = [
         items: [
           { label: "AI", action: "AI設定" },
           { label: "GitHub と同期", built: "github" },
-          { label: "表示" },
+          { label: "表示", built: "display" },
           { label: "確認省略解除・初回設定" },
         ],
       },
@@ -167,6 +167,7 @@ export const TABS: readonly PlannedTab[] = [
           { label: "使い方", action: "使い方" },
           { label: "動作確認ページ", built: "check" },
           { label: "バージョン確認", built: "check", action: "バージョン確認" },
+          { label: "ライセンス", built: "licenses" },
         ],
       },
     ],

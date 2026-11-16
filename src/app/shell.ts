@@ -49,6 +49,9 @@ import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict"
 import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
 import { createTouchedRecorder } from "../platform/touchedPaths";
 import { createAutoFetch } from "./autoFetch";
+import { DeviceFontShelf } from "../platform/fontShelf";
+import { MINCHO_FONT, downloadFont, readVerifiedFont, useFont } from "../platform/fontDownload";
+import { FONT_FAILURE, renderDisplayScreen, renderFontRow, renderLicenses, type FontView } from "./displayScreen";
 import { importWork, listGithubRepos, progressLabel, type GithubRepo } from "../platform/workImport";
 import { importResultText, renderImportView, type ImportView } from "./importScreen";
 import { DeviceSecretVault, GITHUB_TOKEN_SECRET, MemorySecretVault, type SecretVault } from "../platform/secretVault";
@@ -78,6 +81,8 @@ import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastE
  * | `#/tategaki` | 縦書きの試し |
  * | `#/github` | GitHub と同期（サインイン） |
  * | `#/import` | GitHub から取り寄せる |
+ * | `#/display` | 表示（書体の取り寄せ） |
+ * | `#/licenses` | ライセンス |
  * | `#/check` | 動作確認ページ（開発用） |
  *
  * 原稿エディター・縦書きの試し・動作確認ページを開いている間は、下のタブを隠す（4.3「原稿エディターを
@@ -94,7 +99,9 @@ type Route =
   | { kind: "tategaki" }
   | { kind: "check" }
   | { kind: "github" }
-  | { kind: "import" };
+  | { kind: "import" }
+  | { kind: "display" }
+  | { kind: "licenses" };
 
 /** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
 function isWorkRoot(root: string): boolean {
@@ -128,6 +135,8 @@ export function parseRoute(hash: string): Route {
   if (name === "check") return { kind: "check" };
   if (name === "github") return { kind: "github" };
   if (name === "import") return { kind: "import" };
+  if (name === "display") return { kind: "display" };
+  if (name === "licenses") return { kind: "licenses" };
   if (name.startsWith("conflict/")) {
     const pieces = name.slice("conflict/".length).split("/");
     try {
@@ -163,7 +172,7 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses" } as const;
 
 /**
  * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。
@@ -333,7 +342,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
@@ -384,6 +393,20 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "tategaki":
         leaveGuard = mountTategaki(screen, store);
         return;
+      case "display":
+        lastTabHash = "#/other";
+        mountDisplayScreen(screen, stillHere);
+        return;
+      case "licenses":
+        lastTabHash = "#/other";
+        screen.innerHTML = `${renderAppBar("ライセンス", { back: true })}<div id="licenseSlot"></div>`;
+        void fetch(MINCHO_FONT.licenseFile)
+          .then((response) => (response.ok ? response.text() : undefined))
+          .catch(() => undefined)
+          .then((text) => {
+            if (stillHere()) screen.querySelector<HTMLElement>("#licenseSlot")!.innerHTML = renderLicenses(text);
+          });
+        return;
       case "import":
         lastTabHash = "#/works";
         mountImportScreen(screen, store, stillHere);
@@ -408,6 +431,8 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   };
   window.addEventListener("hashchange", render);
   render();
+  // 取り寄せてある明朝を使う（照らして合うときだけ。引継ぎ書 68章）
+  void loadInstalledFont();
 
   // 自動の取得（設計書 6章。引継ぎ書 66章）：開いたとき・前に出たとき。原稿を開いていないときだけ、早送りだけ
   const autoFetch = createAutoFetch({
@@ -755,6 +780,81 @@ function mountImportScreen(screen: HTMLElement, store: FileStore, stillHere: () 
     })();
   });
   void load();
+}
+
+/* ---------- 表示（書体の取り寄せ。引継ぎ書 68章） ---------- */
+
+const fontShelf = new DeviceFontShelf();
+let installedFace: FontFace | undefined;
+
+async function loadInstalledFont(): Promise<void> {
+  if (installedFace) return;
+  const bytes = await readVerifiedFont(fontShelf, MINCHO_FONT.file, MINCHO_FONT);
+  if (!bytes) return;
+  try {
+    installedFace = await useFont(MINCHO_FONT.family, bytes);
+  } catch {
+    /* 読めない書体なら、端末の書体のまま */
+  }
+}
+
+/** 表示の画面。明朝の大きさを示し、押したときだけ取り寄せる。照らして合ったものだけ書いて使う */
+function mountDisplayScreen(screen: HTMLElement, stillHere: () => boolean): void {
+  screen.innerHTML = `${renderAppBar("表示", { back: true })}${renderDisplayScreen({ kind: "checking" })}`;
+  const slot = screen.querySelector<HTMLElement>("#fontSlot")!;
+  let abort: AbortController | undefined;
+  const show = (view: FontView) => {
+    if (stillHere()) slot.innerHTML = renderFontRow(view);
+  };
+  slot.addEventListener("click", (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-font]");
+    if (!target) return;
+    switch (target.dataset.font) {
+      case "get": {
+        if (abort) return;
+        abort = new AbortController();
+        show({ kind: "downloading", percent: 0 });
+        let shownAt = 0;
+        void downloadFont(MINCHO_FONT, {
+          signal: abort.signal,
+          onProgress: (loaded, total) => {
+            const now = Date.now();
+            if (now - shownAt < 200) return;
+            shownAt = now;
+            const progress = slot.querySelector<HTMLElement>(".font-progress");
+            if (progress) progress.textContent = `${Math.floor((loaded / total) * 100)}%`;
+          },
+        }).then(async (result) => {
+          abort = undefined;
+          if (result.kind === "stopped") return show({ kind: "absent" });
+          if (result.kind !== "done") return show({ kind: "absent", failure: FONT_FAILURE[result.kind] });
+          try {
+            await fontShelf.write(MINCHO_FONT.file, result.bytes);
+            installedFace = await useFont(MINCHO_FONT.family, result.bytes);
+            show({ kind: "installed" });
+          } catch {
+            show({ kind: "absent", failure: FONT_FAILURE.failed });
+          }
+        });
+        return;
+      }
+      case "stop":
+        abort?.abort();
+        return;
+      case "remove":
+        void fontShelf.remove(MINCHO_FONT.file).catch(() => undefined).then(() => {
+          if (installedFace) document.fonts.delete(installedFace);
+          installedFace = undefined;
+          show({ kind: "absent" });
+        });
+        return;
+    }
+  });
+  void (async () => {
+    if (installedFace) return show({ kind: "installed" });
+    await loadInstalledFont();
+    show(installedFace ? { kind: "installed" } : { kind: "absent" });
+  })();
 }
 
 /* ---------- すべての機能 ---------- */

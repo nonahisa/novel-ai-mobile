@@ -112,3 +112,14 @@ export { validateApiKeyFormat } from "novel-ai-assistant/src/ai/types";
 // 有料の AI へ送る前の確認の文言（本体のまま）と、手元の AI かの判定（引継ぎ書 72章）
 export { paidUsageNotice, type PaidUsageNotice, type PaidUsageNoticeOptions } from "novel-ai-assistant/src/core/paidUsageNotice";
 export { isLocalProviderId } from "novel-ai-assistant/src/core/localProviders";
+// 機能ごとの AI の割り当て（本体 1.0.20 で vscode に頼らない部品に切り出された。引継ぎ書 74章）
+export {
+  ASSIGNABLE_FEATURES,
+  ASSIGNABLE_FEATURE_LABELS,
+  decideFeatureAI,
+  withAssignment,
+  withoutAssignment,
+  type AssignableFeature,
+  type FeatureAssignment,
+  type FeatureAssignments,
+} from "novel-ai-assistant/src/core/featureAssignment";

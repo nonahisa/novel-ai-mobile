@@ -1,5 +1,6 @@
 import { escapeHtml } from "./menuScreen";
 import type { CloudProvider } from "../platform/aiKeys";
+import type { FeatureRow } from "../platform/aiAssignment";
 
 /**
  * **設定 → AI**（［ほか］→ 設定 → AI。`#/ai`。設計書 7章【案】「設定（H）→ AI：使う AI の登録・鍵・機能ごとの割り当て」。
@@ -44,4 +45,31 @@ export function keyPrompt(provider: CloudProvider): { message: string; placehold
 
 export function removeQuestion(provider: CloudProvider): string {
   return `この端末から${provider.keyName}のAPIキーを消します。\nもう一度使うには、入力し直します`;
+}
+
+/** 既定の AI（割り当ての無い機能が使う）。選んでいなければ「選んでいません」 */
+export function renderDefaultRow(text: string | undefined): string {
+  return (
+    `<div class="ai-row"><div class="ai-head"><span class="name">${escapeHtml(text ?? "選んでいません")}</span></div>` +
+    `<div class="ai-actions"><button data-ai-default>選ぶ</button></div></div>`
+  );
+}
+
+/** 機能ごとの行（本体の並びと名前）。割り当てた AI の鍵が無ければ、既定で動くと出す */
+export function renderFeatureRows(rows: readonly FeatureRow[]): string {
+  return `<div class="ep-list ai-features">${rows
+    .map((row) => {
+      const state = row.assigned
+        ? `${escapeHtml(row.assigned)}${row.fellBack ? `<span class="flag warn">鍵が無いので既定で動きます</span>` : ""}`
+        : "既定のまま";
+      return `<button class="ep" data-ai-feature="${row.feature}"><span class="name">${escapeHtml(row.label)}</span><span class="chars">${state}</span></button>`;
+    })
+    .join("")}</div>`;
+}
+
+export function renderAssignmentSections(defaultText: string | undefined, rows: readonly FeatureRow[]): string {
+  return (
+    `<section class="menu-section"><h2>既定の AI</h2><div id="aiDefault">${renderDefaultRow(defaultText)}</div></section>` +
+    `<section class="menu-section"><h2>機能ごとの割り当て</h2><div id="aiFeatures">${renderFeatureRows(rows)}</div></section>`
+  );
 }

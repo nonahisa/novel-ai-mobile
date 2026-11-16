@@ -41,13 +41,43 @@ function actionButtons(access: SyncAccess): string {
   return `<div class="seg sync-actions">${button("取ってくる", "fetch")}${button("送る", "send")}</div><p class="sync-result" id="syncResult" role="status"></p>`;
 }
 
-export function renderSyncScreen(root: string, state: WorkSyncState | undefined, access: SyncAccess = "checking"): string {
+/** 取ってきた版と競合した話（リポジトリの中の道）。選んだものは `decision` */
+export interface SyncConflictRow {
+  path: string;
+  decision?: "ours" | "both" | "theirs";
+}
+
+const DECISION_LABELS = { ours: "こちら", both: "両方", theirs: "あちら" } as const;
+
+/** 競合の一覧（取り込むまで出す）。押すと選ぶ画面。選んだ話には選んだものの印 */
+function conflictList(root: string, conflicts: readonly SyncConflictRow[]): string {
+  if (conflicts.length === 0) return "";
+  const undecided = conflicts.filter((row) => !row.decision).length;
+  const rows = conflicts
+    .map((row) => {
+      const name = row.path.slice(row.path.lastIndexOf("/") + 1).replace(/\.txt$/i, "");
+      const mark = row.decision
+        ? `<span class="flag ok">${DECISION_LABELS[row.decision]}</span>`
+        : `<span class="flag shu">選んでください</span>`;
+      return `<button class="ep" data-conflict="${escapeHtml(row.path)}" data-root="${escapeHtml(root)}"><span class="no"></span><span class="name">${escapeHtml(name)}</span><span class="chars">${mark}</span></button>`;
+    })
+    .join("");
+  return `<div class="ep-list sync-list conflict-list"><h2 class="chap">${escapeHtml(`競合：${undecided}話`)}</h2>${rows}</div>`;
+}
+
+export function renderSyncScreen(
+  root: string,
+  state: WorkSyncState | undefined,
+  access: SyncAccess = "checking",
+  conflicts: readonly SyncConflictRow[] = []
+): string {
   const actions = actionButtons(state ? access : "noRemote");
   if (!state) return `${actions}<div class="ep-list"><div class="work-empty" aria-hidden="true"></div></div>`;
   const others = state.otherCount > 0 ? `<span class="flag warn">${escapeHtml(`ほかの変更：${state.otherCount}`)}</span>` : "";
+  const conflictHtml = conflictList(root, conflicts);
   if (state.unsent.length === 0) {
-    const flag = others || `<span class="flag ok">同期済み</span>`;
-    return `${actions}<p class="sync-state">${flag}</p>`;
+    const flag = others || (conflictHtml ? "" : `<span class="flag ok">同期済み</span>`);
+    return `${actions}${conflictHtml}${flag ? `<p class="sync-state">${flag}</p>` : ""}`;
   }
   const rows = state.unsent
     .map((file) => {
@@ -58,5 +88,5 @@ export function renderSyncScreen(root: string, state: WorkSyncState | undefined,
       return `<button class="ep" data-episode="${escapeHtml(file.path)}" data-root="${escapeHtml(root)}"><span class="no"></span><span class="name">${escapeHtml(name)}</span><span class="chars"></span></button>`;
     })
     .join("");
-  return `${actions}<div class="ep-list sync-list"><h2 class="chap">${escapeHtml(`送っていない話：${state.unsent.length}`)}${others}</h2>${rows}</div>`;
+  return `${actions}${conflictHtml}<div class="ep-list sync-list"><h2 class="chap">${escapeHtml(`送っていない話：${state.unsent.length}`)}${others}</h2>${rows}</div>`;
 }

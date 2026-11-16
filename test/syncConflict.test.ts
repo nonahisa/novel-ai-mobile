@@ -349,6 +349,20 @@ describe("競合を選ぶ", () => {
     ]);
   });
 
+  test("［あちら］で文字コード・改行がこちらと違っても（こちらの形で書く）、選び済みになり、取り込める", async () => {
+    const { fs, theirs, io } = await setup();
+    // こちらは Shift_JIS・CRLF、あちら（パソコン）は UTF-8・LF で書き換えた
+    await theirs({ "本文/第3話.txt": "とんと見当がつかぬ。パソコン。\n" });
+    await writeWork(fs, "本文/第3話.txt", sjis("とんと見当がつかぬ。スマホ。\r\n"));
+    const material = (await readConflict({ ...io, path: "本文/第3話.txt" }))!;
+    expect(await applyConflictChoice({ ...io, material, choice: "theirs" })).toMatchObject({ ok: true, exact: false });
+    const plan = await planIncoming(io);
+    expect(plan.undecided).toEqual([]);
+    expect(plan.conflicts.map((entry) => entry.decision)).toEqual(["theirs"]);
+    expect(await integrateIncoming(io)).toMatchObject({ kind: "integrated", kept: ["本文/第3話.txt"] });
+    expect(new Uint8Array((await readWork(fs, "本文/第3話.txt"))!)).toEqual(sjis("とんと見当がつかぬ。パソコン。\r\n"));
+  });
+
   test("こちらが消してあちらが変えた話：［あちら］で作り直す。あちらが消した話：［あちら］で消す", async () => {
     const ctx = await setup();
     await ctx.theirs({ "本文/第1話.txt": "あちらで直した\n", "本文/第2話.txt": null });

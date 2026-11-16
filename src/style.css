@@ -1041,6 +1041,51 @@ button.sync-open {
 .sync-state {
   margin: 4px 0;
 }
+/* 競合を選ぶ画面。上で見る文を替え、文は行ごと。もう片方に無い行に朱の地。下に選ぶボタン */
+.cf-tabs {
+  margin: 12px 0;
+}
+.cf-text {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  font-family: var(--font-ms);
+  font-size: 16px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.cf-line.cf-diff {
+  background: var(--shu-soft);
+}
+.cf-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.cf-choices button {
+  flex: 1 1 0;
+  min-height: 44px;
+  padding: 10px 4px;
+  white-space: nowrap;
+  font-size: 15px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+.cf-choices button.danger {
+  border-color: var(--shu);
+  color: var(--shu);
+}
+#conflictSlot[aria-busy="true"] .cf-choices button {
+  opacity: 0.6;
+}
 /* 押した結果の1行。何も無いときは場所を取らない */
 .sync-result {
   margin: 0 0 8px;

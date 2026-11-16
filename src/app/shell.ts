@@ -34,7 +34,7 @@ import {
   saveFailureMessage,
   type TrialPrefs,
 } from "./tategakiDraft";
-import { askChoice } from "./dialog";
+import { askChoice, tell } from "./dialog";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
 import { listWorks, scanWorkFolder, type ScanOptions } from "../platform/workScan";
 import { lastCommitTime } from "../platform/git";
@@ -43,10 +43,22 @@ import { createGitFs, CapacitorGitFsBackend } from "../platform/gitFs";
 import { latestUnsentTime, readWorkSync, workRepo, type WorkSyncState } from "../platform/workSync";
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
 import { mountEpisodeScreen } from "./episodeScreen";
-import { renderSyncScreen, type SyncAccess } from "./syncScreen";
+import { renderSyncScreen, type SyncAccess, type SyncConflictRow } from "./syncScreen";
+import { applyFailureText, renderConflictView, theirsQuestion, type ConflictView } from "./conflictScreen";
+import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict";
 import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
 import { DeviceSecretVault, GITHUB_TOKEN_SECRET, MemorySecretVault, type SecretVault } from "../platform/secretVault";
-import { fetchWork, githubIdentity, outcomeText, pushMessage, readRepoTarget, sendWork } from "../platform/workSyncRun";
+import {
+  chooseConflict,
+  fetchWork,
+  githubIdentity,
+  listConflicts,
+  outcomeText,
+  pushMessage,
+  readConflictMaterial,
+  readRepoTarget,
+  sendWork,
+} from "../platform/workSyncRun";
 import { nativePostForm } from "../platform/githubDeviceFlow";
 import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastEpisode } from "./lastEpisode";
 
@@ -71,6 +83,7 @@ type Route =
   | { kind: "tab"; tab: PlannedTab }
   | { kind: "work"; root: string }
   | { kind: "sync"; root: string }
+  | { kind: "conflict"; root: string; path: string }
   | { kind: "episode"; root: string; path: string }
   | { kind: "all" }
   | { kind: "tategaki" }
@@ -108,6 +121,20 @@ export function parseRoute(hash: string): Route {
   if (name === "tategaki") return { kind: "tategaki" };
   if (name === "check") return { kind: "check" };
   if (name === "github") return { kind: "github" };
+  if (name.startsWith("conflict/")) {
+    const pieces = name.slice("conflict/".length).split("/");
+    try {
+      if (pieces.length === 2) {
+        const root = decodeURIComponent(pieces[0]!);
+        const path = decodeURIComponent(pieces[1]!);
+        const parts = path.split("/");
+        if (isWorkRoot(root) && parts.every((part) => part !== "" && part !== ".." && !part.startsWith("."))) return { kind: "conflict", root, path };
+      }
+    } catch {
+      /* 読めない名前は作品一覧へ */
+    }
+    return { kind: "tab", tab: TABS[0] };
+  }
   if (name.startsWith("sync/")) {
     try {
       const root = decodeURIComponent(name.slice("sync/".length));
@@ -149,6 +176,11 @@ function githubClientId(): string {
 /** 話の一覧を開く場所 */
 export function workHash(root: string): string {
   return `#/work/${encodeURIComponent(root)}`;
+}
+
+/** 作品の同期の画面（G）を開く場所 */
+export function conflictHash(root: string, path: string): string {
+  return `#/conflict/${encodeURIComponent(root)}/${encodeURIComponent(path)}`;
 }
 
 /** 作品の同期の画面（G）を開く場所 */
@@ -211,7 +243,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   };
 
   root.addEventListener("click", (event) => {
-    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-screen],[data-planned],[data-tab],[data-back],[data-work],[data-episode],[data-sync]");
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-screen],[data-planned],[data-tab],[data-back],[data-work],[data-episode],[data-sync],[data-conflict]");
     if (!target) return;
     if (target.dataset.episode && target.dataset.root) {
       location.hash = episodeHash(target.dataset.root, target.dataset.episode);
@@ -219,6 +251,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     }
     if (target.dataset.work) {
       location.hash = workHash(target.dataset.work);
+      return;
+    }
+    if (target.dataset.conflict && target.dataset.root) {
+      location.hash = conflictHash(target.dataset.root, target.dataset.conflict);
       return;
     }
     if (target.dataset.sync) {
@@ -290,7 +326,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "episode" ? "works" : route.kind === "all" || route.kind === "github" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" ? "works" : route.kind === "all" || route.kind === "github" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
@@ -317,6 +353,11 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "work":
         lastTabHash = "#/works";
         mountEpisodeList(screen, store, route.root, scanOptions, stillHere);
+        return;
+      case "conflict":
+        // ［←］は同期の画面へ
+        lastTabHash = syncHash(route.root);
+        mountConflictScreen(screen, store, route.root, route.path, stillHere);
         return;
       case "sync":
         // ［←］は話の一覧へ
@@ -385,6 +426,84 @@ function flagButtonHtml(state: WorkSyncState | undefined, root: string): string 
     : "";
 }
 
+/** 取ってきた版と競合している話（端末の置き場のときだけ） */
+async function conflictsOf(store: FileStore, root: string): Promise<SyncConflictRow[]> {
+  if (!(store instanceof CapacitorFileStore)) return [];
+  return listConflicts(createGitFs(new CapacitorGitFsBackend()), root);
+}
+
+/** 選ぶ画面から同期の画面へ持ち帰る1行（作品ごと。読んだら消す） */
+const syncNotices = new Map<string, string>();
+function takeSyncNotice(root: string): string | undefined {
+  const notice = syncNotices.get(root);
+  syncNotices.delete(root);
+  return notice;
+}
+
+/**
+ * 競合した話を選ぶ画面（引継ぎ書 60章）。［こちら｜あちら］で見る文を替え、下のボタンで選ぶ。
+ * ［あちらにする］は確かめてから。選んだら同期の画面へ戻る（全部選び終えていれば取り込んで、その結果を出す）
+ */
+function mountConflictScreen(screen: HTMLElement, store: FileStore, root: string, path: string, stillHere: () => boolean): void {
+  const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.txt$/i, "");
+  screen.innerHTML = `${renderAppBar(name, { back: true, sub: "競合" })}<div id="conflictSlot" aria-busy="true"></div>`;
+  const slot = screen.querySelector<HTMLElement>("#conflictSlot")!;
+  if (!(store instanceof CapacitorFileStore)) return;
+  const fs = createGitFs(new CapacitorGitFsBackend());
+  let material: ConflictMaterial | undefined;
+  let view: ConflictView = "ours";
+  let busy = false;
+  const back = (notice?: string) => {
+    if (notice) syncNotices.set(root, notice);
+    location.replace(syncHash(root));
+  };
+  const show = () => {
+    if (!stillHere() || !material) return;
+    slot.innerHTML = renderConflictView(material, view);
+    slot.removeAttribute("aria-busy");
+  };
+  slot.addEventListener("click", (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-cf-view],[data-cf-choice]");
+    if (!target || !material || busy) return;
+    if (target.dataset.cfView) {
+      view = target.dataset.cfView === "theirs" ? "theirs" : "ours";
+      return show();
+    }
+    const choice = target.dataset.cfChoice as ConflictChoice;
+    const chosen = material;
+    void (async () => {
+      if (choice === "theirs") {
+        const question = theirsQuestion(chosen);
+        if (!(await askChoice(question.message, question.yes, "やめる"))) return;
+      }
+      busy = true;
+      slot.setAttribute("aria-busy", "true");
+      try {
+        const { applied, outcome } = await chooseConflict({ fs, root, store, material: chosen, choice });
+        if (!applied.ok) {
+          await tell(applyFailureText(applied));
+          return back();
+        }
+        back(outcome ? outcomeText(outcome) : undefined);
+      } catch {
+        await tell("書けませんでした。原稿は変えていません");
+        back();
+      } finally {
+        busy = false;
+      }
+    })();
+  });
+  void readConflictMaterial({ fs, root, store, path }).then(
+    (read) => {
+      if (!stillHere()) return;
+      if (!read) return back();
+      material = read;
+      show();
+    },
+    () => back()
+  );
+}
+
 /** ［取ってくる］［送る］が押せるか（サインイン・作品の GitHub の置き場） */
 async function syncAccessOf(store: FileStore, root: string): Promise<SyncAccess> {
   if (!(store instanceof CapacitorFileStore)) return "noRemote";
@@ -407,11 +526,13 @@ function mountSyncScreen(screen: HTMLElement, store: FileStore, root: string, st
   let state: WorkSyncState | undefined;
   let running = false;
   const paint = async (result?: string) => {
-    const [next, access] = await Promise.all([syncStateOf(store, root), syncAccessOf(store, root)]);
+    const [next, access, conflicts] = await Promise.all([syncStateOf(store, root), syncAccessOf(store, root), conflictsOf(store, root)]);
     if (!stillHere()) return;
     state = next;
-    slot.innerHTML = renderSyncScreen(root, state, access);
-    if (result) slot.querySelector<HTMLElement>("#syncResult")!.textContent = result;
+    slot.innerHTML = renderSyncScreen(root, state, access, conflicts);
+    // 競合を選び終えて取り込んだ結果は、戻ってきたこの画面に出す
+    const shown = result ?? takeSyncNotice(root);
+    if (shown) slot.querySelector<HTMLElement>("#syncResult")!.textContent = shown;
     slot.removeAttribute("aria-busy");
   };
   const run = async (kind: "fetch" | "send"): Promise<string> => {

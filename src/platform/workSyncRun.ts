@@ -4,7 +4,17 @@ import type { createGitFs } from "./gitFs";
 import type { FileStore } from "./fileStore";
 import { nextAction, type ApiFailureKind, type ApiFetch, type CommitIdentity } from "./githubCommitApi";
 import { pushWork } from "./workPush";
-import { fetchRemoteHead, integrateIncoming } from "./syncConflict";
+import {
+  applyConflictChoice,
+  fetchRemoteHead,
+  integrateIncoming,
+  planIncoming,
+  readConflict,
+  type ApplyChoiceResult,
+  type ConflictChoice,
+  type ConflictMaterial,
+  type IntegrateResult,
+} from "./syncConflict";
 import { workRepo } from "./workSync";
 
 /**
@@ -75,7 +85,7 @@ export function outcomeText(outcome: SyncOutcome): string {
     case "up_to_date":
       return "新しい変更はありません";
     case "conflicts":
-      return `両方で書き換えた話があります（${outcome.paths.length}話）。取り込んでいません`;
+      return `両方で書き換えた話があります（${outcome.paths.length}話）。選ぶと取り込みます`;
     case "changed_meanwhile":
       return "取り込む途中で書き換わったので止めました。もう一度押してください";
     case "no_remote":
@@ -130,7 +140,10 @@ export async function fetchWork(
     return { kind: "failed", reason: fetchFailure(error) };
   }
   const storeDir = deps.storeDir ?? deps.root.split("/")[0]!;
-  const result = await integrateIncoming({ fs: deps.fs, dir, theirs, store: deps.store, storeDir });
+  return integrateOutcome(await integrateIncoming({ fs: deps.fs, dir, theirs, store: deps.store, storeDir }));
+}
+
+function integrateOutcome(result: IntegrateResult): SyncOutcome {
   switch (result.kind) {
     case "up_to_date":
       return { kind: "up_to_date" };
@@ -196,4 +209,47 @@ export function pushMessage(paths: readonly string[]): string {
   if (names.length === 0) return "モバイル版で書いた";
   const shown = names.slice(0, 3).join("・");
   return names.length > 3 ? `モバイル版で書いた：${shown} ほか${names.length - 3}話` : `モバイル版で書いた：${shown}`;
+}
+
+/** 取ってきた版と競合している話（リポジトリの中の道と、選んだもの）。取ってきていなければ空 */
+export async function listConflicts(
+  fs: GitFs,
+  root: string,
+  base = ""
+): Promise<Array<{ path: string; decision?: "ours" | "both" | "theirs" }>> {
+  try {
+    const plan = await planIncoming({ fs, dir: workRepo(root, base).dir });
+    return plan.conflicts.map((entry) => (entry.decision ? { path: entry.path, decision: entry.decision } : { path: entry.path }));
+  } catch {
+    return [];
+  }
+}
+
+interface ConflictDeps {
+  fs: GitFs;
+  root: string;
+  base?: string;
+  store: FileStore;
+  /** 置き場（`FileStore`）の側のリポジトリの道。省けばリポジトリの名前 */
+  storeDir?: string;
+}
+
+/** 競合した話の両方の中身（選ぶ画面の材料）。もう競合でなければ undefined */
+export async function readConflictMaterial(deps: ConflictDeps & { path: string }): Promise<ConflictMaterial | undefined> {
+  return readConflict({ fs: deps.fs, dir: workRepo(deps.root, deps.base).dir, store: deps.store, storeDir: deps.storeDir ?? deps.root.split("/")[0]!, path: deps.path });
+}
+
+/**
+ * 選んだものを当て、選んでいない競合が残っていなければ取り込む（全部選び終えたら取り込む。設計書 6章）。
+ * `outcome` は取り込んだときだけ
+ */
+export async function chooseConflict(
+  deps: ConflictDeps & { material: ConflictMaterial; choice: ConflictChoice; now?: Date }
+): Promise<{ applied: ApplyChoiceResult; outcome?: SyncOutcome }> {
+  const io = { fs: deps.fs, dir: workRepo(deps.root, deps.base).dir, store: deps.store, storeDir: deps.storeDir ?? deps.root.split("/")[0]! };
+  const applied = await applyConflictChoice({ ...io, material: deps.material, choice: deps.choice, now: deps.now });
+  if (!applied.ok) return { applied };
+  const plan = await planIncoming(io);
+  if (plan.undecided.length > 0) return { applied };
+  return { applied, outcome: integrateOutcome(await integrateIncoming(io)) };
 }

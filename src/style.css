@@ -1268,6 +1268,7 @@ a.gh-open {
 /* ［＋］が最後の札を隠さないように */
 #workListSlot {
   padding-bottom: 72px;
+}
 /* 設定 → AI：AI ごとに1枚（名前と印・押す所・確かめた結果） */
 .ai-row {
   padding: 12px 14px;

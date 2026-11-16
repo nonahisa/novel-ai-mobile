@@ -119,7 +119,8 @@ dd {
 #tategaki,
 .tategaki-view {
   writing-mode: vertical-rl;
-  text-orientation: upright;
+  /* 本体の原稿エディターと原稿エディター（C）と同じ mixed（半角の英数字・記号は横に寝かせる。upright だと半角の「(」が横書きの向きのまま立つ。2026-11-16 AQUOS の試し2。引継ぎ書 77章） */
+  text-orientation: mixed;
   font-family: "Hiragino Mincho ProN", "Noto Serif JP", "Yu Mincho", serif;
   font-size: 17px;
   line-height: 1.9;
@@ -420,7 +421,8 @@ button {
 
 .draft-input {
   writing-mode: vertical-rl;
-  text-orientation: upright;
+  /* 本体の原稿エディターと原稿エディター（C）と同じ mixed（半角の英数字・記号は横に寝かせる。upright だと半角の「(」が横書きの向きのまま立つ。2026-11-16 AQUOS の試し2。引継ぎ書 77章） */
+  text-orientation: mixed;
   font-family: "Hiragino Mincho ProN", "Noto Serif JP", "Yu Mincho", serif;
   font-size: 18px;
   line-height: 1.9;

@@ -444,3 +444,89 @@ test.describe("C 組んで書く：iPad の塊の選び（2026-11-17 Mac の iPa
     await expect(page.locator("#imeLog")).toContainText(/C 組んだ（塊 [1-9]\d*つ）/);
   });
 });
+
+test.describe("C 組んで書く：iPad の縦書きのカーソルをこちらで描く（2026-11-17 作者の iPad の写真）", () => {
+  /**
+   * 作者「カーソルのサイズと位置がおかしいです」：iPad の縦書きで、変換中の字のそばに、横書きの形の縦の棒が
+   * 列の左に出た（iOS が縦書きのカーソルを描き損ねる）。B の欄と同じく、iPad の縦書きではこちらで横の棒を描く。
+   * iPad でしか起きないので、試しでは iPad と同じ形にする印（`novelai.debug.ownCaret`）を立てて見る
+   */
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("novelai.debug.ownCaret", "on"));
+  });
+
+  const caretAndChar = (page: Page, at: number) =>
+    page.locator("#draftComposed").evaluate((el, n) => {
+      const node = el.querySelector(".chunk")!.nextSibling!;
+      const g = document.createRange();
+      g.setStart(node, n - 1);
+      g.setEnd(node, n);
+      const ch = g.getBoundingClientRect();
+      const mark = document.querySelector<HTMLElement>(".own-caret");
+      const r = mark?.getBoundingClientRect();
+      return {
+        shown: el.classList.contains("own-caret-shown"),
+        mark: r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height } : null,
+        ch: { left: ch.left, right: ch.right, top: ch.top, bottom: ch.bottom },
+      };
+    }, at);
+
+  test("カーソルは、前の字の下の辺に、列の太さの横の棒で出る。ブラウザのカーソルは隠す", async ({ page }) => {
+    await openC(page);
+    await selectAfterFirstChunk(page, 3, 3); // 「は猫で|ある」
+    await page.waitForTimeout(200);
+    const seen = await caretAndChar(page, 3);
+    expect(seen.shown).toBe(true);
+    expect(seen.mark).not.toBeNull();
+    expect(seen.mark!.width).toBeGreaterThan(seen.mark!.height);
+    expect(Math.abs(seen.mark!.top - seen.ch.bottom)).toBeLessThanOrEqual(3);
+    expect(Math.abs(seen.mark!.left - seen.ch.left)).toBeLessThanOrEqual(3);
+    expect(await page.locator("#draftComposed").evaluate((el) => getComputedStyle(el).caretColor)).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  test("変換中も、変換中の字の終わりに横の棒が出る。焦点が外れると消える", async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "日本語入力は Chromium の CDP で起こす");
+    await openC(page);
+    await selectAfterFirstChunk(page, 3, 3);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Input.imeSetComposition", { text: "ああああ", selectionStart: 4, selectionEnd: 4 });
+    await page.waitForTimeout(200);
+    const seen = await caretAndChar(page, 7); // 「は猫でああああ|ある」
+    expect(seen.mark).not.toBeNull();
+    expect(seen.mark!.width).toBeGreaterThan(seen.mark!.height);
+    expect(Math.abs(seen.mark!.top - seen.ch.bottom)).toBeLessThanOrEqual(3);
+    await cdp.send("Input.insertText", { text: "ああああ" });
+    await cdp.detach();
+    await page.locator('[data-mode="A"]').focus();
+    await page.waitForTimeout(200);
+    await expect(page.locator(".own-caret")).toHaveCount(0);
+  });
+});
+
+test.describe("C 組んで書く：iPad の横書きのカーソルも、字の高さで描く（2026-11-17 作者の iPad の写真）", () => {
+  /** 作者「こちらは大きい気がします」：振り仮名のある行で、iOS のカーソルが行の箱の高さ（振り仮名の分まで）に伸びた */
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("novelai.debug.ownCaret", "on"));
+  });
+
+  test("振り仮名のある行でも、カーソルは前の字の右の辺に、字の高さの縦の棒で出る", async ({ page }) => {
+    await openC(page);
+    await page.locator('button', { hasText: /^横書き$/ }).click();
+    await selectAfterFirstChunk(page, 3, 3); // 「は猫で|ある」（行の頭に {吾輩|わがはい}）
+    await page.waitForTimeout(200);
+    const seen = await page.locator("#draftComposed").evaluate((el) => {
+      const node = el.querySelector(".chunk")!.nextSibling!;
+      const g = document.createRange();
+      g.setStart(node, 2);
+      g.setEnd(node, 3);
+      const ch = g.getBoundingClientRect();
+      const r = document.querySelector<HTMLElement>(".own-caret")?.getBoundingClientRect();
+      return { mark: r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null, ch: { right: ch.right, top: ch.top, height: ch.height } };
+    });
+    expect(seen.mark).not.toBeNull();
+    expect(seen.mark!.height).toBeGreaterThan(seen.mark!.width);
+    expect(seen.mark!.height).toBeLessThanOrEqual(seen.ch.height + 2);
+    expect(Math.abs(seen.mark!.top - seen.ch.top)).toBeLessThanOrEqual(3);
+    expect(Math.abs(seen.mark!.left - seen.ch.right)).toBeLessThanOrEqual(3);
+  });
+});

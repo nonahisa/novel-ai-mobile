@@ -63,7 +63,9 @@ export function mountComposedPane(
   onChange: (text: string) => void,
   log: (line: string) => void = () => undefined,
   /** 取り消し・やり直しができるかが変わったら呼ぶ（ボタンを押せる・押せないに） */
-  onHistory: (state: { canUndo: boolean; canRedo: boolean }) => void = () => undefined
+  onHistory: (state: { canUndo: boolean; canRedo: boolean }) => void = () => undefined,
+  /** iPad：カーソルをこちらで描く（縦書き・横書きとも。2026-11-17） */
+  options: { ownCaret?: boolean } = {}
 ): ComposedPane {
   element.contentEditable = "true";
   element.setAttribute("role", "textbox");
@@ -510,7 +512,98 @@ export function mountComposedPane(
   /** キーボードが出て見える範囲が縮んだら、カーソルを見える所へ */
   const stopWatching = watchVisibleBand(() => {
     if (document.activeElement === element && !composing) revealCaret(caretMark(), element);
+    paintOwnCaret();
   });
+
+  /**
+   * **iPad は、カーソルをこちらで描く**（2026-11-17 作者の iPad の写真。B の欄〈editablePane の ownCaretWhenVertical〉と同じ考え）。
+   * - 縦書き：作者「カーソルのサイズと位置がおかしいです」。変換中の字のそばに、横書きの形の縦の棒が列の左に出た
+   * - 横書き：作者「こちらは大きい気がします」。振り仮名のある行で、カーソルが行の箱の高さ（振り仮名の分まで）に伸びた
+   * ブラウザのカーソルは隠し、前の字の終わりの辺（無ければ次の字の頭の辺）に、字の太さ・高さの棒を置く。
+   * 字の箱から測るので、iOS がカーソルを描き損ねても、字のある所に字の大きさで出る
+   */
+  let ownCaret: HTMLElement | undefined;
+  let ownFrame = 0;
+  const vertical = () => getComputedStyle(element).writingMode.startsWith("vertical");
+  const ZWSP = "​";
+  const charBox = (node: Node, from: number): DOMRect | undefined => {
+    if (!(node instanceof Text) || from < 0 || from >= node.length || node.data[from] === ZWSP) return undefined;
+    const r = document.createRange();
+    r.setStart(node, from);
+    r.setEnd(node, from + 1);
+    const box = r.getBoundingClientRect();
+    return box.width > 0 || box.height > 0 ? box : undefined;
+  };
+  /** 塊の地の字（振り仮名を除く）の箱 */
+  const chunkBaseBox = (chunk: HTMLElement): DOMRect => {
+    const walker = document.createTreeWalker(chunk, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (n.parentElement?.closest("rt") || !(n as Text).data.split(ZWSP).join("")) continue;
+      const r = document.createRange();
+      r.selectNodeContents(n);
+      return r.getBoundingClientRect();
+    }
+    return chunk.getBoundingClientRect();
+  };
+  /** 字の箱の終わりの辺（end）・頭の辺（start）に置く棒 */
+  const barAt = (b: DOMRect, edge: "end" | "start") =>
+    vertical()
+      ? { left: b.left, top: (edge === "end" ? b.bottom : b.top) - 1, width: b.width, height: 2 }
+      : { left: (edge === "end" ? b.right : b.left) - 1, top: b.top, width: 2, height: b.height };
+  /** カーソルの棒の箱。測れなければ undefined（ブラウザのカーソルに任せる） */
+  const ownCaretBox = (): { left: number; top: number; width: number; height: number } | undefined => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return undefined;
+    const node = selection.anchorNode;
+    const at = selection.anchorOffset;
+    if (!node || !element.contains(node)) return undefined;
+    if (node instanceof Text) {
+      const before = charBox(node, at - 1);
+      if (before) return barAt(before, "end");
+      const after = charBox(node, at);
+      if (after) return barAt(after, "start");
+    }
+    // 字の節の端（塊のすぐ前・すぐ後ろ）：塊の地の字の箱の辺
+    const prev = node instanceof Text ? node.previousSibling : node.childNodes[at - 1];
+    const next = node instanceof Text ? node.nextSibling : node.childNodes[at];
+    if (prev instanceof HTMLElement) return barAt(chunkBaseBox(prev), "end");
+    if (next instanceof HTMLElement) return barAt(chunkBaseBox(next), "start");
+    return undefined;
+  };
+  const hideOwnCaret = () => {
+    ownCaret?.remove();
+    ownCaret = undefined;
+    element.classList.remove("own-caret-shown");
+  };
+  const paintOwnCaret = () => {
+    if (!options.ownCaret) return;
+    cancelAnimationFrame(ownFrame);
+    ownFrame = requestAnimationFrame(() => {
+      ownFrame = 0;
+      const box = document.activeElement === element ? ownCaretBox() : undefined;
+      if (!box) return hideOwnCaret();
+      const host = element.parentElement ?? document.body;
+      if (getComputedStyle(host).position === "static") host.style.position = "relative";
+      if (!ownCaret) {
+        ownCaret = document.createElement("div");
+        ownCaret.className = "own-caret";
+        ownCaret.setAttribute("aria-hidden", "true");
+        host.appendChild(ownCaret);
+      }
+      const base = host.getBoundingClientRect();
+      ownCaret.style.left = `${box.left - base.left - host.clientLeft + host.scrollLeft}px`;
+      ownCaret.style.top = `${box.top - base.top - host.clientTop + host.scrollTop}px`;
+      ownCaret.style.width = `${box.width}px`;
+      ownCaret.style.height = `${box.height}px`;
+      element.classList.add("own-caret-shown");
+    });
+  };
+  const onOwnCaretChange = () => paintOwnCaret();
+  if (options.ownCaret) {
+    document.addEventListener("selectionchange", onOwnCaretChange);
+    for (const type of ["input", "compositionupdate", "compositionend", "focus", "blur", "scroll"]) element.addEventListener(type, onOwnCaretChange);
+    window.addEventListener("scroll", onOwnCaretChange, { passive: true });
+  }
 
   element.addEventListener("beforeinput", onBeforeInput);
   element.addEventListener("input", onInput);
@@ -585,6 +678,13 @@ export function mountComposedPane(
       replace(action.start, action.end, action.src, action.kind === "add" ? `傍点を付けた（${action.src}）` : `傍点を外した（${action.src}）`);
     },
     destroy() {
+      if (options.ownCaret) {
+        document.removeEventListener("selectionchange", onOwnCaretChange);
+        for (const type of ["input", "compositionupdate", "compositionend", "focus", "blur", "scroll"]) element.removeEventListener(type, onOwnCaretChange);
+        window.removeEventListener("scroll", onOwnCaretChange);
+        cancelAnimationFrame(ownFrame);
+        hideOwnCaret();
+      }
       element.removeEventListener("beforeinput", onBeforeInput);
       element.removeEventListener("input", onInput);
       element.removeEventListener("copy", onCopyEvent);

@@ -42,7 +42,7 @@ import { dayLabel, syncFlag, workSummary } from "./workListView";
 import { createGitFs, CapacitorGitFsBackend } from "../platform/gitFs";
 import { latestUnsentTime, readWorkSync, workRepo, type WorkSyncState } from "../platform/workSync";
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
-import { mountEpisodeScreen, readCompositionLine, writeCompositionLine } from "./episodeScreen";
+import { mountEpisodeScreen, readCompositionLine, readLeftLineTermColors, writeCompositionLine, writeLeftLineTermColors } from "./episodeScreen";
 import { renderSyncScreen, type SyncAccess, type SyncConflictRow } from "./syncScreen";
 import { applyFailureText, renderConflictView, theirsQuestion, type ConflictView } from "./conflictScreen";
 import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict";
@@ -973,14 +973,16 @@ async function loadInstalledFont(): Promise<void> {
 
 /** 表示の画面。明朝の大きさを示し、押したときだけ取り寄せる。照らして合ったものだけ書いて使う */
 function mountDisplayScreen(screen: HTMLElement, stillHere: () => boolean): void {
-  screen.innerHTML = `${renderAppBar("表示", { back: true })}<div id="lineSlot">${renderLineSection(readCompositionLine())}</div>${renderDisplayScreen({ kind: "checking" })}`;
+  screen.innerHTML = `${renderAppBar("表示", { back: true })}<div id="lineSlot">${renderLineSection(readCompositionLine(), readLeftLineTermColors())}</div>${renderDisplayScreen({ kind: "checking" })}`;
   const slot = screen.querySelector<HTMLElement>("#fontSlot")!;
   const lineSlot = screen.querySelector<HTMLElement>("#lineSlot")!;
   lineSlot.addEventListener("click", (event) => {
+    const colors = (event.target as HTMLElement).closest<HTMLElement>("[data-term-colors]");
+    if (colors) writeLeftLineTermColors(colors.dataset.termColors === "on");
     const target = (event.target as HTMLElement).closest<HTMLElement>("[data-line]");
-    if (!target) return;
-    writeCompositionLine(target.dataset.line === "right" ? "right" : "left");
-    lineSlot.innerHTML = renderLineSection(readCompositionLine());
+    if (target) writeCompositionLine(target.dataset.line === "right" ? "right" : "left");
+    if (!colors && !target) return;
+    lineSlot.innerHTML = renderLineSection(readCompositionLine(), readLeftLineTermColors());
   });
   let abort: AbortController | undefined;
   const show = (view: FontView) => {
@@ -1324,6 +1326,14 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   const nativeEnterBox = screen.querySelector<HTMLInputElement>("#nativeEnter")!;
   nativeEnterBox.addEventListener("change", () => editable.setNativeEnter(nativeEnterBox.checked));
 
+  /** 試しで、iPad と同じく C のカーソルをこちらで描く印（e2e・エミュレーター用） */
+  function readDebugOwnCaret(): boolean {
+    try {
+      return window.localStorage.getItem("novelai.debug.ownCaret") === "on";
+    } catch {
+      return false;
+    }
+  }
   /** C の入力欄（組んで書く） */
   function mountComposed(): void {
     composedPane = mountComposedPane(
@@ -1337,7 +1347,9 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
       (state) => {
         undoButton.disabled = !state.canUndo;
         redoButton.disabled = !state.canRedo;
-      }
+      },
+      // iOS は、カーソルをこちらで描く（縦書き・横書きとも。2026-11-17 作者の iPad の写真）。試しでは印を立てて同じ形にする
+      { ownCaret: Capacitor.getPlatform() === "ios" || readDebugOwnCaret() }
     );
     undoButton.disabled = true;
     redoButton.disabled = true;

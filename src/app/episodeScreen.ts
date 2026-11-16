@@ -107,7 +107,7 @@ interface WritingPane {
   /** 道具帯・取り消しで本文を替える（打ったのと同じく onChange へ渡す） */
   apply(edit: TextEdit): void;
   setOrientation(orientation: WritingOrientation): void;
-  /** 用語の色（右の線の欄だけ。いまの形〈textarea〉は中の字に色を付けられない） */
+  /** 用語の色（右の線の欄と、色を付ける左の線の欄〈テスト中〉。色を付けない textarea は中の字に色を付けられない） */
   setTerms?(find: TermFinder): void;
   destroy(): void;
 }
@@ -115,7 +115,8 @@ interface WritingPane {
 function mountWritingPane(
   host: HTMLElement,
   orientation: WritingOrientation,
-  onChange: (text: string, kind: "type" | "other") => void
+  onChange: (text: string, kind: "type" | "other") => void,
+  colors = false
 ): WritingPane {
   const area = document.createElement("textarea");
   area.className = `ms-editor ${orientation}`;
@@ -138,26 +139,113 @@ function mountWritingPane(
   };
   area.addEventListener("input", onInput);
   area.addEventListener("beforeinput", onBeforeInput);
-  host.appendChild(area);
+  const backdrop = colors ? mountTermBackdrop(host, area, orientation) : undefined;
+  if (!backdrop) host.appendChild(area);
   return {
     setText(text) {
       area.value = text;
+      backdrop?.refresh();
     },
     value: () => area.value,
     selection: () => ({ start: area.selectionStart, end: area.selectionEnd }),
     apply(edit) {
       area.value = edit.text;
       area.setSelectionRange(edit.selStart, edit.selEnd);
+      backdrop?.refresh();
       onChange(edit.text, "other");
     },
     setOrientation(next) {
       area.classList.toggle("vertical", next === "vertical");
       area.classList.toggle("horizontal", next === "horizontal");
+      backdrop?.setOrientation(next);
     },
+    ...(backdrop ? { setTerms: (find: TermFinder) => backdrop.setTerms(find) } : {}),
     destroy() {
       area.removeEventListener("input", onInput);
       area.removeEventListener("beforeinput", onBeforeInput);
+      backdrop?.destroy();
       area.remove();
+    },
+  };
+}
+
+/**
+ * **左の線の欄に用語の色を付ける層**（2026-11-17 作者の答え「左の欄も作り替える」。設定 → 表示 → 用語の色、テスト中。
+ * 引継ぎ書 87章）。
+ *
+ * 日本語入力はいまと同じ textarea が受ける（変換中の線・カーソル・選び・貼り付けは端末のまま）。textarea の字だけを
+ * 透明にし、その裏に同じ字の大きさ・行の折り返しで本文を並べた層を置いて、用語に色を付ける。
+ * - 変換中は textarea の字を見せ、裏の層は隠す（変換中の線は字の色で描く端末があるので、透明だと線が消える）
+ * - 裏の層は textarea と同じ送り（scrollTop・scrollLeft）に合わせる。送り棒も同じに出して、折り返しの幅をそろえる
+ * - 語の探しは本体の索引（`TermFinder`）。本文が替わるたび、次の描きの前に1回だけ並べ直す
+ */
+function mountTermBackdrop(host: HTMLElement, area: HTMLTextAreaElement, orientation: WritingOrientation) {
+  const wrap = document.createElement("div");
+  wrap.className = "ms-editor-wrap";
+  const back = document.createElement("div");
+  back.className = `ms-editor ms-backdrop ${orientation}`;
+  back.setAttribute("aria-hidden", "true");
+  area.classList.add("ms-editor-over");
+  wrap.append(back, area);
+  host.appendChild(wrap);
+  let find: TermFinder | undefined;
+  let frame = 0;
+  const paint = () => {
+    frame = 0;
+    const text = area.value;
+    const spans = find ? find(text) : [];
+    let html = "";
+    let at = 0;
+    for (const span of spans) {
+      if (span.start < at) continue;
+      html += escapeHtml(text.slice(at, span.start));
+      html += `<span class="term-${span.kind}">${escapeHtml(text.slice(span.start, span.end))}</span>`;
+      at = span.end;
+    }
+    html += escapeHtml(text.slice(at));
+    // 終わりの改行のあとにも行があることを、textarea と同じに見せる
+    back.innerHTML = html + (text.endsWith("\n") || text === "" ? "​" : "");
+    syncScroll();
+  };
+  const refresh = () => {
+    if (!frame) frame = requestAnimationFrame(paint);
+  };
+  const syncScroll = () => {
+    back.scrollTop = area.scrollTop;
+    back.scrollLeft = area.scrollLeft;
+  };
+  const onCompStart = () => wrap.classList.add("composing");
+  const onCompEnd = () => {
+    wrap.classList.remove("composing");
+    refresh();
+  };
+  area.addEventListener("input", refresh);
+  area.addEventListener("scroll", syncScroll);
+  area.addEventListener("compositionstart", onCompStart);
+  area.addEventListener("compositionend", onCompEnd);
+  const resize = new ResizeObserver(refresh);
+  resize.observe(area);
+  refresh();
+  return {
+    refresh,
+    setTerms(next: TermFinder) {
+      find = next;
+      refresh();
+    },
+    setOrientation(next: WritingOrientation) {
+      back.classList.toggle("vertical", next === "vertical");
+      back.classList.toggle("horizontal", next === "horizontal");
+      refresh();
+    },
+    destroy() {
+      cancelAnimationFrame(frame);
+      resize.disconnect();
+      area.removeEventListener("input", refresh);
+      area.removeEventListener("scroll", syncScroll);
+      area.removeEventListener("compositionstart", onCompStart);
+      area.removeEventListener("compositionend", onCompEnd);
+      area.classList.remove("ms-editor-over");
+      wrap.remove();
     },
   };
 }
@@ -180,6 +268,23 @@ export function readCompositionLine(): CompositionLine {
     return parseCompositionLine(window.localStorage.getItem(COMPOSITION_LINE_KEY));
   } catch {
     return "left";
+  }
+}
+/** 左の線の欄にも用語の色を付けるか（テスト中。既定は付けない。2026-11-17 作者の答え。引継ぎ書 87章） */
+export const LEFT_LINE_TERM_COLORS_KEY = "novelai.leftLineTermColors";
+export function readLeftLineTermColors(): boolean {
+  try {
+    return window.localStorage.getItem(LEFT_LINE_TERM_COLORS_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+export function writeLeftLineTermColors(on: boolean): void {
+  try {
+    if (on) window.localStorage.setItem(LEFT_LINE_TERM_COLORS_KEY, "on");
+    else window.localStorage.removeItem(LEFT_LINE_TERM_COLORS_KEY);
+  } catch {
+    /* 覚えられなくても、いまの画面は替わる */
   }
 }
 export function writeCompositionLine(value: CompositionLine): void {
@@ -416,7 +521,7 @@ export function mountEpisodeScreen(
         return;
       }
       session = result.session;
-      pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, orientation, onEdit) : mountWritingPane(host, orientation, onEdit);
+      pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, orientation, onEdit) : mountWritingPane(host, orientation, onEdit, readLeftLineTermColors());
       shown = session.text();
       pane.setText(shown);
       applyWorkTerms();

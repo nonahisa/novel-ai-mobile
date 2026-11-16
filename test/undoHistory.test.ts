@@ -35,6 +35,26 @@ describe("取り消し・やり直し", () => {
     expect(history.canUndo()).toBe(false);
   });
 
+  test("変換で、打ったばかりの読みを漢字に替えた手は、読みを打った手にまとめる（取り消すと読みも残らない）", () => {
+    // 2026-11-17 左の線の欄の e2e：［取り消し］で「とうだい」が残った
+    const history = new UndoHistory();
+    history.record("姉。", "姉。と", "type", 0);
+    history.record("姉。と", "姉。とう", "type", 100);
+    history.record("姉。とう", "姉。とうだい", "type", 200);
+    // 候補を選ぶのに時間がかかっても
+    history.record("姉。とうだい", "姉。灯台", "type", 200 + MERGE_MS * 3);
+    expect(history.undo("姉。灯台")).toEqual({ text: "姉。", caret: 2 });
+    expect(history.canUndo()).toBe(false);
+    expect(history.redo("姉。")?.text).toBe("姉。灯台");
+  });
+
+  test("打った字の外まで替える手は、まとめない", () => {
+    const history = new UndoHistory();
+    history.record("姉。", "姉。と", "type", 0);
+    history.record("姉。と", "姉、灯", "type", 100);
+    expect(history.undo("姉、灯")?.text).toBe("姉。と");
+  });
+
   test(`間が ${MERGE_MS} ミリ秒あいたら別の手`, () => {
     const history = new UndoHistory();
     history.record("", "わ", "type", 0);

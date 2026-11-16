@@ -13,3 +13,11 @@ test("名前は novelai.compositionLine、値は left／right、既定は left�
   expect(renderLineSection("right")).toContain("右（テスト中）");
   expect(renderLineSection("right")).toContain("テスト中：範囲を選べないので");
 });
+
+/** 左の線の欄の用語の色（テスト中。引継ぎ書 87章）。左のときだけ選べ、既定は付けない */
+test("用語の色の選びは左のときだけ出し、既定は［付けない］", () => {
+  expect(renderLineSection("left")).toContain(`data-term-colors="off" aria-pressed="true"`);
+  expect(renderLineSection("left", true)).toContain(`data-term-colors="on" aria-pressed="true"`);
+  expect(renderLineSection("left", true)).toContain("付ける（テスト中）");
+  expect(renderLineSection("right", true)).not.toContain("data-term-colors");
+});

@@ -373,3 +373,74 @@ test.describe("C 組んで書く", () => {
     expect((await aText(page)).startsWith("{吾輩|わがはい}は猫である。")).toBe(true);
   });
 });
+
+test.describe("C 組んで書く：キーボードが出たときのカーソルの行", () => {
+  /**
+   * 2026-11-17 AQUOS の試し11・作者の答え「もう少し下に出してほしい」：キーボードが出て見える範囲が縮んだとき、
+   * カーソルが道具の段（取り消し・ルビ・傍点）のすぐ下ぎりぎりに来ていた。上の余白が上のバーの分しか無く、
+   * バーの下に張りつく道具の段の分を数えていなかった
+   */
+  test("見える範囲が縮んでも、カーソルは道具の段の下から少し離れた所に出る", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await openC(page);
+    await caretBesideFirstChunk(page, "after");
+    // カーソルを、上のバーのすぐ下（道具の段の裏）へ送る
+    await page.evaluate(() => {
+      const caret = window.getSelection()!.getRangeAt(0).getBoundingClientRect();
+      const bar = document.querySelector(".appbar")!.getBoundingClientRect();
+      window.scrollBy(0, caret.top - (bar.bottom + 10));
+    });
+    // キーボードが出た形（見える範囲が縮む）
+    await page.setViewportSize({ width: 320, height: 420 });
+    await page.waitForTimeout(600);
+    const seen = await page.evaluate(() => {
+      const caret = window.getSelection()!.getRangeAt(0).getBoundingClientRect();
+      const tools = document.querySelector("#composedTools")!.getBoundingClientRect();
+      return { caretTop: caret.top, caretBottom: caret.bottom, toolsBottom: tools.bottom, vh: window.visualViewport!.height };
+    });
+    expect(seen.caretTop).toBeGreaterThanOrEqual(seen.toolsBottom + 16);
+    expect(seen.caretBottom).toBeLessThanOrEqual(seen.vh);
+  });
+});
+
+test.describe("C 組んで書く：iPad の塊の選び（2026-11-17 Mac の iPad mini 0.1.73）", () => {
+  test("塊を2度押すと、塊ごと選ぶ。⌫ で塊が消える", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    const chunks = await pane.locator(".chunk").count();
+    const chunk = pane.locator(".chunk").first();
+    await chunk.click();
+    await chunk.click({ delay: 0 });
+    await expect(page.locator("#imeLog")).toContainText("塊を2度押したので、塊ごと選んだ：0〜9字目");
+    const sel = await page.evaluate(() => window.getSelection()!.toString().length > 0 || !window.getSelection()!.isCollapsed);
+    expect(sel).toBe(true);
+    await page.keyboard.press("Backspace");
+    await expect(pane.locator(".chunk")).toHaveCount(chunks - 1);
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("は猫である。")).toBe(true);
+  });
+
+  test("つまみを引いたあと指の知らせが来なくても、選びが動いたら指は離れたと見なして置き直す", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    await pane.click();
+    // iPad でつまみを掴むと touchstart は来るが、touchend が来ない
+    await pane.evaluate((el) => el.dispatchEvent(new Event("touchstart", { bubbles: true })));
+    await page.waitForTimeout(1700);
+    await pane.evaluate((el) => {
+      const text = el.querySelector(".chunk")!.querySelector("rb, ruby")?.firstChild ?? el.querySelector(".chunk")!.firstChild!;
+      const range = document.createRange();
+      range.setStart(text, 1);
+      range.collapse(true);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+    });
+    await expect(page.locator("#imeLog")).toContainText("C 指：離れたと見なした");
+    await expect(page.locator("#imeLog")).toContainText("塊の外へ置き直した");
+  });
+
+  test("あとから本文を入れても、組んだ塊の数を記録に出す", async ({ page }) => {
+    await openC(page);
+    await expect(page.locator("#imeLog")).toContainText(/C 組んだ（塊 [1-9]\d*つ）/);
+  });
+});

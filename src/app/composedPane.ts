@@ -330,6 +330,13 @@ export function mountComposedPane(
   let touchStartedAt = 0;
   let longGesture = false;
   /**
+   * 指の知らせ（touchstart・touchmove）が最後に来た時刻。iPad でつまみを引くと、touchstart は来るが touchend が
+   * 次に触れるまで来なかった（2026-11-17 Mac の iPad mini 0.1.73。39秒・20秒）。そのあいだ「指が触れている」まま
+   * なので置き直しも選び直しも止まっていた。知らせが来ないまま選びが動いたら、指は離れたと見なす
+   */
+  let lastTouchAt = 0;
+  const TOUCH_SILENT_MS = 1500;
+  /**
    * 指と選びの動きを記録に残す（2026-11-17。iPad の 0.1.70 で、長押しでなぞっても範囲ができなかった訳を、
    * Mac の試しの記録で見分けるため）。選びは変わったときだけ、1秒に5行まで
    */
@@ -347,6 +354,7 @@ export function mountComposedPane(
   const onTouchStart = () => {
     touching = true;
     touchStartedAt = Date.now();
+    lastTouchAt = touchStartedAt;
     longGesture = false;
     lastSelLog = "";
     window.clearTimeout(snapTimer);
@@ -361,8 +369,16 @@ export function mountComposedPane(
     if (longGesture) scheduleSnap();
     else snapCaretOutOfChunk();
   };
+  const onTouchMove = () => {
+    lastTouchAt = Date.now();
+  };
   const onSelectionChange = () => {
     if (composing) return;
+    if (touching && Date.now() - lastTouchAt > TOUCH_SILENT_MS) {
+      touching = false;
+      longGesture = true;
+      log(`C 指：離れたと見なした（指の知らせが ${Date.now() - lastTouchAt}ms 来ない）`);
+    }
     // ［ルビ］［傍点］を押したときに焦点が外れても使えるように、欄の中の最後の選択を覚える
     const seen = selectionOffsets();
     if (seen) lastSel = seen;
@@ -426,10 +442,43 @@ export function mountComposedPane(
     if (composing || !chunkAt(e.target)) return;
     e.preventDefault();
   };
+  /**
+   * **塊を2度押したら、塊ごと選ぶ**（2026-11-17 Mac の iPad mini 0.1.73 の試し9後半）。iPad の2度押しは語を選ぶが、
+   * 塊（書けない所）の上では選べず、カーソルが塊の前に来るだけだった。塊ごと選べば、終わりのつまみで広げられる。
+   * iPad で始めのつまみを塊へ引くと範囲がカーソルに潰れるのは WebKit の側（書けない所を範囲の端にしない）で、ここでは直さない
+   */
+  const DOUBLE_TAP_MS = 400;
+  const selectChunk = (index: number) => {
+    const start = offsetOf(element, index);
+    const end = offsetOf(element, index + 1);
+    if (document.activeElement !== element) element.focus({ preventScroll: true });
+    placeRange(start, end);
+    log(`C 塊を2度押したので、塊ごと選んだ：${start}〜${end}字目`);
+  };
+  /** 端末によっては2度目が click で来ず dblclick だけ来るので、こちらでも選ぶ（もう選んでいれば何もしない） */
+  const onDblClick = (e: MouseEvent) => {
+    const chunk = chunkAt(e.target);
+    if (composing || !chunk) return;
+    e.preventDefault();
+    const index = Array.prototype.indexOf.call(element.childNodes, chunk) as number;
+    const sel = selectionOffsets();
+    if (sel && sel.start === offsetOf(element, index) && sel.end === offsetOf(element, index + 1)) return;
+    selectChunk(index);
+  };
+  /** 2度押しと見るのは、同じ辺り（この幅の内）を続けて押したときだけ。上と下を続けて押すのは2度押しではない */
+  const DOUBLE_TAP_PX = 24;
+  let lastChunkClick: { chunk: HTMLElement; at: number; x: number; y: number } | undefined;
   const onClick = (e: MouseEvent) => {
     const chunk = chunkAt(e.target);
     if (composing || !chunk) return;
     const index = Array.prototype.indexOf.call(element.childNodes, chunk) as number;
+    const now = Date.now();
+    const twice =
+      lastChunkClick?.chunk === chunk &&
+      now - lastChunkClick.at < DOUBLE_TAP_MS &&
+      Math.hypot(e.clientX - lastChunkClick.x, e.clientY - lastChunkClick.y) < DOUBLE_TAP_PX;
+    lastChunkClick = twice ? undefined : { chunk, at: now, x: e.clientX, y: e.clientY };
+    if (twice) return selectChunk(index);
     const box = chunk.getBoundingClientRect();
     const vertical = getComputedStyle(element).writingMode.startsWith("vertical");
     const before = vertical ? e.clientY < box.top + box.height / 2 : e.clientX < box.left + box.width / 2;
@@ -472,7 +521,9 @@ export function mountComposedPane(
   element.addEventListener("pointerup", onPointerUp);
   element.addEventListener("mousedown", onMouseDown);
   element.addEventListener("click", onClick);
+  element.addEventListener("dblclick", onDblClick);
   element.addEventListener("touchstart", onTouchStart, { passive: true });
+  element.addEventListener("touchmove", onTouchMove, { passive: true });
   element.addEventListener("touchend", onTouchEnd, { passive: true });
   element.addEventListener("touchcancel", onTouchEnd, { passive: true });
   document.addEventListener("selectionchange", onSelectionChange);
@@ -484,6 +535,8 @@ export function mountComposedPane(
     setText(next) {
       if (next === current && element.childNodes.length > 0) return;
       write(next);
+      // 開いたときは本文が空のまま組み、あとから本文が来る端末がある（iPad の 0.1.73 で「塊 0つ」と出た）
+      log(composed ? `C 組んだ（塊 ${tokens.filter(isChunk).length}つ）` : "C 記法のまま出した");
       // よそから本文が替わったら、積んだ手は当たらなくなるので捨てる
       settled = current;
       history.clear();
@@ -541,7 +594,9 @@ export function mountComposedPane(
       element.removeEventListener("pointerup", onPointerUp);
       element.removeEventListener("mousedown", onMouseDown);
       element.removeEventListener("click", onClick);
+      element.removeEventListener("dblclick", onDblClick);
       element.removeEventListener("touchstart", onTouchStart);
+      element.removeEventListener("touchmove", onTouchMove);
       element.removeEventListener("touchend", onTouchEnd);
       element.removeEventListener("touchcancel", onTouchEnd);
       document.removeEventListener("selectionchange", onSelectionChange);

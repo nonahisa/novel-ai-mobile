@@ -15,6 +15,9 @@ import { FileNotFoundError, joinStorePath, normalizeStorePath, type FileStore } 
  * - 書き込みは1つずつ。最後に渡した書きかけが必ず最後に書かれる
  * - **控えは保存が済んだら消す**（`clear()`）。作者が書きかけを捨てたときも消す
  * - 控えは UTF-8 で書く（原稿の文字コードとは関係ない。戻すのは本文の字だけ）
+ * - `base` を渡すと、控えを書くたびに「その書きかけのもとになった本文」のハッシュを頭の1行に添える
+ *   （{@link JOURNAL_BASE_LINE}）。開き直したとき、本文が外で変わっていたかを見分けるため
+ *   （2026-11-16 作者の答え「本文が変わったときだけ訊く」）。添えていない控えは `base` が無い
  */
 
 export const JOURNAL_DIRECTORY = ".novelai-drafts";
@@ -30,10 +33,47 @@ export interface DraftJournal {
   note(text: string): void;
   /** 待っている書きかけをすぐ控えに書く（裏に回るとき） */
   flush(): Promise<void>;
-  /** 控えを読む。無ければ undefined */
+  /** 控えを読む（書きかけの字だけ）。無ければ undefined */
   read(): Promise<string | undefined>;
+  /** 控えを、もとになった本文のハッシュといっしょに読む。無ければ undefined */
+  readEntry(): Promise<JournalEntry | undefined>;
   /** 控えを消す（保存が済んだ・書きかけを捨てた） */
   clear(): Promise<void>;
+}
+
+export interface JournalEntry {
+  text: string;
+  /** 書きかけのもとになった本文の SHA-256（添えていない控えは undefined） */
+  base?: string;
+}
+
+/** 控えの頭に添える行。`<ハッシュ>` は本文の SHA-256（16進 64字） */
+export const JOURNAL_BASE_LINE = /^#novelai-draft base=([0-9a-f]{64})\n/;
+
+export function encodeJournal(text: string, baseText: string | undefined): string {
+  return baseText === undefined ? text : `#novelai-draft base=${sha256Text(baseText)}\n${text}`;
+}
+
+export function decodeJournal(raw: string): JournalEntry {
+  const head = JOURNAL_BASE_LINE.exec(raw);
+  return head ? { text: raw.slice(head[0].length), base: head[1]! } : { text: raw };
+}
+
+/**
+ * 開いたときの控えの扱い（2026-11-16 作者の答え「本文が変わったときだけ訊く」）
+ *
+ * - `none`：控えが無い
+ * - `stale`：控えがいまの本文と同じ（消し忘れ）。黙って消す
+ * - `restore`：控えのもとの本文がいまの本文と同じ。黙って戻す
+ * - `ask`：控えを書いたあとで本文が変わった（同期で入れ替わった・外で変わった）、
+ *   またはもとの本文が分からない。［書きかけを戻す］［戻さない］を訊く
+ */
+export type RestoreDecision = "none" | "stale" | "restore" | "ask";
+
+export function restoreDecision(entry: JournalEntry | undefined, saved: string): RestoreDecision {
+  if (entry === undefined) return "none";
+  if (entry.text === saved) return "stale";
+  return entry.base !== undefined && entry.base === sha256Text(saved) ? "restore" : "ask";
 }
 
 /** 話のパスに対する控えのパス */
@@ -57,7 +97,13 @@ const defaultTimer: JournalTimer = {
 export function createDraftJournal(
   store: FileStore,
   path: string,
-  options: { delayMs?: number; timer?: JournalTimer; onError?: (error: unknown) => void } = {}
+  options: {
+    delayMs?: number;
+    timer?: JournalTimer;
+    onError?: (error: unknown) => void;
+    /** 書きかけのもとになっている本文（書くたびに聞く。保存が済むと変わる） */
+    base?: () => string;
+  } = {}
 ): DraftJournal {
   const file = journalPathFor(path);
   const delayMs = options.delayMs ?? JOURNAL_DELAY_MS;
@@ -71,8 +117,8 @@ export function createDraftJournal(
     return queue;
   };
 
-  const write = async (text: string): Promise<void> => {
-    const bytes = new TextEncoder().encode(text);
+  const write = async (text: string, baseText: string | undefined): Promise<void> => {
+    const bytes = new TextEncoder().encode(encodeJournal(text, baseText));
     try {
       await store.writeFile(file, bytes, { mode: "overwrite" });
     } catch (error) {
@@ -93,7 +139,21 @@ export function createDraftJournal(
     if (pending === undefined) return queue;
     const text = pending;
     pending = undefined;
-    return enqueue(() => write(text));
+    // もとの本文は、書きかけを受け取った時点のもの（並んで待つあいだに保存が済んでも変えない）
+    const baseText = options.base?.();
+    return enqueue(() => write(text, baseText));
+  };
+
+  const readEntry = async (): Promise<JournalEntry | undefined> => {
+    await queue;
+    try {
+      const raw = new TextDecoder().decode(await store.readFile(file));
+      // 添えていない係（縦書きの試し）の控えは、字のまま
+      return options.base ? decodeJournal(raw) : { text: raw };
+    } catch (error) {
+      if (error instanceof FileNotFoundError) return undefined;
+      throw error;
+    }
   };
 
   return {
@@ -107,14 +167,9 @@ export function createDraftJournal(
     },
     flush,
     async read() {
-      await queue;
-      try {
-        return new TextDecoder().decode(await store.readFile(file));
-      } catch (error) {
-        if (error instanceof FileNotFoundError) return undefined;
-        throw error;
-      }
+      return (await readEntry())?.text;
     },
+    readEntry,
     clear() {
       cancelTimer();
       pending = undefined;

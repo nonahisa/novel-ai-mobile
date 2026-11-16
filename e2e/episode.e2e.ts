@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { listFakeFiles, openWithWorks, readFakeFile } from "./support/fakeWorks";
+import { createHash } from "node:crypto";
+import { FAKE_WORKS, listFakeFiles, openWithWorks, readFakeFile } from "./support/fakeWorks";
 
 /**
  * **原稿エディター（C）の土台**（`src/app/episodeScreen.ts`。設計書 5.1〜5.4）。
@@ -78,7 +79,8 @@ test.describe("原稿エディター（C）の土台", () => {
     expect(await readFakeFile(page, EPISODE)).toBe("外で入れ替わった。\n");
     const drafts = await listFakeFiles(page, ".novelai-drafts/");
     expect(drafts).toHaveLength(1);
-    expect(await readFakeFile(page, drafts[0]!)).toBe("こちらの書きかけ。\n");
+    // 頭の1行はもとの本文のハッシュ（開き直したとき、本文が変わったかを見る）
+    expect(await readFakeFile(page, drafts[0]!)).toMatch(/^#novelai-draft base=[0-9a-f]{64}\nこちらの書きかけ。\n$/);
     await page.locator('.dialog [data-answer="ok"]').click();
     // 戻ろうとすると訊く（書きかけは控えにある）
     await page.locator(".appbar-back").click();
@@ -96,6 +98,44 @@ test.describe("原稿エディター（C）の土台", () => {
     await expect(page.locator("#orientToggle")).toHaveText("縦で書く");
     await page.reload();
     await expect(page.locator("#msEditor")).toHaveCSS("writing-mode", "horizontal-tb");
+  });
+
+  test.describe("止められる前の書きかけ（本文が変わったときだけ訊く）", () => {
+    const journal = `.novelai-drafts/${createHash("sha256").update(EPISODE).digest("hex")}.txt`;
+    const DRAFT = "姉から手紙が届いた。止められる前の字。\n";
+    const withJournal = (raw: string) => ({ ...FAKE_WORKS, [journal]: raw });
+    const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+
+    test("本文が同じなら訊かずに戻す", async ({ page }) => {
+      await openWithWorks(page, "#/works", withJournal(`#novelai-draft base=${sha(ORIGINAL)}\n${DRAFT}`));
+      await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+      await page.locator(".ep-list .ep").first().click();
+      await expect(page.locator("#msEditor")).toHaveValue(DRAFT);
+      await expect(page.locator(".dialog-backdrop")).toHaveCount(0);
+      await expect(page.locator("#toast")).toHaveText("保存していない書きかけを戻しました");
+    });
+
+    test("本文が変わっていたら訊く。［書きかけを戻す］で戻す", async ({ page }) => {
+      await openWithWorks(page, "#/works", withJournal(`#novelai-draft base=${sha("前の本文\n")}\n${DRAFT}`));
+      await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+      await page.locator(".ep-list .ep").first().click();
+      await expect(page.locator(".dialog-message")).toContainText("この話がほかで変わっています");
+      await expect(page.locator('.dialog [data-answer="no"]')).toHaveText("書きかけを戻す");
+      await expect(page.locator('.dialog [data-answer="no"]')).toBeFocused();
+      await page.locator('.dialog [data-answer="no"]').click();
+      await expect(page.locator("#msEditor")).toHaveValue(DRAFT);
+    });
+
+    test("［戻さない］なら本文のまま、控えを消す", async ({ page }) => {
+      await openWithWorks(page, "#/works", withJournal(DRAFT));
+      await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+      await page.locator(".ep-list .ep").first().click();
+      await page.locator('.dialog [data-answer="yes"]', { hasText: "戻さない" }).click();
+      await expect(page.locator("#msEditor")).toHaveValue(ORIGINAL);
+      await expect(page.locator("#saveState")).toHaveText("保存済み");
+      expect(await listFakeFiles(page, ".novelai-drafts/")).toEqual([]);
+      expect(await readFakeFile(page, EPISODE)).toBe(ORIGINAL);
+    });
   });
 
   test("横にはみ出さない・作品の外や隠したフォルダーは開けない", async ({ page }) => {

@@ -13,7 +13,12 @@ import { escapeHtml, renderAppBar } from "./menuScreen";
  * - 上のバーの題の下に保存の状態（「保存済み」「保存待ち」「外で変わりました」。5.4）、右に［横で書く］［縦で書く］（5.3 の1）
  * - 保存できなかったとき・外で変わって保存を止めたときは、真ん中の窓で1回だけ知らせる（5.4）
  * - 離れる前に保存を済ませる。済まなければ訊く（書きかけは端末の控えに残っている）
+ * - 止められる前の書きかけは、控えたあとで本文が変わっていたときだけ戻すかを訊く（{@link RESTORE_QUESTION}）。
+ *   焦点・背景・端末の［戻る］キーは［書きかけを戻す］の側（字を失わない側）
  */
+
+/** 控えたあとで本文がほかで変わっていたとき（2026-11-16 作者の答え「本文が変わったときだけ訊く」） */
+export const RESTORE_QUESTION = "書きかけを控えたあとで、この話がほかで変わっています。\n戻さないと、書きかけは消えます";
 
 export type WritingOrientation = "vertical" | "horizontal";
 
@@ -124,7 +129,9 @@ export function mountEpisodeScreen(
     pane?.setOrientation(orientation);
   });
 
-  void openEpisode(store, path).then((result) => {
+  // 捨てる側（［戻さない］）を「はい」に置く。askChoice の焦点・背景は「いいえ」の側
+  const confirmRestore = async () => !(await askChoice(RESTORE_QUESTION, "戻さない", "書きかけを戻す"));
+  void openEpisode(store, path, { confirmRestore }).then((result) => {
     if (destroyed || !options.stillHere()) {
       if (result.ok) result.session.dispose();
       return;

@@ -1,7 +1,7 @@
 import type { FileStore } from "../platform/fileStore";
 import { readTextFile } from "../platform/textFile";
 import { createAutoSave, type AutoSave, type AutoSaveFailure, type AutoSaveStatus, type AutoSaveTimer, type VisibilitySource } from "./autoSave";
-import { createDraftJournal, shouldRestore, type DraftJournal } from "./draftJournal";
+import { createDraftJournal, restoreDecision, type DraftJournal } from "./draftJournal";
 
 /**
  * **話を開いて書くあいだの係**（原稿エディター C の土台。設計書 5.3 の4・5.4）。画面には触らない。
@@ -15,6 +15,8 @@ import { createDraftJournal, shouldRestore, type DraftJournal } from "./draftJou
  * - 競合の印のある話は開かない（保存がいつも `conflict_markers` で止まる。直すのは同期の画面 G）
  * - 止められる前の控えがあり、保存してある本文と違えば、書きかけとして戻す。戻した書きかけは
  *   自動保存が書く。最初の保存なので退避を取る（戻した字が違っていても、開く前の本文は退避から戻せる）
+ * - 控えを書いたあとで本文が変わっていたら（同期で入れ替わった・外で変わった）、戻すかを訊く
+ *   （`confirmRestore`。同じなら黙って戻す。2026-11-16 作者の答え「本文が変わったときだけ訊く」）
  * - **控えを消すのは、保存が済んだ（「保存済み」になった）ときだけ**。「保存待ち」「外で変わりました」の
  *   あいだと、閉じたときに保存できていなければ控えを残す（次に開いたとき戻る）
  * - 裏に回ったら、保存と控えの両方をすぐ書く
@@ -48,6 +50,11 @@ export interface OpenEpisodeOptions {
   timer?: AutoSaveTimer;
   /** 控えを書けなかったとき（原稿は自動保存が書くので、知らせるだけ） */
   onJournalError?: (error: unknown) => void;
+  /**
+   * 控えを書いたあとで本文が変わっていたとき、書きかけを戻すか（true で戻す。false なら控えを消す）。
+   * 無ければ戻す（字を失わない側）
+   */
+  confirmRestore?: () => Promise<boolean>;
 }
 
 export async function openEpisode(store: FileStore, path: string, options: OpenEpisodeOptions = {}): Promise<OpenEpisodeResult> {
@@ -59,27 +66,41 @@ export async function openEpisode(store: FileStore, path: string, options: OpenE
   }
   if (opened.hasConflictMarkers) return { ok: false, reason: "conflict_markers" };
 
+  // 書きかけのもとになっている本文（開いたときは読んだ本文、保存が済むたびにその字）
+  const base = { text: opened.text };
   const journal = createDraftJournal(store, path, {
+    base: () => base.text,
     ...(options.timer ? { timer: options.timer } : {}),
     ...(options.onJournalError ? { onError: options.onJournalError } : {}),
   });
-  let kept: string | undefined;
+  let kept;
   try {
-    kept = await journal.read();
+    kept = await journal.readEntry();
   } catch (error) {
     options.onJournalError?.(error);
   }
   const autoSave = createAutoSave({ store, path, opened, ...(options.timer ? { timer: options.timer } : {}) });
-  const restored = shouldRestore(kept, opened.text);
-  if (restored) autoSave.edit(kept!);
-  else if (kept !== undefined) void journal.clear();
-  return { ok: true, session: wrap(path, autoSave, journal, restored, options.visibility) };
+  const decision = restoreDecision(kept, opened.text);
+  const restored = decision === "restore" || (decision === "ask" && (options.confirmRestore ? await options.confirmRestore() : true));
+  if (restored) autoSave.edit(kept!.text);
+  else if (kept !== undefined) await journal.clear();
+  return { ok: true, session: wrap(path, autoSave, journal, restored, base, options.visibility) };
 }
 
-function wrap(path: string, autoSave: AutoSave, journal: DraftJournal, restored: boolean, visibility: VisibilitySource | undefined): EpisodeSession {
-  // 保存が済んだら控えは要らない（保存のあいだに打った字があれば「保存待ち」のままなので消さない）
+function wrap(
+  path: string,
+  autoSave: AutoSave,
+  journal: DraftJournal,
+  restored: boolean,
+  base: { text: string },
+  visibility: VisibilitySource | undefined
+): EpisodeSession {
+  // 保存が済んだら控えは要らない（保存のあいだに打った字があれば「保存待ち」のままなので消さない）。
+  // 置き場の本文はいまの字になったので、これからの控えのもとはこの字
   autoSave.onStatusChange((status) => {
-    if (status === "保存済み") void journal.clear();
+    if (status !== "保存済み") return;
+    base.text = autoSave.draft();
+    void journal.clear();
   });
   const source = visibility ?? (globalThis.document as VisibilitySource | undefined);
   const detachAutoSave = autoSave.watchVisibility(source);

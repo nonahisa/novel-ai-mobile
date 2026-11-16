@@ -4,6 +4,9 @@ import {
   JOURNAL_DIRECTORY,
   createDraftJournal,
   journalPathFor,
+  decodeJournal,
+  encodeJournal,
+  restoreDecision,
   shouldRestore,
 } from "../src/app/draftJournal";
 import { MemoryFileStore } from "../src/platform/memoryFileStore";
@@ -97,5 +100,32 @@ describe("書きかけの控え", () => {
     expect(shouldRestore("書きかけ", "保存した本文")).toBe(true);
     expect(shouldRestore("保存した本文", "保存した本文")).toBe(false);
     expect(shouldRestore(undefined, "保存した本文")).toBe(false);
+  });
+});
+
+describe("控えのもとになった本文", () => {
+  test("添えた行は読むと外れ、もとの本文のハッシュになる。添えていない控えは字のまま", () => {
+    const raw = encodeJournal("書きかけ\n", "保存した本文\n");
+    expect(raw.startsWith("#novelai-draft base=")).toBe(true);
+    expect(decodeJournal(raw)).toEqual({ text: "書きかけ\n", base: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(decodeJournal("書きかけ\n")).toEqual({ text: "書きかけ\n" });
+    expect(encodeJournal("書きかけ\n", undefined)).toBe("書きかけ\n");
+  });
+
+  test("戻し方：無い・同じなら消す・本文が同じなら黙って戻す・変わった／分からないなら訊く", () => {
+    const entry = decodeJournal(encodeJournal("書きかけ", "保存した本文"));
+    expect(restoreDecision(undefined, "保存した本文")).toBe("none");
+    expect(restoreDecision({ text: "保存した本文" }, "保存した本文")).toBe("stale");
+    expect(restoreDecision(entry, "保存した本文")).toBe("restore");
+    expect(restoreDecision(entry, "入れ替わった本文")).toBe("ask");
+    expect(restoreDecision({ text: "書きかけ" }, "保存した本文")).toBe("ask");
+  });
+
+  test("base を渡さない係（縦書きの試し）は、控えの頭が同じ形でも字のまま読む", async () => {
+    const store = new MemoryFileStore();
+    const journal = createDraftJournal(store, FILE);
+    journal.note("#novelai-draft base=" + "0".repeat(64) + "\n本文");
+    await journal.flush();
+    expect(await journal.read()).toBe("#novelai-draft base=" + "0".repeat(64) + "\n本文");
   });
 });

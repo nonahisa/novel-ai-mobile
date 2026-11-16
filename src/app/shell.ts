@@ -49,6 +49,7 @@ import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict"
 import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
 import { createTouchedRecorder } from "../platform/touchedPaths";
 import { createAutoFetch } from "./autoFetch";
+import { createNewWork, newWorkResultText, repoNameProblem } from "../platform/newWork";
 import { DeviceFontShelf } from "../platform/fontShelf";
 import { CLOUD_PROVIDERS, checkApiKey, keyCheckText, saveApiKey, validateApiKeyFormat, type CloudProviderId } from "../platform/aiKeys";
 import { keyPrompt, removeQuestion, renderAiScreen, renderAssignmentSections, renderKeyRows, type KeyRow } from "./aiScreen";
@@ -383,10 +384,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
           add.addEventListener("click", () => {
             void chooseFrom([
               { id: "import", label: "GitHub から取り寄せる" },
-              { id: "new", label: "新しく作る", planned: true },
+              { id: "new", label: "新しく作る" },
             ]).then((choice) => {
               if (choice === "import") location.hash = "#/import";
-              else if (choice === "new") toast(NOT_BUILT_MESSAGE);
+              else if (choice === "new") void startNewWork(store, toast);
             });
           });
           screen.appendChild(add);
@@ -810,6 +811,35 @@ function mountImportScreen(screen: HTMLElement, store: FileStore, stillHere: () 
     })();
   });
   void load();
+}
+
+/* ---------- 新しく作る（引継ぎ書 75章） ---------- */
+
+/**
+ * 題 → リポジトリの名前 → 確かめ（「GitHub に非公開のリポジトリ〈名前〉を作ります」）→ 作って取り寄せ、形を置いて話の一覧を開く。
+ * サインインしていなければ［GitHub と同期］へ
+ */
+async function startNewWork(store: FileStore, toast: (text: string) => void): Promise<void> {
+  if (!(store instanceof CapacitorFileStore)) return toast(NOT_BUILT_MESSAGE);
+  const token = await secretVault().get(GITHUB_TOKEN_SECRET);
+  if (!token) {
+    toast("先に GitHub にサインインしてください");
+    location.hash = "#/github";
+    return;
+  }
+  const title = await askText("作品の題", { okLabel: "次へ", validate: (value) => (value.trim() ? undefined : "題を入れてください") });
+  if (title === undefined) return;
+  const repoName = await askText("GitHub のリポジトリの名前（英数字）", { okLabel: "次へ", validate: (value) => repoNameProblem(value) });
+  if (repoName === undefined) return;
+  const go = await askChoice(`GitHub に非公開のリポジトリ「${repoName.trim()}」を作ります`, "作る", "やめる");
+  if (!go) return;
+  toast("作っています…");
+  const result = await createNewWork({ backend: new CapacitorGitFsBackend(), store, token, title, repoName });
+  if (result.kind === "created") {
+    location.hash = workHash(result.root);
+    return;
+  }
+  await tell(newWorkResultText(result));
 }
 
 /* ---------- 設定 → AI（クラウドの AI の鍵。引継ぎ書 71章） ---------- */

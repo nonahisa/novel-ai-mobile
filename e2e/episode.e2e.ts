@@ -138,6 +138,60 @@ test.describe("原稿エディター（C）の土台", () => {
     });
   });
 
+  test.describe("道具帯（設計書 5.6）", () => {
+    const caret = (page: Page, start: number, end = start) =>
+      page.locator("#msEditor").evaluate((el, [s, e]) => {
+        const area = el as HTMLTextAreaElement;
+        area.focus();
+        area.setSelectionRange(s!, e!);
+      }, [start, end]);
+    const tool = (page: Page, label: string) => page.locator("#msTools button", { hasText: label });
+
+    test("――・「」を入れ、取り消し・やり直しで戻る。保存もされる", async ({ page }) => {
+      await openEpisode(page);
+      await expect(tool(page, "取り消し")).toBeDisabled();
+      await caret(page, 9);
+      await tool(page, "――").click();
+      await expect(page.locator("#msEditor")).toHaveValue("姉から手紙が届いた――。\n// 付箋：ここは後で直す\n");
+      await tool(page, "「」").click();
+      await page.keyboard.type("来た");
+      await expect(page.locator("#msEditor")).toHaveValue("姉から手紙が届いた――「来た」。\n// 付箋：ここは後で直す\n");
+      await tool(page, "取り消し").click();
+      await expect(page.locator("#msEditor")).toHaveValue("姉から手紙が届いた――「」。\n// 付箋：ここは後で直す\n");
+      await tool(page, "取り消し").click();
+      await expect(page.locator("#msEditor")).toHaveValue("姉から手紙が届いた――。\n// 付箋：ここは後で直す\n");
+      await tool(page, "やり直し").click();
+      await expect(page.locator("#msEditor")).toHaveValue("姉から手紙が届いた――「」。\n// 付箋：ここは後で直す\n");
+      await expect(page.locator("#saveState")).toHaveText("保存済み", { timeout: 5000 });
+      expect(await readFakeFile(page, EPISODE)).toBe("姉から手紙が届いた――「」。\n// 付箋：ここは後で直す\n");
+    });
+
+    test("ルビ：カーソルの前の漢字に読みを訊いて振る。傍点：選んだ字に付ける", async ({ page }) => {
+      await openEpisode(page);
+      await caret(page, 5);
+      await tool(page, "ルビ").click();
+      await expect(page.locator(".dialog-message")).toHaveText("「手紙」の読み");
+      await page.locator("#dialogInput").fill("てがみ");
+      await page.locator('.dialog [data-answer="yes"]').click();
+      await expect(page.locator("#msEditor")).toHaveValue("姉から{手紙|てがみ}が届いた。\n// 付箋：ここは後で直す\n");
+      await caret(page, 0, 1);
+      await tool(page, "傍点").click();
+      await expect(page.locator("#msEditor")).toHaveValue("{{姉}}から{手紙|てがみ}が届いた。\n// 付箋：ここは後で直す\n");
+      await caret(page, 20);
+      await tool(page, "傍点").click();
+      await expect(page.locator("#toast")).toHaveText("傍点を付ける字を選んでから押してください");
+    });
+
+    test("道具帯は画面からはみ出さず、横へ送れる", async ({ page }) => {
+      await openEpisode(page);
+      await expect(page.locator("#msTools")).toBeVisible();
+      const box = await page.locator("#msTools").boundingBox();
+      const viewport = page.viewportSize()!;
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    });
+  });
+
   test("横にはみ出さない・作品の外や隠したフォルダーは開けない", async ({ page }) => {
     await openEpisode(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);

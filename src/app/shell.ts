@@ -46,7 +46,7 @@ import { mountEpisodeScreen, readCompositionLine, writeCompositionLine } from ".
 import { renderSyncScreen, type SyncAccess, type SyncConflictRow } from "./syncScreen";
 import { applyFailureText, renderConflictView, theirsQuestion, type ConflictView } from "./conflictScreen";
 import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict";
-import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
+import { fetchGithubLogin, pickGithubClientId, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
 import { createTouchedRecorder } from "../platform/touchedPaths";
 import { createAutoFetch } from "./autoFetch";
 import { createNewWork, newWorkResultText, repoNameProblem } from "../platform/newWork";
@@ -193,9 +193,7 @@ function secretVault(): SecretVault {
   return vault;
 }
 function githubClientId(): string {
-  if (GITHUB_CLIENT_ID || Capacitor.isNativePlatform()) return GITHUB_CLIENT_ID;
-  const injected = (globalThis as { __novelaiTestGithubClientId?: unknown }).__novelaiTestGithubClientId;
-  return typeof injected === "string" ? injected : "";
+  return pickGithubClientId(Capacitor.isNativePlatform(), (globalThis as { __novelaiTestGithubClientId?: unknown }).__novelaiTestGithubClientId);
 }
 
 /** 話の一覧を開く場所 */

@@ -21,8 +21,17 @@ import {
  * - 説明の文を並べない。コードは大きく、押す所は1つずつ（設計書 4.6）
  */
 
-/** 作者の OAuth App の Client ID（作者に登録してもらってから入れる。パネル 20261116-200000-mobile-oauthapp） */
-export const GITHUB_CLIENT_ID = "";
+/** 作者の OAuth App「novel-ai-mobile」（番号 4026042）の Client ID。秘密ではない。2026-11-17 作者が登録（引継ぎ書 58章） */
+export const GITHUB_CLIENT_ID = "Ov23likxRymyIUSsCaed";
+
+/**
+ * 使う Client ID。端末では作者の OAuth App のもの。
+ * ブラウザでは github.com/login が CORS を許さず本物にはつながらないので、試験が差し込んだものだけを使う（無ければ「未」）
+ */
+export function pickGithubClientId(native: boolean, injected: unknown): string {
+  if (native) return GITHUB_CLIENT_ID;
+  return typeof injected === "string" ? injected : "";
+}
 
 /** GitHub の名前（秘密ではない。サインイン済みの所に出す） */
 export const GITHUB_LOGIN_KEY = "novelai.github.login";

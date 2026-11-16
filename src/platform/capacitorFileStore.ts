@@ -7,6 +7,7 @@ import {
   type StoreEntry,
   type WriteMode,
 } from "./fileStore";
+import { replaceViaTemp, type ReplaceOps } from "./atomicReplace";
 
 /**
  * 端末の置き場：アプリ専用の領域（`Directory.Data`）の下（設計書 2.3。README「先に潰すべき問題」b）。
@@ -39,16 +40,34 @@ export class CapacitorFileStore implements FileStore {
     // 確かめてから書くまでの間に別の道から書かれる隙は残る——モバイル版ではこの領域へ書くのはアプリだけ
     const missing = await this.missing(path);
     if (options.mode === "create" && !missing) throw new FileExistsError(path);
-    // `overwrite` は在るものだけを書き換える（消えたものを作り直さない）。Capacitor の writeFile は
-    // 在るファイルを1手で書き換える。【確かめる】端末で書いている途中に止められたとき、半分だけ書かれた
-    // ファイルが残らないか（Android・iOS の中の書き方による）
+    // `overwrite` は在るものだけを書き換える（消えたものを作り直さない）。Capacitor の writeFile は元を空にしてから
+    // 書くので、途中で止められると原稿が半分になる。一時ファイルに書いてから名前の変更で置く（`atomicReplace.ts`）
     if (options.mode === "overwrite" && missing) throw new FileNotFoundError(path);
+    if (options.mode === "overwrite") return replaceViaTemp(this.replaceOps(), path, bytes);
     await Filesystem.writeFile({
       path: this.full(path),
       directory: this.directory,
       data: bytesToBase64(bytes),
       recursive: false,
     });
+  }
+
+  private replaceOps(): ReplaceOps {
+    const where = (path: string) => ({ path: this.full(path), directory: this.directory });
+    return {
+      write: async (path, bytes) => {
+        await Filesystem.writeFile({ ...where(path), data: bytesToBase64(bytes), recursive: false });
+      },
+      read: (path) => this.readFile(path),
+      rename: async (from, to) => {
+        await Filesystem.rename({ from: this.full(from), to: this.full(to), directory: this.directory, toDirectory: this.directory });
+      },
+      remove: async (path) => {
+        await Filesystem.deleteFile(where(path));
+      },
+      exists: async (path) => !(await this.missing(path)),
+      mkdir: (path) => this.createDirectory(path),
+    };
   }
 
   async deleteFile(path: string): Promise<void> {

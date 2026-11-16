@@ -48,6 +48,7 @@ import { applyFailureText, renderConflictView, theirsQuestion, type ConflictView
 import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict";
 import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
 import { createTouchedRecorder } from "../platform/touchedPaths";
+import { createAutoFetch } from "./autoFetch";
 import { importWork, listGithubRepos, type GithubRepo } from "../platform/workImport";
 import { importResultText, renderImportView, type ImportView } from "./importScreen";
 import { DeviceSecretVault, GITHUB_TOKEN_SECRET, MemorySecretVault, type SecretVault } from "../platform/secretVault";
@@ -407,6 +408,36 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   };
   window.addEventListener("hashchange", render);
   render();
+
+  // 自動の取得（設計書 6章。引継ぎ書 66章）：開いたとき・前に出たとき。原稿を開いていないときだけ、早送りだけ
+  const autoFetch = createAutoFetch({
+    listRepos: async () => {
+      if (!(store instanceof CapacitorFileStore)) return [];
+      const backend = new CapacitorGitFsBackend();
+      const repos: string[] = [];
+      for (const name of await backend.readdir("/").catch(() => [] as string[])) {
+        if (!name.startsWith(".") && (await backend.stat(`/${name}/.git`))) repos.push(name);
+      }
+      return repos;
+    },
+    token: async () => (store instanceof CapacitorFileStore ? secretVault().get(GITHUB_TOKEN_SECRET) : undefined),
+    fetchOne: (root, token) => fetchWork({ fs: createGitFs(new CapacitorGitFsBackend()), root, token, store, fastForwardOnly: true }),
+    canRun: () => {
+      const kind = parseRoute(location.hash).kind;
+      // 同期の画面（G）も外す（［取ってくる］［送る］と同じ作品の git を重ねて触らない）
+      return !leaveGuard && kind !== "episode" && kind !== "conflict" && kind !== "tategaki" && kind !== "import" && kind !== "sync";
+    },
+  });
+  const autoFetchNow = () =>
+    void autoFetch.run().then((result) => {
+      // 取り込んだら、一覧の画面だけ描き直す（印と最後に書いた日を新しくする）
+      const kind = parseRoute(location.hash).kind;
+      if (result && result.fetched.length > 0 && !leaveGuard && (kind === "tab" || kind === "work")) render();
+    });
+  autoFetchNow();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") autoFetchNow();
+  });
 }
 
 /* ---------- 作品一覧（A）と話の一覧（B） ---------- */

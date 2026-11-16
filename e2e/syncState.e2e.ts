@@ -161,6 +161,52 @@ test.describe("同期の画面（G）", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   });
 
+  test("自動の取得：前に出たとき、作品一覧なら GitHub へ取りに行く。原稿を開いているあいだは行かない（引継ぎ書 66章）", async ({ page }) => {
+    const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" };
+    await page.addInitScript(() => ((globalThis as { __novelaiTestGithubClientId?: string }).__novelaiTestGithubClientId = "Ov-e2e"));
+    await page.route("https://github.com/login/device/code", (route) =>
+      route.fulfill({
+        headers: CORS,
+        contentType: "application/json",
+        body: JSON.stringify({ device_code: "d".repeat(40), user_code: "WDJB-MJHT", verification_uri: "https://github.com/login/device", expires_in: 900, interval: 1 }),
+      })
+    );
+    await page.route("https://github.com/login/oauth/access_token", (route) =>
+      route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ access_token: "gho_tukurimono_auto", scope: "repo" }) })
+    );
+    await page.route("https://api.github.com/user", (route) =>
+      route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ login: "sakka-kakuninyou", id: 4321 }) })
+    );
+    const asked: string[] = [];
+    await page.route("https://github.com/sakka-kakuninyou/**", (route) => {
+      asked.push(route.request().url());
+      return route.fulfill({ status: 401, headers: CORS, body: "" });
+    });
+    const comeToFront = () =>
+      page.evaluate(() => {
+        Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    await openWithWorks(page, "#/github", await workAsRepo({}, "https://github.com/sakka-kakuninyou/toudai.git"));
+    await page.getByRole("button", { name: "サインイン" }).click();
+    await expect(page.locator(".gh-state")).toContainText("サインイン済み", { timeout: 10_000 });
+    // 原稿を開いているあいだは行かない
+    await page.evaluate((root) => (location.hash = `#/work/${encodeURIComponent(root)}`), WORK);
+    await page.locator("#episodeSlot .ep").first().click();
+    await expect(page.locator("#msEditor")).toBeVisible();
+    await comeToFront();
+    await page.waitForTimeout(500);
+    expect(asked).toEqual([]);
+    // 作品一覧で前に出たら行く（偽の GitHub は 401。黙って次へ。画面に窓は出さない）
+    await page.locator(".appbar-back").click();
+    await page.locator(".appbar-back").click();
+    await expect(page).toHaveURL(/#\/works$/);
+    await comeToFront();
+    await expect.poll(() => asked.length).toBeGreaterThan(0);
+    expect(asked[0]).toContain("/sakka-kakuninyou/toudai.git/info/refs");
+    await expect(page.locator(".dialog-backdrop")).toHaveCount(0);
+  });
+
   test("そろっていれば「同期済み」だけ", async ({ page }) => {
     await openWithWorks(page, `#/sync/${encodeURIComponent(WORK)}`, await workAsRepo());
     await expect(page.locator(".sync-state")).toHaveText("同期済み");

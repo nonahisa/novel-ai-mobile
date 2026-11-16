@@ -65,6 +65,8 @@ export type SyncOutcome =
   | { kind: "behind" }
   | { kind: "fetched"; taken: number; kept: number }
   | { kind: "up_to_date" }
+  /** 自動の取得で、こちらに送っていない変更があったので取り込まなかった（取ってきただけ。原稿に触れていない） */
+  | { kind: "held" }
   /** 選んでいない競合がある。何も動かしていない */
   | { kind: "conflicts"; paths: string[] }
   /** 取り込む途中で、こちらで書き換わった。何も進めていない */
@@ -85,6 +87,8 @@ export function outcomeText(outcome: SyncOutcome): string {
       return outcome.taken > 0 ? `取ってきました（${outcome.taken}件）` : "取ってきました";
     case "up_to_date":
       return "新しい変更はありません";
+    case "held":
+      return "GitHub に新しい版があります。［取ってくる］で取り込みます";
     case "conflicts":
       return `両方で書き換えた話があります（${outcome.paths.length}話）。選ぶと取り込みます`;
     case "changed_meanwhile":
@@ -127,6 +131,11 @@ export async function fetchWork(
     storeDir?: string;
     /** 向こうの版を取ってくる（省けば git の浅い取得）。テストで替える */
     fetchHead?: (target: RepoTarget) => Promise<string>;
+    /**
+     * 自動の取得（設計書 6章「早送りできるときだけ取り込む」）。こちらに送っていない変更（原稿でも設定でも）が
+     * 1つでもあれば取り込まず `held`（取ってきた版は refs/remotes に入るので、［取ってくる］・競合の画面で使える）
+     */
+    fastForwardOnly?: boolean;
   }
 ): Promise<SyncOutcome> {
   const { dir } = workRepo(deps.root, deps.base);
@@ -142,6 +151,11 @@ export async function fetchWork(
   }
   const storeDir = deps.storeDir ?? deps.root.split("/")[0]!;
   const touched = await readTouched(deps.fs, dir);
+  if (deps.fastForwardOnly) {
+    const plan = await planIncoming({ fs: deps.fs, dir, theirs, touched });
+    if (plan.theirs === plan.base) return { kind: "up_to_date" };
+    if (plan.entries.some((entry) => entry.kind === "ours_only" || entry.kind === "conflict")) return { kind: "held" };
+  }
   return integrateOutcome(await integrateIncoming({ fs: deps.fs, dir, theirs, store: deps.store, storeDir, touched }));
 }
 

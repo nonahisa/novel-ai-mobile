@@ -16,6 +16,7 @@ import {
   type IntegrateResult,
 } from "./syncConflict";
 import { workRepo } from "./workSync";
+import { forgetTouched, readTouched } from "./touchedPaths";
 
 /**
  * **同期の画面（G）の［取ってくる］［送る］**（設計書 6章。引継ぎ書 59章）。
@@ -140,7 +141,8 @@ export async function fetchWork(
     return { kind: "failed", reason: fetchFailure(error) };
   }
   const storeDir = deps.storeDir ?? deps.root.split("/")[0]!;
-  return integrateOutcome(await integrateIncoming({ fs: deps.fs, dir, theirs, store: deps.store, storeDir }));
+  const touched = await readTouched(deps.fs, dir);
+  return integrateOutcome(await integrateIncoming({ fs: deps.fs, dir, theirs, store: deps.store, storeDir, touched }));
 }
 
 function integrateOutcome(result: IntegrateResult): SyncOutcome {
@@ -185,7 +187,8 @@ export async function sendWork(
     token: deps.token,
     message: deps.message,
     author: deps.author,
-    touched: deps.touched,
+    // アプリが書いた話（控え）も名指しする。同じ秒・同じ大きさの書き換えを送り漏らさない
+    touched: [...new Set([...(deps.touched ?? []), ...(await readTouched(deps.fs, dir))])],
     filter: prefix ? (path) => path.startsWith(prefix) : undefined,
     fetcher: deps.fetcher,
     apiBase: deps.apiBase,
@@ -193,6 +196,8 @@ export async function sendWork(
   });
   switch (result.kind) {
     case "pushed":
+      // 手元の枝が送った版になったら、送った作品の控えは要らない（書庫のほかの作品の控えは残す）
+      if (result.adopted) await forgetTouched(deps.fs, dir, prefix ? (path) => !path.startsWith(prefix) : undefined).catch(() => undefined);
       return { kind: "pushed", adopted: result.adopted };
     case "nothing_to_push":
       return { kind: "nothing_to_push" };
@@ -218,7 +223,8 @@ export async function listConflicts(
   base = ""
 ): Promise<Array<{ path: string; decision?: "ours" | "both" | "theirs" }>> {
   try {
-    const plan = await planIncoming({ fs, dir: workRepo(root, base).dir });
+    const dir = workRepo(root, base).dir;
+    const plan = await planIncoming({ fs, dir, touched: await readTouched(fs, dir) });
     return plan.conflicts.map((entry) => (entry.decision ? { path: entry.path, decision: entry.decision } : { path: entry.path }));
   } catch {
     return [];
@@ -236,7 +242,9 @@ interface ConflictDeps {
 
 /** 競合した話の両方の中身（選ぶ画面の材料）。もう競合でなければ undefined */
 export async function readConflictMaterial(deps: ConflictDeps & { path: string }): Promise<ConflictMaterial | undefined> {
-  return readConflict({ fs: deps.fs, dir: workRepo(deps.root, deps.base).dir, store: deps.store, storeDir: deps.storeDir ?? deps.root.split("/")[0]!, path: deps.path });
+  const dir = workRepo(deps.root, deps.base).dir;
+  const touched = await readTouched(deps.fs, dir);
+  return readConflict({ fs: deps.fs, dir, touched, store: deps.store, storeDir: deps.storeDir ?? deps.root.split("/")[0]!, path: deps.path });
 }
 
 /**
@@ -246,7 +254,8 @@ export async function readConflictMaterial(deps: ConflictDeps & { path: string }
 export async function chooseConflict(
   deps: ConflictDeps & { material: ConflictMaterial; choice: ConflictChoice; now?: Date }
 ): Promise<{ applied: ApplyChoiceResult; outcome?: SyncOutcome }> {
-  const io = { fs: deps.fs, dir: workRepo(deps.root, deps.base).dir, store: deps.store, storeDir: deps.storeDir ?? deps.root.split("/")[0]! };
+  const dir = workRepo(deps.root, deps.base).dir;
+  const io = { fs: deps.fs, dir, touched: await readTouched(deps.fs, dir), store: deps.store, storeDir: deps.storeDir ?? deps.root.split("/")[0]! };
   const applied = await applyConflictChoice({ ...io, material: deps.material, choice: deps.choice, now: deps.now });
   if (!applied.ok) return { applied };
   const plan = await planIncoming(io);

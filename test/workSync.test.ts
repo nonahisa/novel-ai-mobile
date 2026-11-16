@@ -3,6 +3,7 @@ import git from "isomorphic-git";
 import { describe, expect, test } from "vitest";
 import { MemoryGitFsBackend, createGitFs } from "../src/platform/gitFs";
 import { latestUnsentTime, readWorkSync, workRepo } from "../src/platform/workSync";
+import { noteTouched } from "../src/platform/touchedPaths";
 import { author } from "./support/fakeGitHub";
 import { syncFlag } from "../src/app/workListView";
 
@@ -72,6 +73,23 @@ describe("作品の同期の状態", () => {
     const fs = await repo("灯台守_確認用", { "本文/第1話.txt": "一\n" });
     await write(fs, "灯台守_確認用/本文/.novelai-recovery/a.bak", "前の本文\n");
     expect(await readWorkSync(fs, "灯台守_確認用", BASE)).toEqual({ unsent: [], otherCount: 0 });
+  });
+
+  test("同じ秒に同じ大きさで書き換えても、アプリが書いた話（名指しの控え）なら数える", async () => {
+    const backend = new MemoryGitFsBackend(0); // 時計が進まない＝同じ秒
+    const fs = createGitFs(backend);
+    await fs.promises.mkdir(BASE);
+    const dir = `${BASE}/灯台守_確認用`;
+    await fs.promises.mkdir(dir);
+    await git.init({ fs, dir, defaultBranch: "main" });
+    await write(fs, "灯台守_確認用/本文/第1話.txt", "一つ目\n");
+    await git.add({ fs, dir, filepath: "本文/第1話.txt" });
+    await git.commit({ fs, dir, message: "はじめ\n", author, committer: author });
+    await write(fs, "灯台守_確認用/本文/第1話.txt", "二つ目\n"); // 同じバイト数
+    // isomorphic-git は大きさと時刻で見るので見落とす
+    expect(await readWorkSync(fs, "灯台守_確認用", BASE)).toEqual({ unsent: [], otherCount: 0 });
+    await noteTouched(fs, dir, "本文/第1話.txt");
+    expect((await readWorkSync(fs, "灯台守_確認用", BASE))!.unsent.map((f) => f.path)).toEqual(["灯台守_確認用/本文/第1話.txt"]);
   });
 
   test("書庫の中の作品は、その作品の変更だけを数える", async () => {

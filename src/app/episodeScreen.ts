@@ -162,7 +162,12 @@ export function mountEpisodeScreen(
   screen: HTMLElement,
   store: FileStore,
   path: string,
-  options: { toast(text: string): void; stillHere(): boolean }
+  options: {
+    toast(text: string): void;
+    stillHere(): boolean;
+    /** 原稿を書く直前（アプリが書いた話の控え。`src/platform/touchedPaths.ts`） */
+    beforeWrite?: (path: string) => Promise<void>;
+  }
 ): EpisodeLeaveGuard {
   let orientation = readOrientation();
   screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-host" id="msHost" aria-busy="true"></div>${renderToolStrip()}`;
@@ -257,7 +262,11 @@ export function mountEpisodeScreen(
 
   // 捨てる側（［戻さない］）を「はい」に置く。askChoice の焦点・背景は「いいえ」の側
   const confirmRestore = async () => !(await askChoice(RESTORE_QUESTION, "戻さない", "書きかけを戻す"));
-  void openEpisode(store, path, { confirmRestore, background: appBackground }).then((result) => {
+  void openEpisode(store, path, {
+    confirmRestore,
+    background: appBackground,
+    ...(options.beforeWrite ? { beforeWrite: options.beforeWrite } : {}),
+  }).then((result) => {
     if (destroyed || !options.stillHere()) {
       if (result.ok) result.session.dispose();
       return;

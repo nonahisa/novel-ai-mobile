@@ -47,6 +47,7 @@ import { renderSyncScreen, type SyncAccess, type SyncConflictRow } from "./syncS
 import { applyFailureText, renderConflictView, theirsQuestion, type ConflictView } from "./conflictScreen";
 import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict";
 import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
+import { createTouchedRecorder } from "../platform/touchedPaths";
 import { DeviceSecretVault, GITHUB_TOKEN_SECRET, MemorySecretVault, type SecretVault } from "../platform/secretVault";
 import {
   chooseConflict,
@@ -368,7 +369,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         // ［←］は話の一覧へ（話の一覧の［←］は作品一覧へ）
         lastTabHash = workHash(route.root);
         rememberLastEpisode(globalThis.localStorage, { root: route.root, path: route.path });
-        leaveGuard = mountEpisodeScreen(screen, store, route.path, { toast, stillHere });
+        leaveGuard = mountEpisodeScreen(screen, store, route.path, { toast, stillHere, ...(touchedRecorder(store) ? { beforeWrite: touchedRecorder(store)! } : {}) });
         return;
       case "all":
         mountAllActions(screen);
@@ -424,6 +425,14 @@ function flagButtonHtml(state: WorkSyncState | undefined, root: string): string 
   return flag
     ? `<button class="flag ${flag.tone} work-warn sync-open" data-sync-flag data-sync="${escapeHtml(root)}">${escapeHtml(flag.text)}</button>`
     : "";
+}
+
+/** アプリが書いた話を控える係（端末の置き場のときだけ。1つを使い回して、控えの書き込みを並べる） */
+let recorder: ((storePath: string) => Promise<void>) | undefined;
+function touchedRecorder(store: FileStore): ((storePath: string) => Promise<void>) | undefined {
+  if (!(store instanceof CapacitorFileStore)) return undefined;
+  recorder ??= createTouchedRecorder(createGitFs(new CapacitorGitFsBackend()));
+  return recorder;
 }
 
 /** 取ってきた版と競合している話（端末の置き場のときだけ） */

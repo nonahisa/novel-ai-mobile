@@ -2,6 +2,7 @@ import "./bufferShim";
 import git from "isomorphic-git";
 import type { createGitFs } from "./gitFs";
 import { collectChanges } from "./workPush";
+import { readTouched } from "./touchedPaths";
 
 /**
  * **作品の同期の状態**（設計書 6章「作品一覧と話の一覧に『送っていない話』の数を出す」。画面 A・B）。
@@ -49,7 +50,8 @@ export async function readWorkSync(fs: GitFs, root: string, base = ""): Promise<
   } catch {
     return undefined;
   }
-  const changes = await collectChanges(fs, dir, [], prefix ? (path) => path.startsWith(prefix) : undefined);
+  // アプリが書いた話は名指しする（同じ秒・同じ大きさの書き換えを見落とさない。touchedPaths.ts）
+  const changes = await collectChanges(fs, dir, await readTouched(fs, dir), prefix ? (path) => path.startsWith(prefix) : undefined);
   const repoName = dir.slice(base.length + 1);
   const unsent: UnsentFile[] = [];
   let otherCount = 0;

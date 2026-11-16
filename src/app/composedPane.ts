@@ -465,14 +465,19 @@ export function mountComposedPane(
     if (sel && sel.start === offsetOf(element, index) && sel.end === offsetOf(element, index + 1)) return;
     selectChunk(index);
   };
-  let lastChunkClick: { chunk: HTMLElement; at: number } | undefined;
+  /** 2度押しと見るのは、同じ辺り（この幅の内）を続けて押したときだけ。上と下を続けて押すのは2度押しではない */
+  const DOUBLE_TAP_PX = 24;
+  let lastChunkClick: { chunk: HTMLElement; at: number; x: number; y: number } | undefined;
   const onClick = (e: MouseEvent) => {
     const chunk = chunkAt(e.target);
     if (composing || !chunk) return;
     const index = Array.prototype.indexOf.call(element.childNodes, chunk) as number;
     const now = Date.now();
-    const twice = lastChunkClick?.chunk === chunk && now - lastChunkClick.at < DOUBLE_TAP_MS;
-    lastChunkClick = twice ? undefined : { chunk, at: now };
+    const twice =
+      lastChunkClick?.chunk === chunk &&
+      now - lastChunkClick.at < DOUBLE_TAP_MS &&
+      Math.hypot(e.clientX - lastChunkClick.x, e.clientY - lastChunkClick.y) < DOUBLE_TAP_PX;
+    lastChunkClick = twice ? undefined : { chunk, at: now, x: e.clientX, y: e.clientY };
     if (twice) return selectChunk(index);
     const box = chunk.getBoundingClientRect();
     const vertical = getComputedStyle(element).writingMode.startsWith("vertical");

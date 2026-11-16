@@ -402,3 +402,45 @@ test.describe("C 組んで書く：キーボードが出たときのカーソル
     expect(seen.caretBottom).toBeLessThanOrEqual(seen.vh);
   });
 });
+
+test.describe("C 組んで書く：iPad の塊の選び（2026-11-17 Mac の iPad mini 0.1.73）", () => {
+  test("塊を2度押すと、塊ごと選ぶ。⌫ で塊が消える", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    const chunks = await pane.locator(".chunk").count();
+    const chunk = pane.locator(".chunk").first();
+    await chunk.click();
+    await chunk.click({ delay: 0 });
+    await expect(page.locator("#imeLog")).toContainText("塊を2度押したので、塊ごと選んだ：0〜9字目");
+    const sel = await page.evaluate(() => window.getSelection()!.toString().length > 0 || !window.getSelection()!.isCollapsed);
+    expect(sel).toBe(true);
+    await page.keyboard.press("Backspace");
+    await expect(pane.locator(".chunk")).toHaveCount(chunks - 1);
+    await page.locator('[data-mode="A"]').click();
+    expect((await aText(page)).startsWith("は猫である。")).toBe(true);
+  });
+
+  test("つまみを引いたあと指の知らせが来なくても、選びが動いたら指は離れたと見なして置き直す", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    await pane.click();
+    // iPad でつまみを掴むと touchstart は来るが、touchend が来ない
+    await pane.evaluate((el) => el.dispatchEvent(new Event("touchstart", { bubbles: true })));
+    await page.waitForTimeout(1700);
+    await pane.evaluate((el) => {
+      const text = el.querySelector(".chunk")!.querySelector("rb, ruby")?.firstChild ?? el.querySelector(".chunk")!.firstChild!;
+      const range = document.createRange();
+      range.setStart(text, 1);
+      range.collapse(true);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+    });
+    await expect(page.locator("#imeLog")).toContainText("C 指：離れたと見なした");
+    await expect(page.locator("#imeLog")).toContainText("塊の外へ置き直した");
+  });
+
+  test("あとから本文を入れても、組んだ塊の数を記録に出す", async ({ page }) => {
+    await openC(page);
+    await expect(page.locator("#imeLog")).toContainText(/C 組んだ（塊 [1-9]\d*つ）/);
+  });
+});

@@ -13,7 +13,7 @@ import { ACTION_TREE, isItemShownInActionList, type ActionGroup, type ActionItem
  */
 
 /** 開ける画面 */
-export type ScreenId = "tategaki" | "check" | "allActions" | "github";
+export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import";
 
 /** メニューの1項目 */
 export interface PlannedItem {
@@ -50,7 +50,7 @@ export const TABS: readonly PlannedTab[] = [
       {
         title: "作品を足す",
         items: [
-          { label: "GitHub から取り寄せる", action: "GitHubから追加" },
+          { label: "GitHub から取り寄せる", action: "GitHubから追加", built: "import" },
           { label: "新しく作る", action: "本文起点" },
         ],
       },

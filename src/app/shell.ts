@@ -1326,6 +1326,14 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
   const nativeEnterBox = screen.querySelector<HTMLInputElement>("#nativeEnter")!;
   nativeEnterBox.addEventListener("change", () => editable.setNativeEnter(nativeEnterBox.checked));
 
+  /** 試しで、iPad と同じく C の縦書きのカーソルをこちらで描く印（e2e・エミュレーター用） */
+  function readDebugOwnCaret(): boolean {
+    try {
+      return window.localStorage.getItem("novelai.debug.ownCaret") === "on";
+    } catch {
+      return false;
+    }
+  }
   /** C の入力欄（組んで書く） */
   function mountComposed(): void {
     composedPane = mountComposedPane(
@@ -1339,7 +1347,9 @@ function mountTategaki(screen: HTMLElement, store: FileStore): LeaveGuard {
       (state) => {
         undoButton.disabled = !state.canUndo;
         redoButton.disabled = !state.canRedo;
-      }
+      },
+      // iOS の縦書きは、カーソルをこちらで描く（2026-11-17 作者の iPad の写真）。試しでは印を立てて同じ形にする
+      { ownCaretWhenVertical: Capacitor.getPlatform() === "ios" || readDebugOwnCaret() }
     );
     undoButton.disabled = true;
     redoButton.disabled = true;

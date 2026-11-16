@@ -214,6 +214,41 @@ test.describe("C 組んで書く", () => {
     expect((await aText(page)).startsWith("である。")).toBe(true);
   });
 
+  test("塊を押すと、ブラウザに任せず、塊の前か後ろへカーソルを置く（Android でキーボードが閉じないように）", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    await pane.click();
+    const chunk = pane.locator(".chunk").first();
+    const box = (await chunk.boundingBox())!;
+    // 縦書き：塊の下の端の近く → 後ろ、上の端の近く → 前
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 3);
+    await expect(page.locator("#imeLog")).toContainText("塊を押したので、塊の後ろへカーソルを置いた：9字目（ルビ「吾輩」の直後）");
+    await page.mouse.click(box.x + box.width / 2, box.y + 3);
+    await expect(page.locator("#imeLog")).toContainText("塊を押したので、塊の前へカーソルを置いた：0字目（ルビ「吾輩」の直前）");
+    await expect(pane).toBeFocused();
+  });
+
+  test("短く押して塊の中に来たカーソルは、待たずにすぐ置き直す（Android でキーボードが閉じないように）", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    await pane.click();
+    // Android の短い押し：touchstart → touchend → そのあとでカーソルが動く
+    const outside = await pane.evaluate(async (el) => {
+      el.dispatchEvent(new Event("touchstart", { bubbles: true }));
+      el.dispatchEvent(new Event("touchend", { bubbles: true }));
+      const chunk = el.querySelector(".chunk")!;
+      const inside = document.createTreeWalker(chunk, NodeFilter.SHOW_TEXT).nextNode()!;
+      const range = document.createRange();
+      range.setStart(inside, 1);
+      range.collapse(true);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+      await new Promise((done) => setTimeout(done, 40)); // 置き直しを待つ 150ms より短い
+      return !chunk.contains(window.getSelection()!.anchorNode);
+    });
+    expect(outside).toBe(true);
+  });
+
   test("指を離したあとも塊の中に残ったカーソルは、塊の外へ置き直す", async ({ page }) => {
     await openC(page);
     const pane = page.locator("#draftComposed");

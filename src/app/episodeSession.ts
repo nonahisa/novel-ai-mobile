@@ -61,6 +61,8 @@ export interface OpenEpisodeOptions {
    * 無ければ戻す（字を失わない側）
    */
   confirmRestore?: () => Promise<boolean>;
+  /** 原稿を書く直前に呼ぶ（アプリが書いた話の控え） */
+  beforeWrite?: (path: string) => Promise<void>;
 }
 
 export async function openEpisode(store: FileStore, path: string, options: OpenEpisodeOptions = {}): Promise<OpenEpisodeResult> {
@@ -85,7 +87,13 @@ export async function openEpisode(store: FileStore, path: string, options: OpenE
   } catch (error) {
     options.onJournalError?.(error);
   }
-  const autoSave = createAutoSave({ store, path, opened, ...(options.timer ? { timer: options.timer } : {}) });
+  const autoSave = createAutoSave({
+    store,
+    path,
+    opened,
+    ...(options.timer ? { timer: options.timer } : {}),
+    ...(options.beforeWrite ? { beforeWrite: options.beforeWrite } : {}),
+  });
   const decision = restoreDecision(kept, opened.text);
   const restored = decision === "restore" || (decision === "ask" && (options.confirmRestore ? await options.confirmRestore() : true));
   if (restored) autoSave.edit(kept!.text);

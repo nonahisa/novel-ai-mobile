@@ -31,7 +31,10 @@ test.describe("端末の［戻る］キー", () => {
     await openWithWorks(page, "#/other");
     await pressBack(page);
     await expect(page).toHaveURL(/#\/works$/);
+    // ［ほか］を描き終えてから移る（2つの場所を続けて替えると、［ほか］を描く前に移り、［←］の行き先が［作品］のままになる。
+    // 人の手ではこの速さで替わらない。2026-11-16 に3度揺れた：引継ぎ書 61章）
     await page.goto("/#/other");
+    await expect(page.locator(".appbar-title")).toContainText("ほか");
     await page.goto("/#/all");
     await pressBack(page);
     await expect(page).toHaveURL(/#\/other$/);

@@ -16,6 +16,7 @@ import {
   sendWork,
 } from "../src/platform/workSyncRun";
 import { readWorkSync } from "../src/platform/workSync";
+import { noteTouched, readTouched } from "../src/platform/touchedPaths";
 import { FakeGitHub, author } from "./support/fakeGitHub";
 import { GitFsFileStore } from "./support/gitFsFileStore";
 
@@ -30,10 +31,10 @@ const DIR = `${BASE}/${WORK}`;
 const start = { "本文/第1話 手紙.txt": "一\n", "本文/第2話 灯.txt": "二\n", "設定/characters.json": "{}\n" };
 const utf8 = (s: string) => new TextEncoder().encode(s);
 
-async function setup(remoteUrl: string | null = "https://github.com/sakka/toudai.git") {
+async function setup(remoteUrl: string | null = "https://github.com/sakka/toudai.git", msPerWrite = 1_000) {
   const gh = new FakeGitHub();
   const remote = await gh.init(start);
-  const backend = new MemoryGitFsBackend(1_000);
+  const backend = new MemoryGitFsBackend(msPerWrite);
   const fs = createGitFs(backend);
   await fs.promises.mkdir(BASE);
   await fs.promises.mkdir(DIR);
@@ -107,6 +108,17 @@ describe("送る", () => {
     expect(commit.message.trim()).toBe("モバイル版で書いた：第1話 手紙");
     expect(await readWorkSync(fs, WORK, BASE)).toEqual({ unsent: [], otherCount: 0 });
     expect(await send()).toEqual({ kind: "nothing_to_push" });
+  });
+
+  test("同じ秒に同じ大きさで書き換えた話も、アプリが控えていれば送る。送ったら控えを消す", async () => {
+    const { gh, fs, send } = await setup("https://github.com/sakka/toudai.git", 0);
+    await fs.promises.writeFile(`${DIR}/本文/第2話 灯.txt`, utf8("弐\n")); // 「二」と同じ3バイト
+    // 控えが無いと見落として、何も送らない（送り漏れ）
+    expect(await send()).toEqual({ kind: "nothing_to_push" });
+    await noteTouched(fs, DIR, "本文/第2話 灯.txt");
+    expect(await send()).toEqual({ kind: "pushed", adopted: true });
+    expect((await gh.files())["本文/第2話 灯.txt"]).toBe("弐\n");
+    expect(await readTouched(fs, DIR)).toEqual([]);
   });
 
   test("向こうが先へ進んでいたら送らず、先に取ってくるよう出す。取ってきて取り込めば送れる", async () => {

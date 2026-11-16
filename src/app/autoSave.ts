@@ -68,6 +68,10 @@ export interface AutoSaveOptions {
   delayMs?: number;
   /** 既定は `globalThis` の `setTimeout`・`clearTimeout`（呼んだときに引く） */
   timer?: AutoSaveTimer;
+  /**
+   * 書く直前に呼ぶ（アプリが書いた話の控え。`src/platform/touchedPaths.ts`）。投げても書くのは止めない
+   */
+  beforeWrite?: (path: string) => Promise<void>;
 }
 
 export interface AutoSave {
@@ -159,6 +163,7 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
     }
     const text = draft;
     try {
+      await options.beforeWrite?.(path).catch(() => undefined);
       const result = await writeTextFilePreservingFormat(store, path, text, format, hash, {
         skipRecovery: recovered,
       });

@@ -1195,3 +1195,40 @@ a.gh-open {
   gap: 8px;
   margin: 0;
 }
+/* 表示：書体の行（名前・状態・押す所を1行に）とライセンスの全文 */
+.font-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.font-row .name {
+  flex: 1 1 auto;
+  font-family: var(--font-ms);
+}
+.font-row button {
+  min-height: 44px;
+}
+.font-progress {
+  font-variant-numeric: tabular-nums;
+  color: var(--sub);
+}
+.license-meta {
+  margin: 4px 0 8px;
+  color: var(--sub);
+  font-size: 13px;
+}
+.license-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}

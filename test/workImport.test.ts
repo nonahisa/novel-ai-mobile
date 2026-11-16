@@ -2,7 +2,7 @@ import "../src/platform/bufferShim";
 import { Errors } from "isomorphic-git";
 import { describe, expect, test } from "vitest";
 import { MemoryGitFsBackend } from "../src/platform/gitFs";
-import { importWork, importableName, listGithubRepos, type CloneFn, type Fetcher, type GithubRepo } from "../src/platform/workImport";
+import { importWork, importableName, listGithubRepos, progressLabel, type CloneFn, type Fetcher, type GithubRepo } from "../src/platform/workImport";
 import { failureText, renderImportView } from "../src/app/importScreen";
 
 /** 作品を GitHub から取り寄せる（`src/platform/workImport.ts`。引継ぎ書 65章）。GitHub は偽物。合言葉は作り物 */
@@ -65,6 +65,20 @@ describe("取り寄せる", () => {
     expect(new TextDecoder().decode(await backend.readFile("/toudai/手元.txt"))).toBe("手元の原稿\n");
     expect(await importWork({ backend, repo: repo(".github"), token: "tkn", clone })).toEqual({ kind: "bad_name" });
     expect(importableName("toudai")).toBe(true);
+  });
+
+  test("進み具合を知らせる。段の名前は作者の言葉に、分かれば割合", async () => {
+    const backend = new MemoryGitFsBackend();
+    const seen: string[] = [];
+    const clone: CloneFn = async ({ fs, dir, onProgress }) => {
+      onProgress?.("Receiving objects", 30, 120);
+      onProgress?.("Resolving deltas", 5, undefined);
+      await fs.promises.mkdir(dir);
+    };
+    await importWork({ backend, repo: repo("toudai"), token: "tkn", clone, onProgress: (phase, loaded, total) => seen.push(progressLabel(phase, loaded, total)) });
+    expect(seen).toEqual(["受け取り 25%", "組み立て 5"]);
+    expect(progressLabel("Counting objects", 0)).toBe("準備");
+    expect(progressLabel("Updating workdir", 7, 7)).toBe("ファイルを置く 100%");
   });
 
   test("途中で失敗したら作りかけのフォルダーを消し、失敗の種類を返す", async () => {

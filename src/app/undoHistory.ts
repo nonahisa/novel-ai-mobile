@@ -7,6 +7,7 @@
  *
  * - 手は本文（記法の字）の上の「start から removed を消し、inserted を入れた」で持つ。塊（ルビ・傍点）も
  *   記法の字のまま戻すので、戻した本文はいつも記法として正しい
+ * - 変換で、打ったばかりの読みの中を替えた手は、読みを打った手にまとめる（{@link CONVERT_MS}）
  * - 続けて打った字（間が {@link MERGE_MS} ミリ秒より短く、続いた所に入った）は1手にまとめる。続けて ⌫ で
  *   消した字も同じ。改行・貼り付け・ルビ・傍点はいつも1手
  * - 取り消したあとに新しく打つと、やり直しの手は捨てる
@@ -53,6 +54,19 @@ function canMerge(prev: EditStep, next: EditStep): boolean {
   return false;
 }
 
+/**
+ * 変換：打ったばかりの読みの中を替えた手（読み「とうだい」→「灯台」）か。前の手で入れた字の中だけを替え、
+ * 打った手どうしなら、前の手にまとめる。候補を選ぶのに時間がかかるので、間は {@link CONVERT_MS} まで見る
+ * （2026-11-17 左の線の欄の e2e：まとめないと、［取り消し］で読みが残った）
+ */
+export const CONVERT_MS = 30_000;
+function replacesWithin(prev: EditStep, next: EditStep): boolean {
+  if (prev.kind !== "type" || next.kind !== "type") return false;
+  if (next.at - prev.at >= CONVERT_MS) return false;
+  if (next.removed === "" || next.inserted.includes("\n")) return false;
+  return next.start >= prev.start && next.start + next.removed.length <= prev.start + prev.inserted.length;
+}
+
 export class UndoHistory {
   private done: EditStep[] = [];
   private undone: EditStep[] = [];
@@ -64,6 +78,12 @@ export class UndoHistory {
     const step: EditStep = { ...diff, kind, at };
     this.undone = [];
     const prev = this.done[this.done.length - 1];
+    if (prev && replacesWithin(prev, step)) {
+      const at0 = step.start - prev.start;
+      const inserted = prev.inserted.slice(0, at0) + step.inserted + prev.inserted.slice(at0 + step.removed.length);
+      this.done[this.done.length - 1] = { ...prev, inserted, at };
+      return;
+    }
     if (prev && canMerge(prev, step)) {
       this.done[this.done.length - 1] =
         step.removed === ""

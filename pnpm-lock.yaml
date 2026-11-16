@@ -45,8 +45,8 @@ importers:
         specifier: ^1.41.9
         version: 1.41.9
       novel-ai-assistant:
-        specifier: github:nonahisa/novel-ai-assistant#v1.0.20
-        version: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/4ec3a6c80689400b0fe69bbe820adb6f21acfef6
+        specifier: github:nonahisa/novel-ai-assistant#v1.0.22
+        version: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/e2056dcf71f03e75ebaade85980d7a97d0fc1373
       path-browserify:
         specifier: ^1.0.1
         version: 1.0.1
@@ -804,9 +804,9 @@ packages:
     engines: {node: '>=16.0.0'}
     hasBin: true
 
-  novel-ai-assistant@https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/4ec3a6c80689400b0fe69bbe820adb6f21acfef6:
-    resolution: {gitHosted: true, integrity: sha512-nwJ3pDSBs/8oPMmRjIvBat1/rEQ11MFjQOx+tPuYuMsik59pBtfAbS91y04Ui/W0Ax23BRSnbMFyKv/Ks5Pxeg==, tarball: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/4ec3a6c80689400b0fe69bbe820adb6f21acfef6}
-    version: 1.0.20
+  novel-ai-assistant@https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/e2056dcf71f03e75ebaade85980d7a97d0fc1373:
+    resolution: {gitHosted: true, integrity: sha512-AfwQD9iltGHdFzljxeW7OFmLXCPNc6vUdYMJXCOdSD+HEL/QS2fXk4V+zZ1UC+9yCznLHfxXHYkdjNSKLfDRbA==, tarball: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/e2056dcf71f03e75ebaade85980d7a97d0fc1373}
+    version: 1.0.22
     engines: {vscode: ^1.90.0}
 
   obug@2.1.4:
@@ -1864,7 +1864,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  novel-ai-assistant@https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/4ec3a6c80689400b0fe69bbe820adb6f21acfef6:
+  novel-ai-assistant@https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/e2056dcf71f03e75ebaade85980d7a97d0fc1373:
     dependencies:
       '@breezystack/lamejs': 1.2.7
       '@vscode-elements/elements': 2.5.1(@vscode/codicons@0.0.45)

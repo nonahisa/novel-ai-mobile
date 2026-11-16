@@ -370,6 +370,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         lastTabHash = workHash(route.root);
         rememberLastEpisode(globalThis.localStorage, { root: route.root, path: route.path });
         leaveGuard = mountEpisodeScreen(screen, store, route.path, { toast, stillHere, ...(touchedRecorder(store) ? { beforeWrite: touchedRecorder(store)! } : {}) });
+        fillEpisodeSide(screen, store, route.root, route.path, scanOptions, stillHere);
         return;
       case "all":
         mountAllActions(screen);
@@ -632,6 +633,25 @@ function mountEpisodeList(screen: HTMLElement, store: FileStore, root: string, o
       });
     },
     (error) => show(renderWorkError(error instanceof Error ? error.message : String(error)))
+  );
+}
+
+/**
+ * 原稿エディターの左の話の一覧（中・広い段。設計書 4.3）。狭い段では CSS で隠れるが、中身は同じに入れておく
+ * （回転で段が変わっても、作り直さずに出せる）。開いている話に印。押すと、保存を済ませてその話へ移る
+ */
+function fillEpisodeSide(screen: HTMLElement, store: FileStore, root: string, path: string, options: ScanOptions, stillHere: () => boolean): void {
+  const side = screen.querySelector<HTMLElement>("#msSide");
+  if (!side) return;
+  scanWorkFolder(store, root, options).then(
+    (work) => {
+      if (!stillHere()) return;
+      side.innerHTML = `<h2 class="ms-side-title">${escapeHtml(work.title)}</h2>${renderEpisodeList(work)}`;
+      for (const row of side.querySelectorAll<HTMLElement>("[data-episode]")) {
+        if (row.dataset.episode === path) row.setAttribute("aria-current", "page");
+      }
+    },
+    () => undefined
   );
 }
 

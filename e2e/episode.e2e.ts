@@ -50,7 +50,8 @@ test.describe("原稿エディター（C）の土台", () => {
     await page.locator("#msEditor").fill("書き直した。\n");
     await page.locator(".appbar-back").click();
     await expect(page).toHaveURL(/#\/work\//);
-    await expect(page.locator(".ep-list .ep")).toHaveCount(4);
+    // 話の一覧（B）の行で待つ（原稿エディターの左の一覧〔中・広い段。狭い段では隠す〕にも同じ行があるので、#episodeSlot で絞る）
+    await expect(page.locator("#episodeSlot .ep")).toHaveCount(4);
     expect(await readFakeFile(page, EPISODE)).toBe("書き直した。\n");
   });
 

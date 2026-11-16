@@ -71,3 +71,42 @@ export async function openWithWorks(page: Page, hash: string, files: Record<stri
   }, Object.entries(files));
   await page.goto(`/${hash}`);
 }
+
+/** ブラウザの置き場から、作品の中のファイルを読む（無ければ undefined）。`path` は `works/` からの場所 */
+export async function readFakeFile(page: Page, path: string): Promise<string | undefined> {
+  return page.evaluate(async (relative) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("Disc", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const record = await new Promise<{ content?: string } | undefined>((resolve, reject) => {
+      const get = db.transaction(["FileStorage"], "readonly").objectStore("FileStorage").get(`/DATA/works/${relative}`);
+      get.onsuccess = () => resolve(get.result as { content?: string } | undefined);
+      get.onerror = () => reject(get.error);
+    });
+    db.close();
+    if (!record?.content) return undefined;
+    const binary = atob(record.content);
+    return new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
+  }, path);
+}
+
+/** ブラウザの置き場の、`works/` から `prefix` で始まるファイルの場所 */
+export async function listFakeFiles(page: Page, prefix: string): Promise<string[]> {
+  return page.evaluate(async (start) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("Disc", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const records = await new Promise<{ path: string; type: string }[]>((resolve, reject) => {
+      const all = db.transaction(["FileStorage"], "readonly").objectStore("FileStorage").getAll();
+      all.onsuccess = () => resolve(all.result as { path: string; type: string }[]);
+      all.onerror = () => reject(all.error);
+    });
+    db.close();
+    const head = `/DATA/works/${start}`;
+    return records.filter((r) => r.type === "file" && r.path.startsWith(head)).map((r) => r.path.slice("/DATA/works/".length));
+  }, prefix);
+}

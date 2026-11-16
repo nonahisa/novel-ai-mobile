@@ -40,6 +40,7 @@ import { listWorks, scanWorkFolder, type ScanOptions } from "../platform/workSca
 import { lastCommitTime } from "../platform/git";
 import { workSummary } from "./workListView";
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
+import { mountEpisodeScreen } from "./episodeScreen";
 
 /**
  * アプリの外枠（下のタブ4つと、画面の切り替え）。設計書 4.3 の狭い段。
@@ -48,32 +49,57 @@ import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreen
  *
  * | `#/works` ほか | 下のタブの画面（`menuPlan.ts` の `TABS`）。［作品］の頭に作品一覧（A） |
  * | `#/work/<作品>` | 話の一覧（B）。下のタブは出したまま、［←］で作品一覧へ |
+ * | `#/episode/<作品>/<作品の中の場所>` | 原稿エディター（C）。下のタブを隠し、［←］で話の一覧へ |
  * | `#/all` | すべての機能（検索欄つきの一覧） |
  * | `#/tategaki` | 縦書きの試し |
  * | `#/check` | 動作確認ページ（開発用） |
  *
- * 縦書きの試し・動作確認ページを開いている間は、下のタブを隠す（4.3「原稿エディターを
+ * 原稿エディター・縦書きの試し・動作確認ページを開いている間は、下のタブを隠す（4.3「原稿エディターを
  * 開いているあいだ、下のタブは隠してよい」）。上の［←］で戻る。
  */
 
 type Route =
   | { kind: "tab"; tab: PlannedTab }
   | { kind: "work"; root: string }
+  | { kind: "episode"; root: string; path: string }
   | { kind: "all" }
   | { kind: "tategaki" }
   | { kind: "check" };
 
+/** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
+function isWorkRoot(root: string): boolean {
+  const parts = root.split("/");
+  return parts.length <= 2 && parts.every((part) => part !== "" && !part.startsWith("."));
+}
+
+/** 作品の中の話の場所。`..`・隠したフォルダー（`.aiwriter`・退避・控え）は指させない */
+function isEpisodeInWork(relative: string): boolean {
+  const parts = relative.split("/");
+  return /\.txt$/i.test(relative) && parts.every((part) => part !== "" && part !== ".." && !part.startsWith("."));
+}
+
 export function parseRoute(hash: string): Route {
   const name = hash.replace(/^#\/?/, "");
+  if (name.startsWith("episode/")) {
+    const pieces = name.slice("episode/".length).split("/");
+    try {
+      if (pieces.length === 2) {
+        const root = decodeURIComponent(pieces[0]!);
+        const relative = decodeURIComponent(pieces[1]!);
+        if (isWorkRoot(root) && isEpisodeInWork(relative)) return { kind: "episode", root, path: `${root}/${relative}` };
+      }
+    } catch {
+      /* 読めない名前は作品一覧へ */
+    }
+    return { kind: "tab", tab: TABS[0] };
+  }
   if (name === "all") return { kind: "all" };
   if (name === "tategaki") return { kind: "tategaki" };
   if (name === "check") return { kind: "check" };
   if (name.startsWith("work/")) {
     try {
       const root = decodeURIComponent(name.slice("work/".length));
-      // 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない
-      const parts = root.split("/");
-      if (parts.length <= 2 && parts.every((part) => part !== "" && !part.startsWith("."))) return { kind: "work", root };
+      if (isWorkRoot(root)) return { kind: "work", root };
     } catch {
       /* 読めない名前は作品一覧へ */
     }
@@ -87,6 +113,12 @@ const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/a
 /** 話の一覧を開く場所 */
 export function workHash(root: string): string {
   return `#/work/${encodeURIComponent(root)}`;
+}
+
+/** 話を原稿エディターで開く場所。`path` は置き場の根から（`root` の中） */
+export function episodeHash(root: string, path: string): string {
+  if (!path.startsWith(`${root}/`)) throw new Error(`作品の外の話です: ${path}`);
+  return `#/episode/${encodeURIComponent(root)}/${encodeURIComponent(path.slice(root.length + 1))}`;
 }
 
 export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFileStore()): void {
@@ -127,8 +159,12 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   };
 
   root.addEventListener("click", (event) => {
-    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-screen],[data-planned],[data-tab],[data-back],[data-work]");
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-screen],[data-planned],[data-tab],[data-back],[data-work],[data-episode]");
     if (!target) return;
+    if (target.dataset.episode && target.dataset.root) {
+      location.hash = episodeHash(target.dataset.root, target.dataset.episode);
+      return;
+    }
     if (target.dataset.work) {
       location.hash = workHash(target.dataset.work);
       return;
@@ -154,7 +190,29 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   });
 
   let currentHash = location.hash;
+  /** 保存を済ませている最中（重ねて離れようとしても1回だけ） */
+  let leaving = false;
   const render = () => {
+    if (leaveGuard?.beforeLeave && !leaveConfirmed) {
+      // 原稿エディター：URL を戻して保存を済ませ、済んだら（済まなければ訊いて）移る
+      const target = location.hash;
+      history.replaceState(null, "", currentHash || "#/works");
+      if (leaving) return;
+      leaving = true;
+      void leaveGuard.beforeLeave().then(
+        (go) => {
+          leaving = false;
+          if (!go) return;
+          leaveConfirmed = true;
+          // 戻るで来た1つ前の履歴へ、積み増さずに移る
+          location.replace(target);
+        },
+        () => {
+          leaving = false;
+        }
+      );
+      return;
+    }
     if (leaveGuard && leaveGuard.isDirty() && !leaveConfirmed) {
       // いったん URL を元に戻し（描き直さない）、画面の中の日本語のボタンで訊く
       const target = location.hash;
@@ -173,10 +231,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     // 前の画面の知らせを次の画面へ持ち越さない
     toastEl.classList.remove("shown");
     const route = parseRoute(location.hash);
-    const full = route.kind === "tategaki" || route.kind === "check";
+    const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "work" ? "works" : route.kind === "all" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "episode" ? "works" : route.kind === "all" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
@@ -199,6 +257,11 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "work":
         lastTabHash = "#/works";
         mountEpisodeList(screen, store, route.root, scanOptions, stillHere);
+        return;
+      case "episode":
+        // ［←］は話の一覧へ（話の一覧の［←］は作品一覧へ）
+        lastTabHash = workHash(route.root);
+        leaveGuard = mountEpisodeScreen(screen, store, route.path, { toast, stillHere });
         return;
       case "all":
         mountAllActions(screen);
@@ -292,6 +355,8 @@ const MODE_NOTES = {
 interface LeaveGuard {
   /** 保存していない書き換えがあるか */
   isDirty(): boolean;
+  /** 離れる前に済ませること（原稿エディターの保存）。在れば isDirty の代わりにこちらで決める */
+  beforeLeave?(): Promise<boolean>;
   /** 離れるときの後片付け */
   destroy(): void;
 }

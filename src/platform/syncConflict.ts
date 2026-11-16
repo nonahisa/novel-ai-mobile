@@ -1,12 +1,11 @@
 import "./bufferShim";
 import git from "isomorphic-git";
 import { sideFileName } from "novel-ai-assistant/src/core/conflictFile";
-import { hashBytes } from "novel-ai-assistant/src/core/hash";
 import { decodeBytes, type TextFileContent } from "novel-ai-assistant/src/core/textDecode";
 import { FileExistsError, dirname, joinStorePath, normalizeStorePath, type FileStore } from "./fileStore";
 import type { createGitFs } from "./gitFs";
 import { gitHttp } from "./gitHttp";
-import { encodeForNewFile, writeTextFilePreservingFormat, type WriteTextFailureReason } from "./textFile";
+import { deleteTextFileWithRecovery, encodeForNewFile, writeTextFilePreservingFormat, type WriteTextFailureReason } from "./textFile";
 import { collectChanges } from "./workPush";
 
 /**
@@ -360,6 +359,8 @@ export type ApplyChoiceResult =
       choice: ConflictChoice;
       /** ［両方残す］で作った別ファイル（作品フォルダーからの道） */
       sidePath?: string;
+      /** ［あちら］で原稿を消したとき、消す前の中身を写した退避（置き場の道） */
+      recoveryPath?: string;
       /**
        * ［あちら］で、原稿があちらの中身とバイトまで同じになったか。こちらと文字コード・改行が違うと
        * false（こちらの形で書いたので、取り込んだあと「送っていない話」になる）
@@ -410,15 +411,12 @@ export async function applyConflictChoice(
   if (choice === "theirs") {
     const original = material.ours.content;
     if (!material.theirs.exists) {
-      // あちらは消した。こちらの中身が見たときのままなら消す
+      // あちらは消した。こちらの中身が見たときのままなら、退避へ写してから消す（こちらの送っていない直しは
+      // git に記録していないので、退避が無いと戻らない。写せなければ消さない。引継ぎ書 62章）
       if (!original) return { ok: true, choice, exact: true };
-      try {
-        if (hashBytes(await store.readFile(storePath)) !== original.hash) return { ok: false, reason: "modified_externally" };
-      } catch {
-        return { ok: false, reason: "modified_externally" };
-      }
-      await store.deleteFile(storePath);
-      return { ok: true, choice, exact: true };
+      const deleted = await deleteTextFileWithRecovery(store, storePath, original.hash);
+      if (!deleted.ok) return { ok: false, reason: deleted.reason, ...(deleted.detail ? { detail: deleted.detail } : {}) };
+      return { ok: true, choice, exact: true, recoveryPath: deleted.recoveryPath };
     }
     if (!original) {
       // こちらは消していた。あちらの中身をそのまま新しく作る（本文を書き戻す口は、在るファイルにしか書かない）

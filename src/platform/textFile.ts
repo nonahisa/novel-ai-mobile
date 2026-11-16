@@ -170,6 +170,47 @@ export async function writeTextFilePreservingFormat(
 }
 
 /**
+ * 原稿を消す。**消す前に、いまの中身を `.novelai-recovery` へ写す**（書き戻しと同じ名前・同じ世代の数）。
+ * 写せなければ消さずに止める。読んだときから中身が変わっていれば消さない（`expectedHash`）。
+ *
+ * 競合で［あちら］（あちらが消した話）を選んだときに使う。こちらの送っていない直しは git に記録して
+ * いないので、退避が無いと二度と戻らない（本体は取り込む前に記録するか stash に残す。引継ぎ書 62章）
+ */
+export async function deleteTextFileWithRecovery(
+  store: FileStore,
+  filePath: string,
+  expectedHash: string
+): Promise<{ ok: true; recoveryPath: string } | { ok: false; reason: "modified_externally" | "path_conflict"; detail?: string }> {
+  let recoveryPath: string;
+  try {
+    recoveryPath = await createRecoveryPath(store, filePath);
+  } catch (error) {
+    return { ok: false, reason: "path_conflict", detail: `回復先を準備できませんでした: ${describe(error)}` };
+  }
+  let current: Uint8Array;
+  try {
+    current = await store.readFile(filePath);
+  } catch {
+    return { ok: false, reason: "modified_externally" };
+  }
+  if (hashBytes(current) !== expectedHash) return { ok: false, reason: "modified_externally" };
+  try {
+    await store.writeFile(recoveryPath, current, { mode: "create" });
+  } catch (error) {
+    return { ok: false, reason: "path_conflict", detail: `回復先へコピーできませんでした: ${describe(error)}` };
+  }
+  try {
+    await store.deleteFile(filePath);
+  } catch {
+    // 元の原稿にはまだ触れていない
+    return { ok: false, reason: "modified_externally" };
+  }
+  await pruneRecoveries(store, filePath);
+  notifyWorkRecordWritten(filePath);
+  return { ok: true, recoveryPath };
+}
+
+/**
  * 退避を作らずに書く（`skipRecovery`）。書く直前にもう一度ハッシュを確かめ、1手で書き換える。
  * 退避の写しは増えないので、片付け（`pruneRecoveries`）も知らせ（`notifyWorkRecordWritten`）もしない
  */

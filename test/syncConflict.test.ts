@@ -12,7 +12,7 @@ import {
 } from "../src/platform/syncConflict";
 import { collectChanges, pushWork } from "../src/platform/workPush";
 import { createAutoSave } from "../src/app/autoSave";
-import { readTextFile } from "../src/platform/textFile";
+import { RECOVERY_DIRECTORY_NAME, readTextFile } from "../src/platform/textFile";
 import { FakeGitHub, author } from "./support/fakeGitHub";
 import { GitFsFileStore } from "./support/gitFsFileStore";
 
@@ -378,6 +378,32 @@ describe("競合を選ぶ", () => {
     expect(await readWork(ctx.fs, "本文/第2話.txt")).toBeUndefined();
     expect(await integrateIncoming(ctx.io)).toMatchObject({ kind: "integrated", fastForward: true });
     expect(await collectChanges(ctx.fs, DIR)).toEqual([]);
+  });
+
+  test("あちらが消した話を［あちら］で消すとき、こちらの送っていない直しを退避に残す（git にも無いので、退避が無いと二度と戻らない）", async () => {
+    const ctx = await setup();
+    await ctx.theirs({ "本文/第2話.txt": null });
+    await writeWork(ctx.fs, "本文/第2話.txt", "こちらで直した。まだ送っていない\n");
+    const material = (await readConflict({ ...ctx.io, path: "本文/第2話.txt" }))!;
+    const result = await applyConflictChoice({ ...ctx.io, material, choice: "theirs" });
+    expect(result).toMatchObject({ ok: true, choice: "theirs" });
+    expect(await readWork(ctx.fs, "本文/第2話.txt")).toBeUndefined();
+    const recovery = `${DIR}/本文/${RECOVERY_DIRECTORY_NAME}`;
+    const names = (await ctx.fs.promises.readdir(recovery)) as string[];
+    expect(names).toHaveLength(1);
+    expect(textOf(new Uint8Array((await ctx.fs.promises.readFile(`${recovery}/${names[0]}`)) as Uint8Array))).toBe("こちらで直した。まだ送っていない\n");
+    expect(result).toMatchObject({ recoveryPath: `${WORK}/本文/${RECOVERY_DIRECTORY_NAME}/${names[0]}` });
+  });
+
+  test("退避を作れなければ、消さずに止める", async () => {
+    const ctx = await setup();
+    await ctx.theirs({ "本文/第2話.txt": null });
+    await writeWork(ctx.fs, "本文/第2話.txt", "こちらで直した\n");
+    const material = (await readConflict({ ...ctx.io, path: "本文/第2話.txt" }))!;
+    // 退避のフォルダーの名前の所にファイルがあって、フォルダーを作れない
+    await writeWork(ctx.fs, `本文/${RECOVERY_DIRECTORY_NAME}`, "じゃま\n");
+    expect(await applyConflictChoice({ ...ctx.io, material, choice: "theirs" })).toMatchObject({ ok: false, reason: "path_conflict" });
+    expect(textOf(await readWork(ctx.fs, "本文/第2話.txt"))).toBe("こちらで直した\n");
   });
 });
 

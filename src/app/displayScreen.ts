@@ -50,11 +50,16 @@ export function renderLicenses(text: string | undefined): string {
  * 変換中の線（縦書きで、変換中の字に引く線を行の左に出すか右に出すか。引継ぎ書 76章）。既定は左。
  * 右はテスト中（範囲を選べない・道具帯のルビと傍点は選んだ字に振れない）と、選べる所に書く
  */
-export function renderLineSection(line: "left" | "right"): string {
+export function renderLineSection(line: "left" | "right", leftColors = false): string {
   const button = (value: "left" | "right", label: string) => `<button data-line="${value}" aria-pressed="${line === value}">${label}</button>`;
+  const color = (on: boolean, label: string) => `<button data-term-colors="${on ? "on" : "off"}" aria-pressed="${leftColors === on}">${label}</button>`;
   return (
     `<section class="menu-section"><h2>変換中の線</h2><div class="seg line-choice">${button("left", "左")}${button("right", "右（テスト中）")}</div>` +
     (line === "right" ? `<p class="flag warn long">テスト中：範囲を選べないので、ルビと傍点は選んだ字に振れません</p>` : "") +
-    `</section>`
+    `</section>` +
+    // 右の線の欄はもともと用語に色が付く。左の線の欄に色を付けるかだけを選ぶ（2026-11-17 作者の答え。引継ぎ書 87章）
+    (line === "left"
+      ? `<section class="menu-section"><h2>用語の色</h2><div class="seg term-color-choice">${color(false, "付けない")}${color(true, "付ける（テスト中）")}</div></section>`
+      : "")
   );
 }

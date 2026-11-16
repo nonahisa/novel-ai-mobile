@@ -989,6 +989,37 @@ button {
   overflow-y: auto;
 }
 /*
+  左の線の欄に用語の色を付ける形（テスト中。引継ぎ書 87章）。textarea を上に重ね、字だけ透明にする。
+  裏の層（.ms-backdrop）は同じ字の大きさ・余白・折り返し・送り棒で本文を並べ、用語に色を付ける
+*/
+.ms-editor-wrap {
+  position: relative;
+}
+.ms-editor-wrap .ms-backdrop {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  user-select: none;
+}
+.ms-editor-wrap .ms-editor-over {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--ink);
+}
+.ms-editor-wrap .ms-editor-over::selection {
+  color: transparent;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+}
+/* 変換中は textarea の字を見せる（変換中の線を字の色で描く端末がある）。裏の層は隠す */
+.ms-editor-wrap.composing .ms-editor-over {
+  color: var(--ink);
+}
+.ms-editor-wrap.composing .ms-backdrop {
+  visibility: hidden;
+}
+/*
   幅で3段（設計書 4.1・4.3）。狭い（600dp 未満）は原稿だけ。中（600〜840dp）は左に話の一覧 280dp、
   広い（840dp 以上）は 260dp。段は窓の幅だけで決め、原稿の欄は作り直さない（4.5）。［一覧］で畳める
 */

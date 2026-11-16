@@ -100,3 +100,74 @@ for (const colors of [false, true]) {
     });
   });
 }
+
+test.describe("左の線の欄の用語の色（テスト中）", () => {
+  test.skip(({ browserName }) => browserName !== "chromium", "日本語入力は Chromium の CDP で起こす");
+
+  test("既定は付けない（裏の層は無い）。設定 → 表示で［付ける（テスト中）］にすると、作品の人物に色が付き、本文は替わらない", async ({ page }) => {
+    await openEpisode(page, false);
+    await expect(page.locator(".ms-backdrop")).toHaveCount(0);
+    await page.evaluate(() => (location.hash = "#/display"));
+    await expect(page.locator('[data-term-colors="off"]')).toHaveAttribute("aria-pressed", "true");
+    await page.locator('[data-term-colors="on"]').click();
+    await expect(page.locator('[data-term-colors="on"]')).toHaveAttribute("aria-pressed", "true");
+    // 右の線にすると、左の線の欄の色の選びは出さない（右はもともと色が付く）
+    await page.locator('[data-line="right"]').click();
+    await expect(page.locator("[data-term-colors]")).toHaveCount(0);
+    await page.locator('[data-line="left"]').click();
+    await expect(page.locator('[data-term-colors="on"]')).toHaveAttribute("aria-pressed", "true");
+
+    await page.evaluate(() => (location.hash = "#/works"));
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await page.locator(".ep-list .ep").first().click();
+    const back = page.locator(".ms-backdrop");
+    await expect(back.locator(".term-character")).toHaveCount(1);
+    await expect(back.locator(".term-character")).toHaveText("姉");
+    await expect(page.locator("textarea#msEditor")).toHaveValue(ORIGINAL);
+    expect(await back.evaluate((el) => (el.textContent ?? "").split("​").join(""))).toBe(ORIGINAL);
+    expect(await readFakeFile(page, "灯台守_確認用/設定/characters/char_001.json")).toBe(SISTER);
+  });
+
+  test("変換中は欄の字を見せて裏の層を隠し、確定すると打った語にも色が付く", async ({ page }) => {
+    await openEpisode(page, true);
+    await caretAfterFirstLine(page);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Input.imeSetComposition", { text: "あね", selectionStart: 2, selectionEnd: 2 });
+    await expect(page.locator(".ms-editor-wrap")).toHaveClass(/composing/);
+    expect(await page.locator("#msEditor").evaluate((el) => getComputedStyle(el).color)).not.toBe("rgba(0, 0, 0, 0)");
+    await cdp.send("Input.imeSetComposition", { text: "姉", selectionStart: 1, selectionEnd: 1 });
+    await cdp.send("Input.insertText", { text: "姉" });
+    await cdp.detach();
+    await expect(page.locator(".ms-editor-wrap")).not.toHaveClass(/composing/);
+    expect(await page.locator("#msEditor").evaluate((el) => getComputedStyle(el).color)).toBe("rgba(0, 0, 0, 0)");
+    await expect(page.locator(".ms-backdrop .term-character")).toHaveCount(2);
+  });
+
+  test("裏の層は欄と同じ大きさ・同じ送りで、字の位置がそろう（縦書き・横書き）", async ({ page }) => {
+    await openEpisode(page, true);
+    const long = "姉から手紙が届いた。".repeat(60) + "\n";
+    const editor = page.locator("#msEditor");
+    await editor.fill(long);
+    for (const orient of ["vertical", "horizontal"] as const) {
+      if (orient === "horizontal") await page.locator("#orientToggle").click();
+      await expect(editor).toHaveClass(new RegExp(orient));
+      await page.waitForTimeout(100);
+      const seen = await page.evaluate(() => {
+        const area = document.querySelector<HTMLTextAreaElement>("#msEditor")!;
+        const back = document.querySelector<HTMLElement>(".ms-backdrop")!;
+        // 送ってから、裏の層の最後の字と欄のカーソルを終わりへ置いた位置を比べる
+        area.scrollTop = area.scrollHeight;
+        area.scrollLeft = -area.scrollWidth;
+        area.dispatchEvent(new Event("scroll"));
+        return {
+          size: [area.clientWidth, area.clientHeight, area.scrollWidth, area.scrollHeight],
+          backSize: [back.clientWidth, back.clientHeight, back.scrollWidth, back.scrollHeight],
+          scroll: [area.scrollTop, area.scrollLeft],
+          backScroll: [back.scrollTop, back.scrollLeft],
+        };
+      });
+      expect(seen.backSize).toEqual(seen.size);
+      expect(seen.backScroll).toEqual(seen.scroll);
+    }
+  });
+});

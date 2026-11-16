@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@aparajita/capacitor-secure-storage':
+        specifier: 8.0.1
+        version: 8.0.1
       '@capacitor/android':
         specifier: ^8.5.0
         version: 8.5.0(@capacitor/core@8.5.0)
@@ -71,6 +74,10 @@ importers:
         version: 4.1.11(@types/node@22.20.5)(vite@8.2.2(@types/node@22.20.5))
 
 packages:
+
+  '@aparajita/capacitor-secure-storage@8.0.1':
+    resolution: {integrity: sha512-NSYIQtH6TyBgL3myumQGcCE3iecq2PtGNFlGxl1fJKEU37Dv5DudzDlwg42cgbVxCm1ay72g4X7rTSAvKULsVg==}
+    engines: {node: '>=20.0.0'}
 
   '@breezystack/lamejs@1.2.7':
     resolution: {integrity: sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==}
@@ -769,7 +776,7 @@ packages:
     hasBin: true
 
   novel-ai-assistant@https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/81721ace44cf577686061f06b39aa417eb738d12:
-    resolution: {gitHosted: true, integrity: sha512-s3dblyKnm5jmfw20SDOAEnKB9dh5w9uwAiEKSHlx5GcWxPH8260leuQqAV94skaDA+lN00zLqKsOR8WVdQ7AWg==, tarball: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/81721ace44cf577686061f06b39aa417eb738d12}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/nonahisa/novel-ai-assistant/tar.gz/81721ace44cf577686061f06b39aa417eb738d12}
     version: 1.0.3
     engines: {vscode: ^1.90.0}
 
@@ -1142,6 +1149,14 @@ packages:
     resolution: {integrity: sha512-p4a9I6X6nu6IhoGmBqAcbJy1mlC4j27vEPZX9F4L4/vZT3Lyq1VkFHw/V/PUcB9Buo+DG3iHkT0x3Qya58zc3g==}
 
 snapshots:
+
+  '@aparajita/capacitor-secure-storage@8.0.1':
+    dependencies:
+      '@capacitor/android': 8.5.0(@capacitor/core@8.5.0)
+      '@capacitor/app': 8.1.1(@capacitor/core@8.5.0)
+      '@capacitor/core': 8.5.0
+      '@capacitor/ios': 8.5.0(@capacitor/core@8.5.0)
+      '@capacitor/keyboard': 8.0.5(@capacitor/core@8.5.0)
 
   '@breezystack/lamejs@1.2.7': {}
 

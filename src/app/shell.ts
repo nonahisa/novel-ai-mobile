@@ -44,6 +44,9 @@ import { latestUnsentTime, readWorkSync, type WorkSyncState } from "../platform/
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
 import { mountEpisodeScreen } from "./episodeScreen";
 import { renderSyncScreen } from "./syncScreen";
+import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen } from "./githubScreen";
+import { DeviceSecretVault, MemorySecretVault, type SecretVault } from "../platform/secretVault";
+import { nativePostForm } from "../platform/githubDeviceFlow";
 import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastEpisode } from "./lastEpisode";
 
 /**
@@ -56,6 +59,7 @@ import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastE
  * | `#/episode/<作品>/<作品の中の場所>` | 原稿エディター（C）。下のタブを隠し、［←］で話の一覧へ |
  * | `#/all` | すべての機能（検索欄つきの一覧） |
  * | `#/tategaki` | 縦書きの試し |
+ * | `#/github` | GitHub と同期（サインイン） |
  * | `#/check` | 動作確認ページ（開発用） |
  *
  * 原稿エディター・縦書きの試し・動作確認ページを開いている間は、下のタブを隠す（4.3「原稿エディターを
@@ -69,7 +73,8 @@ type Route =
   | { kind: "episode"; root: string; path: string }
   | { kind: "all" }
   | { kind: "tategaki" }
-  | { kind: "check" };
+  | { kind: "check" }
+  | { kind: "github" };
 
 /** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
 function isWorkRoot(root: string): boolean {
@@ -101,6 +106,7 @@ export function parseRoute(hash: string): Route {
   if (name === "all") return { kind: "all" };
   if (name === "tategaki") return { kind: "tategaki" };
   if (name === "check") return { kind: "check" };
+  if (name === "github") return { kind: "github" };
   if (name.startsWith("sync/")) {
     try {
       const root = decodeURIComponent(name.slice("sync/".length));
@@ -122,7 +128,22 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github" } as const;
+
+/**
+ * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。
+ * Client ID は、ブラウザのときだけテストが `__novelaiTestGithubClientId` で差し込める（端末では使わない）
+ */
+let vault: SecretVault | undefined;
+function secretVault(): SecretVault {
+  vault ??= Capacitor.isNativePlatform() ? new DeviceSecretVault() : new MemorySecretVault();
+  return vault;
+}
+function githubClientId(): string {
+  if (GITHUB_CLIENT_ID || Capacitor.isNativePlatform()) return GITHUB_CLIENT_ID;
+  const injected = (globalThis as { __novelaiTestGithubClientId?: unknown }).__novelaiTestGithubClientId;
+  return typeof injected === "string" ? injected : "";
+}
 
 /** 話の一覧を開く場所 */
 export function workHash(root: string): string {
@@ -268,7 +289,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "episode" ? "works" : route.kind === "all" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "episode" ? "works" : route.kind === "all" || route.kind === "github" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
@@ -313,6 +334,18 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "tategaki":
         leaveGuard = mountTategaki(screen, store);
         return;
+      case "github": {
+        const github = mountGithubScreen(screen, {
+          vault: secretVault(),
+          post: nativePostForm,
+          clientId: githubClientId(),
+          fetchUser: fetchGithubLogin,
+          storage: globalThis.localStorage,
+          stillHere,
+        });
+        leaveGuard = { isDirty: () => false, destroy: () => github.destroy() };
+        return;
+      }
       case "check":
         screen.innerHTML = `${renderAppBar("動作確認ページ", { back: true })}<div id="checkRoot"></div>`;
         mountCheckPage(screen.querySelector<HTMLElement>("#checkRoot")!);

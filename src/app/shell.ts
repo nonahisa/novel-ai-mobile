@@ -48,6 +48,8 @@ import { applyFailureText, renderConflictView, theirsQuestion, type ConflictView
 import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict";
 import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
 import { createTouchedRecorder } from "../platform/touchedPaths";
+import { importWork, listGithubRepos, type GithubRepo } from "../platform/workImport";
+import { importResultText, renderImportView, type ImportView } from "./importScreen";
 import { DeviceSecretVault, GITHUB_TOKEN_SECRET, MemorySecretVault, type SecretVault } from "../platform/secretVault";
 import {
   chooseConflict,
@@ -74,6 +76,7 @@ import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastE
  * | `#/all` | すべての機能（検索欄つきの一覧） |
  * | `#/tategaki` | 縦書きの試し |
  * | `#/github` | GitHub と同期（サインイン） |
+ * | `#/import` | GitHub から取り寄せる |
  * | `#/check` | 動作確認ページ（開発用） |
  *
  * 原稿エディター・縦書きの試し・動作確認ページを開いている間は、下のタブを隠す（4.3「原稿エディターを
@@ -89,7 +92,8 @@ type Route =
   | { kind: "all" }
   | { kind: "tategaki" }
   | { kind: "check" }
-  | { kind: "github" };
+  | { kind: "github" }
+  | { kind: "import" };
 
 /** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
 function isWorkRoot(root: string): boolean {
@@ -122,6 +126,7 @@ export function parseRoute(hash: string): Route {
   if (name === "tategaki") return { kind: "tategaki" };
   if (name === "check") return { kind: "check" };
   if (name === "github") return { kind: "github" };
+  if (name === "import") return { kind: "import" };
   if (name.startsWith("conflict/")) {
     const pieces = name.slice("conflict/".length).split("/");
     try {
@@ -157,7 +162,7 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import" } as const;
 
 /**
  * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。
@@ -327,7 +332,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" ? "works" : route.kind === "all" || route.kind === "github" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
@@ -377,6 +382,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         return;
       case "tategaki":
         leaveGuard = mountTategaki(screen, store);
+        return;
+      case "import":
+        lastTabHash = "#/works";
+        mountImportScreen(screen, store, stillHere);
         return;
       case "github": {
         const github = mountGithubScreen(screen, {
@@ -653,6 +662,58 @@ function fillEpisodeSide(screen: HTMLElement, store: FileStore, root: string, pa
     },
     () => undefined
   );
+}
+
+/**
+ * GitHub から取り寄せる（引継ぎ書 65章）。作者のリポジトリを並べ、押すと浅く取り寄せて、その作品の話の一覧を開く。
+ * 取り寄せているあいだは、ほかの行を押せない
+ */
+function mountImportScreen(screen: HTMLElement, store: FileStore, stillHere: () => boolean): void {
+  screen.innerHTML = `${renderAppBar("GitHub から取り寄せる", { back: true })}<div id="importSlot"></div>`;
+  const slot = screen.querySelector<HTMLElement>("#importSlot")!;
+  const backend = new CapacitorGitFsBackend();
+  let repos: GithubRepo[] = [];
+  let running = false;
+  const show = (view: ImportView) => {
+    if (stillHere()) slot.innerHTML = renderImportView(view);
+  };
+  const existing = async (): Promise<Set<string>> => new Set(await backend.readdir("/").catch(() => [] as string[]));
+  const load = async () => {
+    show({ kind: "busy" });
+    if (!(store instanceof CapacitorFileStore)) return show({ kind: "failed", reason: "unknown" });
+    const token = await secretVault().get(GITHUB_TOKEN_SECRET);
+    if (!token) return show({ kind: "signedOut" });
+    const result = await listGithubRepos(token);
+    if (result.kind === "failed") return show({ kind: "failed", reason: result.reason });
+    repos = result.repos;
+    show({ kind: "repos", repos, existing: await existing() });
+  };
+  slot.addEventListener("click", (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-import],[data-import-retry]");
+    if (!target || running) return;
+    if (target.dataset.importRetry !== undefined) return void load();
+    const repo = repos.find((candidate) => `${candidate.owner}/${candidate.name}` === target.dataset.import);
+    if (!repo) return;
+    running = true;
+    target.setAttribute("aria-busy", "true");
+    for (const button of slot.querySelectorAll<HTMLButtonElement>("[data-import]")) button.disabled = true;
+    const line = slot.querySelector<HTMLElement>("#importResult");
+    if (line) line.textContent = "";
+    void (async () => {
+      const token = await secretVault().get(GITHUB_TOKEN_SECRET);
+      const result = token ? await importWork({ backend, repo, token }) : ({ kind: "failed", reason: "sign_in_again" } as const);
+      running = false;
+      if (!stillHere()) return;
+      if (result.kind === "imported") {
+        location.hash = workHash(result.root);
+        return;
+      }
+      show({ kind: "repos", repos, existing: await existing() });
+      const after = slot.querySelector<HTMLElement>("#importResult");
+      if (after) after.textContent = importResultText(result) ?? "";
+    })();
+  });
+  void load();
 }
 
 /* ---------- すべての機能 ---------- */

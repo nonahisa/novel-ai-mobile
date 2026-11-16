@@ -107,3 +107,5 @@ export {
 export { checkWorkEpisodeNumbers, workEpisodeNumberMarks, type WorkEpisodeNumberReport } from "novel-ai-assistant/src/core/episodeNumberCheck";
 export { episodeUnit } from "novel-ai-assistant/src/core/episodeLabel";
 export { parseLockEvents, resolveLocks, lockOf, type FileLock } from "novel-ai-assistant/src/models/fileLock";
+// クラウドの AI の鍵の形の確かめ（本体と同じ。引継ぎ書 71章）
+export { validateApiKeyFormat } from "novel-ai-assistant/src/ai/types";

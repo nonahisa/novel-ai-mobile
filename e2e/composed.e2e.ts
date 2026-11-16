@@ -502,3 +502,31 @@ test.describe("C 組んで書く：iPad の縦書きのカーソルをこちら�
     await expect(page.locator(".own-caret")).toHaveCount(0);
   });
 });
+
+test.describe("C 組んで書く：iPad の横書きのカーソルも、字の高さで描く（2026-11-17 作者の iPad の写真）", () => {
+  /** 作者「こちらは大きい気がします」：振り仮名のある行で、iOS のカーソルが行の箱の高さ（振り仮名の分まで）に伸びた */
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("novelai.debug.ownCaret", "on"));
+  });
+
+  test("振り仮名のある行でも、カーソルは前の字の右の辺に、字の高さの縦の棒で出る", async ({ page }) => {
+    await openC(page);
+    await page.locator('button', { hasText: /^横書き$/ }).click();
+    await selectAfterFirstChunk(page, 3, 3); // 「は猫で|ある」（行の頭に {吾輩|わがはい}）
+    await page.waitForTimeout(200);
+    const seen = await page.locator("#draftComposed").evaluate((el) => {
+      const node = el.querySelector(".chunk")!.nextSibling!;
+      const g = document.createRange();
+      g.setStart(node, 2);
+      g.setEnd(node, 3);
+      const ch = g.getBoundingClientRect();
+      const r = document.querySelector<HTMLElement>(".own-caret")?.getBoundingClientRect();
+      return { mark: r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null, ch: { right: ch.right, top: ch.top, height: ch.height } };
+    });
+    expect(seen.mark).not.toBeNull();
+    expect(seen.mark!.height).toBeGreaterThan(seen.mark!.width);
+    expect(seen.mark!.height).toBeLessThanOrEqual(seen.ch.height + 2);
+    expect(Math.abs(seen.mark!.top - seen.ch.top)).toBeLessThanOrEqual(3);
+    expect(Math.abs(seen.mark!.left - seen.ch.right)).toBeLessThanOrEqual(3);
+  });
+});

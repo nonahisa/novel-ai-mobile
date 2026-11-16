@@ -73,7 +73,7 @@ async function setup(remoteUrl: string | null = "https://github.com/sakka/toudai
   const send = (message = "モバイル版で書いた") =>
     sendWork({ ...deps, author: githubIdentity("sakka", 1234), message, fetcher: gh.fetch, apiBase: "https://api.test", adopt: copyCommit });
   const store = new GitFsFileStore(backend);
-  const fetch = () => fetchWork({ ...deps, store, storeDir: `works/${WORK}`, fetchHead });
+  const fetch = (extra: { fastForwardOnly?: boolean } = {}) => fetchWork({ ...deps, store, storeDir: `works/${WORK}`, fetchHead, ...extra });
   const read = async (path: string) => new TextDecoder().decode((await fs.promises.readFile(`${DIR}/${path}`)) as Uint8Array);
   return { gh, fs, send, fetch, read, store };
 }
@@ -185,6 +185,25 @@ describe("取ってくる", () => {
     expect(await listConflicts(fs, WORK, BASE)).toEqual([]);
     expect(await send()).toEqual({ kind: "pushed", adopted: true });
     expect(await gh.files()).toMatchObject({ "本文/第1話 手紙.txt": "こちら\n", "本文/第2話 灯.txt": "あちら二\n" });
+  });
+
+  test("自動の取得（早送りだけ）：こちらに送っていない変更が無ければ取り込み、あれば取ってくるだけで原稿に触れない", async () => {
+    const clean = await setup();
+    await clean.gh.commitFiles({ "本文/第2話 灯.txt": "あちらで書いた\n" });
+    expect(await clean.fetch({ fastForwardOnly: true })).toEqual({ kind: "fetched", taken: 1, kept: 0 });
+    expect(await clean.read("本文/第2話 灯.txt")).toBe("あちらで書いた\n");
+    expect(await clean.fetch({ fastForwardOnly: true })).toEqual({ kind: "up_to_date" });
+
+    const dirty = await setup();
+    await dirty.fs.promises.writeFile(`${DIR}/本文/第1話 手紙.txt`, utf8("こちらで書いた\n"));
+    await dirty.gh.commitFiles({ "本文/第2話 灯.txt": "あちらで書いた\n" });
+    const head = await git.resolveRef({ fs: dirty.fs, dir: DIR, ref: "HEAD" });
+    expect(await dirty.fetch({ fastForwardOnly: true })).toEqual({ kind: "held" });
+    expect(await dirty.read("本文/第2話 灯.txt")).toBe("二\n");
+    expect(await dirty.read("本文/第1話 手紙.txt")).toBe("こちらで書いた\n");
+    expect(await git.resolveRef({ fs: dirty.fs, dir: DIR, ref: "HEAD" })).toBe(head);
+    // 押した［取ってくる］なら取り込む
+    expect(await dirty.fetch()).toEqual({ kind: "fetched", taken: 1, kept: 1 });
   });
 
   test("取得の失敗の分け方（401・404・届かない）", () => {

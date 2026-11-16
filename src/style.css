@@ -1232,3 +1232,40 @@ a.gh-open {
   border-radius: 8px;
   background: var(--surface);
 }
+/* ［作品］の右下の［＋］（設計書 4.4.3）。下のタブの上に浮かせる */
+.fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(64px + 16px + env(safe-area-inset-bottom));
+  z-index: 4;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border-radius: 18px;
+  font-size: 28px;
+  line-height: 1;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ink) 25%, transparent);
+}
+/* 1つ選ぶ窓（chooseFrom）。選ぶものを縦に並べ、下に［やめる］ */
+.dialog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.dialog-list button {
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 400;
+  text-align: left;
+}
+.dialog-list button.planned {
+  color: var(--muted);
+}
+/* ［＋］が最後の札を隠さないように */
+#workListSlot {
+  padding-bottom: 72px;
+}

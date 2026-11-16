@@ -21,7 +21,7 @@ import {
   type TermInput,
 } from "./termHighlight";
 import { TABS, buildActionList, hiddenActions, searchActions, type PlannedTab } from "./menuPlan";
-import { escapeHtml, renderActionRows, renderAppBar, renderTab, renderTabBar } from "./menuScreen";
+import { NOT_BUILT_MESSAGE, escapeHtml, renderActionRows, renderAppBar, renderTab, renderTabBar } from "./menuScreen";
 import {
   DRAFT_PATH,
   SAMPLE_TEXT,
@@ -34,7 +34,7 @@ import {
   saveFailureMessage,
   type TrialPrefs,
 } from "./tategakiDraft";
-import { askChoice, tell } from "./dialog";
+import { askChoice, chooseFrom, tell } from "./dialog";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
 import { listWorks, scanWorkFolder, type ScanOptions } from "../platform/workScan";
 import { lastCommitTime } from "../platform/git";
@@ -364,7 +364,25 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
               ? renderLastEpisodeCard(lastEpisodeInWorks())
               : undefined
         );
-        if (route.tab.id === "works") mountWorkList(screen.querySelector<HTMLElement>("#workListSlot")!, store, scanOptions, stillHere);
+        if (route.tab.id === "works") {
+          mountWorkList(screen.querySelector<HTMLElement>("#workListSlot")!, store, scanOptions, stillHere);
+          // 右下の［＋］：取り寄せる／新しく作る（設計書 4.4.3）
+          const add = document.createElement("button");
+          add.className = "fab";
+          add.id = "addWork";
+          add.setAttribute("aria-label", "作品を足す");
+          add.textContent = "＋";
+          add.addEventListener("click", () => {
+            void chooseFrom([
+              { id: "import", label: "GitHub から取り寄せる" },
+              { id: "new", label: "新しく作る", planned: true },
+            ]).then((choice) => {
+              if (choice === "import") location.hash = "#/import";
+              else if (choice === "new") toast(NOT_BUILT_MESSAGE);
+            });
+          });
+          screen.appendChild(add);
+        }
         return;
       case "work":
         lastTabHash = "#/works";

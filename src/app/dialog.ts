@@ -114,3 +114,50 @@ export function tell(message: string, okLabel = "閉じる"): Promise<void> {
     ok.focus({ preventScroll: true });
   });
 }
+
+/**
+ * **画面の中に出す、いくつかから1つ選ぶ窓**（［作品］の［＋］の「GitHub から取り寄せる／新しく作る」。設計書 4.4.3）。
+ * 選んだものの `id` を返す。［やめる］・背景を押す・端末の［戻る］（`data-answer="no"`）は undefined。
+ * まだ作っていないもの（`planned`）は灰色の「未」で出し、選ぶと `id` を返す（呼ぶ側が「まだ作っていません」と知らせる）
+ */
+export function chooseFrom(
+  options: readonly { id: string; label: string; planned?: boolean }[],
+  cancelLabel = "やめる"
+): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "dialog-backdrop";
+    backdrop.innerHTML = `<div class="dialog dialog-choices" role="dialog" aria-modal="true"><div class="dialog-list"></div><div class="dialog-actions"><button type="button" data-answer="no"></button></div></div>`;
+    const list = backdrop.querySelector<HTMLElement>(".dialog-list")!;
+    for (const option of options) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.choice = option.id;
+      button.textContent = option.label;
+      if (option.planned) {
+        button.classList.add("planned");
+        const badge = document.createElement("span");
+        badge.className = "menu-badge";
+        badge.textContent = "未";
+        button.appendChild(badge);
+      }
+      list.appendChild(button);
+    }
+    const no = backdrop.querySelector<HTMLButtonElement>('[data-answer="no"]')!;
+    no.textContent = cancelLabel;
+    const close = (value: string | undefined) => {
+      backdrop.remove();
+      resolve(value);
+    };
+    list.addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-choice]");
+      if (target) close(target.dataset.choice);
+    });
+    no.addEventListener("click", () => close(undefined));
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) close(undefined);
+    });
+    document.body.appendChild(backdrop);
+    no.focus({ preventScroll: true });
+  });
+}

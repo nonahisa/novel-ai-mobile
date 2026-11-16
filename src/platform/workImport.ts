@@ -84,9 +84,34 @@ export type ImportResult =
   | { kind: "bad_name" }
   | { kind: "failed"; reason: ApiFailureKind };
 
-export type CloneFn = (input: { fs: ReturnType<typeof createGitFs>; dir: string; url: string; ref: string; token: string }) => Promise<void>;
+export type ImportProgress = (phase: string, loaded: number, total?: number) => void;
 
-const defaultClone: CloneFn = async ({ fs, dir, url, ref, token }) => {
+export type CloneFn = (input: {
+  fs: ReturnType<typeof createGitFs>;
+  dir: string;
+  url: string;
+  ref: string;
+  token: string;
+  onProgress?: ImportProgress;
+}) => Promise<void>;
+
+/**
+ * 取り寄せの進み具合の短い字（git の段の名前を作者の言葉に。分かれば割合、分からなければ数）。
+ * 段の名前は isomorphic-git と GitHub が送るもの（Counting・Compressing は GitHub の側）
+ */
+export function progressLabel(phase: string, loaded: number, total?: number): string {
+  const name = /receiving/i.test(phase)
+    ? "受け取り"
+    : /resolving/i.test(phase)
+      ? "組み立て"
+      : /workdir/i.test(phase)
+        ? "ファイルを置く"
+        : "準備";
+  if (total && total > 0) return `${name} ${Math.min(100, Math.floor((loaded / total) * 100))}%`;
+  return loaded > 0 ? `${name} ${loaded}` : name;
+}
+
+const defaultClone: CloneFn = async ({ fs, dir, url, ref, token, onProgress }) => {
   await git.clone({
     fs,
     http: await gitHttp(),
@@ -96,6 +121,7 @@ const defaultClone: CloneFn = async ({ fs, dir, url, ref, token }) => {
     depth: 1,
     singleBranch: true,
     onAuth: () => ({ username: "x-access-token", password: token }),
+    ...(onProgress ? { onProgress: (event: { phase: string; loaded: number; total?: number }) => onProgress(event.phase, event.loaded, event.total) } : {}),
   });
 };
 
@@ -113,6 +139,7 @@ export async function importWork(input: {
   token: string;
   base?: string;
   clone?: CloneFn;
+  onProgress?: ImportProgress;
 }): Promise<ImportResult> {
   const { backend, repo } = input;
   if (!importableName(repo.name)) return { kind: "bad_name" };
@@ -127,6 +154,7 @@ export async function importWork(input: {
       url: `https://github.com/${repo.owner}/${repo.name}.git`,
       ref: repo.defaultBranch,
       token: input.token,
+      ...(input.onProgress ? { onProgress: input.onProgress } : {}),
     });
   } catch (error) {
     // 作りかけのフォルダーを残さない（次に取り寄せ直せるように。作者の作品ではない：在れば初めに断っている）

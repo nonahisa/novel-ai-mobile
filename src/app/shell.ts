@@ -49,7 +49,7 @@ import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict"
 import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
 import { createTouchedRecorder } from "../platform/touchedPaths";
 import { createAutoFetch } from "./autoFetch";
-import { importWork, listGithubRepos, type GithubRepo } from "../platform/workImport";
+import { importWork, listGithubRepos, progressLabel, type GithubRepo } from "../platform/workImport";
 import { importResultText, renderImportView, type ImportView } from "./importScreen";
 import { DeviceSecretVault, GITHUB_TOKEN_SECRET, MemorySecretVault, type SecretVault } from "../platform/secretVault";
 import {
@@ -732,7 +732,17 @@ function mountImportScreen(screen: HTMLElement, store: FileStore, stillHere: () 
     if (line) line.textContent = "";
     void (async () => {
       const token = await secretVault().get(GITHUB_TOKEN_SECRET);
-      const result = token ? await importWork({ backend, repo, token }) : ({ kind: "failed", reason: "sign_in_again" } as const);
+      // 進み具合は押した行の右に（大きい作品は時間がかかる。止まっていないと分かるように）
+      const progress = target.querySelector<HTMLElement>(".chars");
+      let shownAt = 0;
+      const onProgress = (phase: string, loaded: number, total?: number) => {
+        const now = Date.now();
+        if (!progress || now - shownAt < 200) return;
+        shownAt = now;
+        progress.textContent = progressLabel(phase, loaded, total);
+      };
+      if (progress) progress.textContent = progressLabel("", 0);
+      const result = token ? await importWork({ backend, repo, token, onProgress }) : ({ kind: "failed", reason: "sign_in_again" } as const);
       running = false;
       if (!stillHere()) return;
       if (result.kind === "imported") {

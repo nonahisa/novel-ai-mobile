@@ -1,8 +1,9 @@
+import { App } from "@capacitor/app";
 import type { FileStore } from "../platform/fileStore";
 import type { AutoSaveStatus } from "./autoSave";
 import { failureMessage } from "./autoSave";
 import { askChoice, tell } from "./dialog";
-import { openEpisode, type EpisodeSession } from "./episodeSession";
+import { openEpisode, type BackgroundSource, type EpisodeSession } from "./episodeSession";
 import { escapeHtml, renderAppBar } from "./menuScreen";
 
 /**
@@ -21,6 +22,28 @@ import { escapeHtml, renderAppBar } from "./menuScreen";
 export const RESTORE_QUESTION = "書きかけを控えたあとで、この話がほかで変わっています。\n戻さないと、書きかけは消えます";
 
 export type WritingOrientation = "vertical" | "horizontal";
+
+/**
+ * 端末のアプリの状態（Capacitor の `appStateChange`）。裏に回ったら知らせる。
+ * 聞き手を付ける前に外されても、付いたあとで外す
+ */
+const appBackground: BackgroundSource = (onBackground) => {
+  let detached = false;
+  let handle: { remove(): Promise<void> } | undefined;
+  App.addListener("appStateChange", ({ isActive }) => {
+    if (!isActive) onBackground();
+  }).then(
+    (h) => {
+      if (detached) void h.remove();
+      else handle = h;
+    },
+    () => undefined
+  );
+  return () => {
+    detached = true;
+    void handle?.remove();
+  };
+};
 
 const ORIENTATION_KEY = "novelai.episodeOrientation";
 
@@ -131,7 +154,7 @@ export function mountEpisodeScreen(
 
   // 捨てる側（［戻さない］）を「はい」に置く。askChoice の焦点・背景は「いいえ」の側
   const confirmRestore = async () => !(await askChoice(RESTORE_QUESTION, "戻さない", "書きかけを戻す"));
-  void openEpisode(store, path, { confirmRestore }).then((result) => {
+  void openEpisode(store, path, { confirmRestore, background: appBackground }).then((result) => {
     if (destroyed || !options.stillHere()) {
       if (result.ok) result.session.dispose();
       return;

@@ -5,9 +5,13 @@ import {
   formatCount,
   groupEpisodesByChapter,
   isCollectedFile,
+  checkWorkEpisodeNumbers,
+  episodeUnit,
+  lockOf,
+  workEpisodeNumberMarks,
   type EpisodeFile,
 } from "../shared";
-import { fromStorePath } from "../platform/paths";
+import { fromStorePath, toStorePath } from "../platform/paths";
 import type { ScannedWork, WorkListItem } from "../platform/workScan";
 import type { WorkSyncState } from "../platform/workSync";
 
@@ -51,6 +55,8 @@ export function workCard(item: WorkListItem, now: Date): WorkCard {
   if (work.lastWrittenAt !== undefined) meta.push(`最後に書いた日：${dayLabel(new Date(work.lastWrittenAt), now)}`);
   const flags: WorkCard["flags"] = [];
   if (work.stats.conflictedCount > 0) flags.push({ text: `競合：${work.stats.conflictedCount}話`, tone: "shu" });
+  // 話数の重複・欠番（本体の作品一覧と同じ印。設計書 4.2 A・B）
+  for (const mark of workEpisodeNumberMarks(checkWorkEpisodeNumbers(work.episodes, work.format))) flags.push({ text: mark, tone: "warn" });
   return { root: work.root, title: work.title, meta, flags };
 }
 
@@ -72,11 +78,32 @@ export function workSummary(work: ScannedWork): string {
 /** 話の一覧の1行 */
 export type EpisodeListRow =
   | { type: "chapter"; name: string; missingStart: boolean }
-  | { type: "episode"; path: string; no: string; name: string; chars: string; conflict: boolean };
+  | {
+      type: "episode";
+      path: string;
+      no: string;
+      name: string;
+      chars: string;
+      conflict: boolean;
+      /** 編集者が校閲中（本体の鍵。誰かは出さない。設計書 4.2 B「校閲中の鍵」） */
+      locked: boolean;
+      /** 同じ話数をほかの話も名乗っている */
+      duplicated: boolean;
+    };
+
+/** 話の一覧の頭に出す欠番（「話数の欠番：第5話・第7話」。多ければ先頭の5つと「ほかN件」）。無ければ undefined */
+export function missingNumbersLine(work: ScannedWork): string | undefined {
+  const { missing } = checkWorkEpisodeNumbers(work.episodes, work.format);
+  if (missing.length === 0) return undefined;
+  const unit = episodeUnit(work.format);
+  const shown = missing.slice(0, 5).map((number) => unit.label(number)).join("・");
+  return `話数の欠番：${shown}${missing.length > 5 ? ` ほか${missing.length - 5}件` : ""}`;
+}
 
 /** 話の一覧の行（章の見出しと話） */
 export function episodeListRows(work: ScannedWork): EpisodeListRow[] {
-  const row = (episode: EpisodeFile): EpisodeListRow => episodeRow(episode, work);
+  const duplicated = new Set(checkWorkEpisodeNumbers(work.episodes, work.format).duplicated);
+  const row = (episode: EpisodeFile): EpisodeListRow => episodeRow(episode, work, duplicated);
   if (work.chapters.length === 0) return work.episodes.map(row);
   const grouping = groupEpisodesByChapter(work.episodes, work.chapters, workFolderLocation(work));
   return [
@@ -88,7 +115,7 @@ export function episodeListRows(work: ScannedWork): EpisodeListRow[] {
   ];
 }
 
-function episodeRow(episode: EpisodeFile, work: ScannedWork): EpisodeListRow {
+function episodeRow(episode: EpisodeFile, work: ScannedWork, duplicatedNumbers: ReadonlySet<number>): EpisodeListRow {
   const no = formatChapterLabel(episode, work.format);
   const title = episodeTitle(episode, no);
   // 話数が読めない話は、本体と同じくファイルの名前を見出しにする
@@ -96,7 +123,25 @@ function episodeRow(episode: EpisodeFile, work: ScannedWork): EpisodeListRow {
   const chars = isCollectedFile(episode.collectedCount)
     ? `${episode.collectedCount}話ぶん　${formatCount(episode.counts.net)}字`
     : `${formatCount(episode.counts.net)}字`;
-  return { type: "episode", path: episode.filePath, no, name, chars, conflict: episode.hasConflictMarkers };
+  const storePath = toStorePath(episode.filePath);
+  const inWork = storePath?.startsWith(`${work.root}/`) ? storePath.slice(work.root.length + 1) : undefined;
+  const lock = inWork ? lockOf(work.locks, inWork) : undefined;
+  const start = episode.chapterStart;
+  const end = episode.chapterEnd ?? start;
+  let duplicated = false;
+  if (start !== null && end !== null && !episode.date && (episode.kind === "本編" || episode.kind === "不明")) {
+    for (let number = start; number <= Math.min(end, start + 10000); number += 1) if (duplicatedNumbers.has(number)) duplicated = true;
+  }
+  return {
+    type: "episode",
+    path: episode.filePath,
+    no,
+    name,
+    chars,
+    conflict: episode.hasConflictMarkers,
+    locked: lock?.holderKind === "editor",
+    duplicated,
+  };
 }
 
 /** 章立ての開始の話（作品フォルダーからの相対）と照らす作品の場所（話の `filePath` と同じ形） */

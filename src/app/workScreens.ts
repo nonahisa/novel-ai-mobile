@@ -1,5 +1,5 @@
 import { NOT_BUILT_MESSAGE, escapeHtml } from "./menuScreen";
-import { episodeListRows, mobileWording, workCard, type EpisodeListRow, type WorkCard } from "./workListView";
+import { episodeListRows, missingNumbersLine, mobileWording, workCard, type EpisodeListRow, type WorkCard } from "./workListView";
 import { toStorePath } from "../platform/paths";
 import type { ScannedWork, WorkListItem } from "../platform/workScan";
 
@@ -28,12 +28,20 @@ function cardHtml(card: WorkCard): string {
 
 /** 話の一覧（B）の中身（上のバーは `shell.ts`） */
 export function renderEpisodeList(work: ScannedWork): string {
-  const warn = work.chapterError ? `<p class="flag shu long work-warn">${escapeHtml(`⚠ 章立てを読めません：${mobileWording(work.chapterError)}`)}</p>` : "";
+  const missing = missingNumbersLine(work);
+  const warn =
+    (work.chapterError ? `<p class="flag shu long work-warn">${escapeHtml(`⚠ 章立てを読めません：${mobileWording(work.chapterError)}`)}</p>` : "") +
+    (missing ? `<p class="flag warn long work-warn">${escapeHtml(missing)}</p>` : "");
   const rows = episodeListRows(work);
   if (rows.length === 0) return `${warn}<div class="ep-list"><div class="work-empty" aria-hidden="true"></div></div>`;
   const next = `<button class="newep planned" aria-disabled="true" data-planned="${NOT_BUILT_MESSAGE}">続きを書く<span class="menu-badge">未</span></button>`;
   return `${warn}<div class="ep-list">${next}${rows.map((row) => rowHtml(row, work.root)).join("")}</div>`;
 }
+
+/** 編集者が校閲中の話の印（本体の鍵。誰かは出さない） */
+export const LOCKED_LABEL = "校閲中";
+/** 同じ話数をほかの話も名乗っている話の印 */
+export const DUPLICATED_LABEL = "話数の重複";
 
 /** 競合の印のある話を押したとき */
 export const CONFLICTED_EPISODE_MESSAGE = "競合が残っているので開けません";
@@ -43,7 +51,9 @@ function rowHtml(row: EpisodeListRow, root: string): string {
     const missing = row.missingStart ? `<span class="flag warn">開始の話が見つかりません</span>` : "";
     return `<h2 class="chap">${escapeHtml(row.name)}${missing}</h2>`;
   }
-  const chars = row.conflict ? `<span class="flag shu">競合</span>` : escapeHtml(row.chars);
+  const marks =
+    (row.locked ? `<span class="flag warn">${LOCKED_LABEL}</span>` : "") + (row.duplicated ? `<span class="flag warn">${DUPLICATED_LABEL}</span>` : "");
+  const chars = row.conflict ? `<span class="flag shu">競合</span>` : `${marks}${escapeHtml(row.chars)}`;
   const storePath = toStorePath(row.path);
   const open =
     row.conflict || storePath === undefined

@@ -148,6 +148,62 @@ test.describe("C 組んで書く", () => {
     await expect(page.locator("#imeLog")).not.toContainText("の中）");
   });
 
+  test("指でなぞっているあいだは、塊の中を通ってもカーソルを置き直さない（iPad の長押しのなぞり）", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    await pane.click();
+    // iPad の長押しは、指の動きに合わせてカーソル（幅の無い選び）を動かす。塊の中を通る間も置き直さない
+    const stayed = await pane.evaluate(async (el) => {
+      const put = (node: Node, offset: number) => {
+        const range = document.createRange();
+        range.setStart(node, offset);
+        range.collapse(true);
+        const sel = window.getSelection()!;
+        sel.removeAllRanges();
+        sel.addRange(range);
+      };
+      const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+      el.dispatchEvent(new Event("touchstart", { bubbles: true }));
+      const base = el.querySelector(".chunk-base, .chunk rb, .chunk")!;
+      const inside = [...base.childNodes].find((n) => n.nodeType === Node.TEXT_NODE) ?? base.firstChild!;
+      const seen: boolean[] = [];
+      for (let i = 0; i < 6; i++) {
+        put(inside, i % 2);
+        await wait(60);
+        seen.push(!!window.getSelection()!.anchorNode && base.contains(window.getSelection()!.anchorNode));
+      }
+      // 指は地の字（「猫」の後ろ）で止まって離れる
+      put(el.querySelector(".chunk")!.nextSibling!, 2);
+      el.dispatchEvent(new Event("touchend", { bubbles: true }));
+      await wait(400);
+      const s = window.getSelection()!;
+      return { seen, endNodeIsAfterChunk: s.anchorNode === el.querySelector(".chunk")!.nextSibling, endOffset: s.anchorOffset };
+    });
+    expect(stayed.seen.every(Boolean)).toBe(true);
+    expect(stayed.endNodeIsAfterChunk).toBe(true);
+    expect(stayed.endOffset).toBe(2);
+    await expect(page.locator("#imeLog")).not.toContainText("塊の外へ置き直した");
+  });
+
+  test("指を離したあとも塊の中に残ったカーソルは、塊の外へ置き直す", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    await pane.click();
+    await pane.evaluate((el) => {
+      el.dispatchEvent(new Event("touchstart", { bubbles: true }));
+      const base = el.querySelector(".chunk")!;
+      const walker = document.createTreeWalker(base, NodeFilter.SHOW_TEXT);
+      const text = walker.nextNode()!;
+      const range = document.createRange();
+      range.setStart(text, 1);
+      range.collapse(true);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+      el.dispatchEvent(new Event("touchend", { bubbles: true }));
+    });
+    await expect(page.locator("#imeLog")).toContainText("塊の外へ置き直した");
+  });
+
   test("［ルビ］：選んだ字に、窓で打った読みを振る", async ({ page }) => {
     await openC(page);
     const pane = page.locator("#draftComposed");

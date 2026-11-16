@@ -409,7 +409,8 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         // ［←］は話の一覧へ（話の一覧の［←］は作品一覧へ）
         lastTabHash = workHash(route.root);
         rememberLastEpisode(globalThis.localStorage, { root: route.root, path: route.path });
-        leaveGuard = mountEpisodeScreen(screen, store, route.path, { toast, stillHere, ...(touchedRecorder(store) ? { beforeWrite: touchedRecorder(store)! } : {}) });
+        ensureTermColorStyle();
+        leaveGuard = mountEpisodeScreen(screen, store, route.path, { toast, stillHere, workRoot: route.root, ...(touchedRecorder(store) ? { beforeWrite: touchedRecorder(store)! } : {}) });
         fillEpisodeSide(screen, store, route.root, route.path, scanOptions, stillHere);
         return;
       case "all":

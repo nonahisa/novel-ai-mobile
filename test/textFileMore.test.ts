@@ -154,11 +154,11 @@ describe("置き場がうまく動かないとき（本体の項目の続き）"
     const originalBytes = utf8("灯\n澪\n");
     const changedByAuthor = utf8("灯\n碧\n");
     const original = decodeBytes(originalBytes);
-    // 元の原稿を消した直後に、ほかの道が同じ場所へ書く
+    // 退避を写した直後に、ほかの道が同じ場所へ書く（モバイル版は元を消さずに置き換えるので、置き換える直前の隙。引継ぎ書 63章）
     const store = new (class extends MemoryFileStore {
-      override async deleteFile(path: string): Promise<void> {
-        await super.deleteFile(path);
-        if (path === FILE) this.putExternally(FILE, changedByAuthor);
+      override async writeFile(path: string, bytes: Uint8Array, options: { mode: "create" | "overwrite" }): Promise<void> {
+        await super.writeFile(path, bytes, options);
+        if (path.endsWith(".bak")) this.putExternally(FILE, changedByAuthor);
       }
     })();
     store.putExternally(FILE, originalBytes);
@@ -166,7 +166,7 @@ describe("置き場がうまく動かないとき（本体の項目の続き）"
     const result = await save(store, "灯\n翠\n", original);
     expect(result).toMatchObject({
       ok: false,
-      reason: "path_conflict",
+      reason: "modified_externally",
       recoveryPaths: expect.arrayContaining([expect.stringContaining(".bak")]),
     });
     expect(store.peek(FILE)).toEqual(changedByAuthor);

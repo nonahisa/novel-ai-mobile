@@ -15,7 +15,7 @@ import {
   describeUnencodable,
   substituteForShiftJis,
 } from "novel-ai-assistant/src/core/sjisFallback";
-import { FileExistsError, FileNotFoundError, dirname, joinStorePath, normalizeStorePath, type FileStore } from "./fileStore";
+import { FileNotFoundError, dirname, joinStorePath, normalizeStorePath, type FileStore } from "./fileStore";
 
 /**
  * 本文の読み書き（設計書 2.3。本体の `core/textFile.ts` の差し替え）。
@@ -143,17 +143,21 @@ export async function writeTextFilePreservingFormat(
     return { ok: false, reason: "path_conflict", detail: `回復先へコピーできませんでした: ${describe(error)}` };
   }
 
+  // 置き換える直前にもう一度確かめる（退避を写すあいだに外で書かれていたら、その字を潰さない）
   try {
-    await store.deleteFile(filePath);
+    if (hashBytes(await store.readFile(filePath)) !== expectedHash) return { ok: false, reason: "modified_externally", recoveryPaths: [recoveryPath] };
   } catch {
-    // 元の原稿にはまだ触れていない
-    return { ok: false, reason: "modified_externally" };
+    return { ok: false, reason: "modified_externally", recoveryPaths: [recoveryPath] };
   }
 
+  // 元を消してから作るのでなく、置き換える（置き場の `overwrite` は一時ファイルに書いてから名前の変更で置く。
+  // 消してから作るまでの間に止められると、原稿が無くなり退避だけが残っていた。引継ぎ書 63章）
   try {
-    await store.writeFile(filePath, bytes, { mode: "create" });
+    await store.writeFile(filePath, bytes, { mode: "overwrite" });
   } catch (error) {
-    const detail = error instanceof FileExistsError ? "同じ名前のファイルが先に作られました" : describe(error);
+    // 退避のあとで消えた（外で消された）
+    if (error instanceof FileNotFoundError) return { ok: false, reason: "modified_externally", recoveryPaths: [recoveryPath] };
+    const detail = describe(error);
     return {
       ok: false,
       reason: "path_conflict",

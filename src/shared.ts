@@ -123,3 +123,9 @@ export {
   type FeatureAssignment,
   type FeatureAssignments,
 } from "novel-ai-assistant/src/core/featureAssignment";
+
+/* 設定資料の1件を読む（用語の色の語を作る。設計書 5.7。本体の views/termHighlight.ts の load と同じ語の作り方は platform/workTerms.ts） */
+export { parseCharacter, type Character } from "novel-ai-assistant/src/models/character";
+export { parseAbility, type Ability } from "novel-ai-assistant/src/models/ability";
+export { parseLocation, type Location } from "novel-ai-assistant/src/models/location";
+export { parseOrganization, type Organization } from "novel-ai-assistant/src/models/organization";

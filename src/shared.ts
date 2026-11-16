@@ -109,3 +109,6 @@ export { episodeUnit } from "novel-ai-assistant/src/core/episodeLabel";
 export { parseLockEvents, resolveLocks, lockOf, type FileLock } from "novel-ai-assistant/src/models/fileLock";
 // クラウドの AI の鍵の形の確かめ（本体と同じ。引継ぎ書 71章）
 export { validateApiKeyFormat } from "novel-ai-assistant/src/ai/types";
+// 有料の AI へ送る前の確認の文言（本体のまま）と、手元の AI かの判定（引継ぎ書 72章）
+export { paidUsageNotice, type PaidUsageNotice, type PaidUsageNoticeOptions } from "novel-ai-assistant/src/core/paidUsageNotice";
+export { isLocalProviderId } from "novel-ai-assistant/src/core/localProviders";

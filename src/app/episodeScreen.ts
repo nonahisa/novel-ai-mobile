@@ -7,6 +7,12 @@ import { openEpisode, type BackgroundSource, type EpisodeSession } from "./episo
 import { escapeHtml, renderAppBar } from "./menuScreen";
 import { TOOL_STRIP, applyRuby, insertText, rubyPlan, toggleEmphasis, wrapBrackets, type TextEdit, type ToolId } from "./manuscriptTools";
 import { UndoHistory } from "./undoHistory";
+import { Capacitor } from "@capacitor/core";
+import { editContextSupport } from "./editContextModel";
+import { mountEditContextPane } from "./editContextPane";
+import { mountImeSinkPane } from "./imeSinkPane";
+import { chooseMergeRegions, finishMerge, planExternalMerge, regionChoices } from "./externalMerge";
+import { readTextFile, writeTextFilePreservingFormat } from "../platform/textFile";
 
 /**
  * **原稿エディター（C）の土台**：話の一覧から押した話を開いて書く画面（設計書 5.1〜5.4）。
@@ -146,6 +152,71 @@ function mountWritingPane(
       area.removeEventListener("input", onInput);
       area.removeEventListener("beforeinput", onBeforeInput);
       area.remove();
+    },
+  };
+}
+
+/**
+ * **変換中の線**（作者の指示 2026-11-16「傍線は左の方が安定してそうなのでメインにして、右傍線は設定管理でテスト中と断った上で
+ * 変更できるように」。設定 → 表示。引継ぎ書 76章）。名前と値は拡張機能（統合）とそろえる：`novelai.compositionLine`＝`left`／`right`、既定 `left`
+ *
+ * - left：ブラウザの入力欄（textarea）。変換中の線はブラウザが描く（縦書きでは行の左）
+ * - right：字と変換中の線をこの画面が描く（13章の B。EditContext、無い端末〈iOS〉は見えない受け口）。線は行の右。
+ *   **テスト中**：範囲を選べない（道具帯のルビ・傍点は選んだ字に振れない）、ブラウザの選び・貼り付けの手が弱い
+ */
+export const COMPOSITION_LINE_KEY = "novelai.compositionLine";
+export type CompositionLine = "left" | "right";
+export function parseCompositionLine(value: string | null): CompositionLine {
+  return value === "right" ? "right" : "left";
+}
+export function readCompositionLine(): CompositionLine {
+  try {
+    return parseCompositionLine(window.localStorage.getItem(COMPOSITION_LINE_KEY));
+  } catch {
+    return "left";
+  }
+}
+export function writeCompositionLine(value: CompositionLine): void {
+  try {
+    window.localStorage.setItem(COMPOSITION_LINE_KEY, value);
+  } catch {
+    /* 覚えられなくても、いまの画面は替わる */
+  }
+}
+
+/** 右の線：字と変換中の線をこの画面が描く欄（13章の B）を、原稿エディターの欄の形にする */
+function mountRightLinePane(
+  host: HTMLElement,
+  orientation: WritingOrientation,
+  onChange: (text: string, kind: "type" | "other") => void
+): WritingPane {
+  const element = document.createElement("div");
+  element.className = `ms-editor ms-editor-right ${orientation}`;
+  element.id = "msEditor";
+  element.lang = "ja";
+  element.setAttribute("aria-label", "原稿");
+  element.dataset.line = "right";
+  host.appendChild(element);
+  const support = editContextSupport(window, Capacitor.getPlatform());
+  const pane = support.ok
+    ? mountEditContextPane(element, "", orientation, (text) => onChange(text, "type"))
+    : mountImeSinkPane(element, "", orientation, (text) => onChange(text, "type"));
+  return {
+    setText: (text) => pane.setText(text),
+    value: () => pane.getText(),
+    selection: () => pane.getSelection(),
+    apply(edit) {
+      pane.setTextAt(edit.text, edit.selEnd);
+      onChange(edit.text, "other");
+    },
+    setOrientation(next) {
+      element.classList.toggle("vertical", next === "vertical");
+      element.classList.toggle("horizontal", next === "horizontal");
+      pane.setOrientation(next);
+    },
+    destroy() {
+      pane.destroy();
+      element.remove();
     },
   };
 }
@@ -294,36 +365,86 @@ export function mountEpisodeScreen(
 
   // 捨てる側（［戻さない］）を「はい」に置く。askChoice の焦点・背景は「いいえ」の側
   const confirmRestore = async () => !(await askChoice(RESTORE_QUESTION, "戻さない", "書きかけを戻す"));
-  void openEpisode(store, path, {
-    confirmRestore,
-    background: appBackground,
-    ...(options.beforeWrite ? { beforeWrite: options.beforeWrite } : {}),
-  }).then((result) => {
-    if (destroyed || !options.stillHere()) {
-      if (result.ok) result.session.dispose();
-      return;
-    }
-    host.removeAttribute("aria-busy");
-    if (!result.ok) {
-      host.innerHTML = `<p class="flag shu long work-warn">${escapeHtml(
-        result.reason === "conflict_markers" ? "⚠ 競合が残っているので開けません" : `⚠ 読めませんでした：${result.detail ?? ""}`
-      )}</p>`;
-      return;
-    }
-    session = result.session;
-    pane = mountWritingPane(host, orientation, onEdit);
-    shown = session.text();
-    pane.setText(shown);
-    strip.hidden = false;
-    refreshTools();
-    showState(session.status());
-    session.onStatusChange((status) => {
-      showState(status);
-      if (status === "外で変わりました") void tell(EXTERNAL_CHANGE_MESSAGE);
+  /** 話を開く（はじめと、外の変更と合わせて保存したあとの開き直し） */
+  const startSession = () =>
+    openEpisode(store, path, {
+      confirmRestore,
+      background: appBackground,
+      ...(options.beforeWrite ? { beforeWrite: options.beforeWrite } : {}),
+    }).then((result) => {
+      if (destroyed || !options.stillHere()) {
+        if (result.ok) result.session.dispose();
+        return;
+      }
+      host.removeAttribute("aria-busy");
+      if (!result.ok) {
+        pane?.destroy();
+        pane = undefined;
+        host.innerHTML = `<p class="flag shu long work-warn">${escapeHtml(
+          result.reason === "conflict_markers" ? "⚠ 競合が残っているので開けません" : `⚠ 読めませんでした：${result.detail ?? ""}`
+        )}</p>`;
+        return;
+      }
+      session = result.session;
+      pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, orientation, onEdit) : mountWritingPane(host, orientation, onEdit);
+      shown = session.text();
+      pane.setText(shown);
+      history.clear();
+      strip.hidden = false;
+      refreshTools();
+      showState(session.status());
+      session.onStatusChange((status) => {
+        showState(status);
+        if (status === "外で変わりました") void mergeExternal();
+      });
+      session.onFailure((failure) => void tell(failureMessage(failure)));
+      if (session.restored) options.toast("保存していない書きかけを戻しました");
     });
-    session.onFailure((failure) => void tell(failureMessage(failure)));
-    if (session.restored) options.toast("保存していない書きかけを戻しました");
-  });
+
+  /**
+   * 外で変わったとき（引継ぎ書 76章）：最後に保存した本文・書きかけ・入れ替わった本文を段落ごとに比べ、
+   * 重ならない所は自動で、重なる所は作者が選んで合わせ、保存して開き直す。合わせられなければ今までどおり止めたまま
+   */
+  let merging = false;
+  const mergeExternal = async () => {
+    const current = session;
+    if (merging || !current) return;
+    merging = true;
+    try {
+      let external: Awaited<ReturnType<typeof readTextFile>>;
+      try {
+        external = await readTextFile(store, path);
+      } catch {
+        return void tell(EXTERNAL_CHANGE_MESSAGE);
+      }
+      const base = current.baseText();
+      const planned = external.hasConflictMarkers ? undefined : planExternalMerge({ base, ours: current.text(), theirs: external.text });
+      if (!planned || planned.kind !== "merge") return void tell(EXTERNAL_CHANGE_MESSAGE);
+      const choices = regionChoices(planned);
+      let picks: number[] = [];
+      if (choices.length > 0) {
+        const chosen = await chooseMergeRegions(choices);
+        // やめたら止めたまま（書きかけは控えに残る）
+        if (!chosen || destroyed || session !== current) return;
+        picks = chosen.map((which, index) => (which === "ours" ? choices[index]!.ours!.option : choices[index]!.theirs!.option));
+      }
+      const done = finishMerge(planned, picks, base);
+      if (!done.ok) return void tell(EXTERNAL_CHANGE_MESSAGE);
+      // 入れ替わった本文を退避に残して書く（ハッシュを照らし、文字コード・改行の形を保つ）
+      const written = await writeTextFilePreservingFormat(store, path, done.text, external, external.hash);
+      if (!written.ok) return void tell(failureMessage({ reason: written.reason, ...(written.detail !== undefined ? { detail: written.detail } : {}) }));
+      if (destroyed) return;
+      // 控えを消してから開き直す（合わせた本文がこれからの元になる）
+      session = undefined;
+      await current.discardDraft();
+      current.dispose();
+      await startSession();
+      options.toast(choices.length > 0 ? "選んだとおりに合わせて保存しました" : "外の変更と合わせて保存しました");
+    } finally {
+      merging = false;
+    }
+  };
+  void startSession();
 
   return {
     isDirty: () => session !== undefined && session.status() !== "保存済み",

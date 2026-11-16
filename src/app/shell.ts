@@ -42,7 +42,7 @@ import { dayLabel, syncFlag, workSummary } from "./workListView";
 import { createGitFs, CapacitorGitFsBackend } from "../platform/gitFs";
 import { latestUnsentTime, readWorkSync, workRepo, type WorkSyncState } from "../platform/workSync";
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
-import { mountEpisodeScreen } from "./episodeScreen";
+import { mountEpisodeScreen, readCompositionLine, writeCompositionLine } from "./episodeScreen";
 import { renderSyncScreen, type SyncAccess, type SyncConflictRow } from "./syncScreen";
 import { applyFailureText, renderConflictView, theirsQuestion, type ConflictView } from "./conflictScreen";
 import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict";
@@ -57,7 +57,7 @@ import { PAID_ASSIGN_NOTICE, describeChoice, featureRows, readAiChoices, saveDef
 import { DeviceSettings, capacitorPreferencesBackend } from "../platform/deviceSettings";
 import type { AssignableFeature } from "../shared";
 import { MINCHO_FONT, downloadFont, readVerifiedFont, useFont } from "../platform/fontDownload";
-import { FONT_FAILURE, renderDisplayScreen, renderFontRow, renderLicenses, type FontView } from "./displayScreen";
+import { FONT_FAILURE, renderDisplayScreen, renderFontRow, renderLicenses, renderLineSection, type FontView } from "./displayScreen";
 import { importWork, listGithubRepos, progressLabel, type GithubRepo } from "../platform/workImport";
 import { importResultText, renderImportView, type ImportView } from "./importScreen";
 import { DeviceSecretVault, GITHUB_TOKEN_SECRET, MemorySecretVault, type SecretVault } from "../platform/secretVault";
@@ -974,8 +974,15 @@ async function loadInstalledFont(): Promise<void> {
 
 /** 表示の画面。明朝の大きさを示し、押したときだけ取り寄せる。照らして合ったものだけ書いて使う */
 function mountDisplayScreen(screen: HTMLElement, stillHere: () => boolean): void {
-  screen.innerHTML = `${renderAppBar("表示", { back: true })}${renderDisplayScreen({ kind: "checking" })}`;
+  screen.innerHTML = `${renderAppBar("表示", { back: true })}<div id="lineSlot">${renderLineSection(readCompositionLine())}</div>${renderDisplayScreen({ kind: "checking" })}`;
   const slot = screen.querySelector<HTMLElement>("#fontSlot")!;
+  const lineSlot = screen.querySelector<HTMLElement>("#lineSlot")!;
+  lineSlot.addEventListener("click", (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-line]");
+    if (!target) return;
+    writeCompositionLine(target.dataset.line === "right" ? "right" : "left");
+    lineSlot.innerHTML = renderLineSection(readCompositionLine());
+  });
   let abort: AbortController | undefined;
   const show = (view: FontView) => {
     if (stillHere()) slot.innerHTML = renderFontRow(view);

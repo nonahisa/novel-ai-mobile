@@ -1,7 +1,6 @@
 import "./bufferShim";
 import git from "isomorphic-git";
 import type { createGitFs } from "./gitFs";
-import { RECOVERY_DIRECTORY_NAME } from "./textFile";
 import { collectChanges } from "./workPush";
 
 /**
@@ -15,7 +14,7 @@ import { collectChanges } from "./workPush";
  * - 「送っていない話」は原稿（`.txt`）だけを数える。設定などの変更は `otherCount`
  * - 中身の競合の印（`hasConflictMarkers`）とは別のもの。こちらは送っていない変更
  * - 書き戻しの退避（`.novelai-recovery/`）は数えない。端末の中だけの写しで、作者が書き換えたものではない
- *   （ふつうは作品の `.gitignore` で外れるが、外していない作品でも数えない）
+ *   （ふつうは作品の `.gitignore` で外れるが、外していない作品でも。`collectChanges` が外す）
  */
 
 type GitFs = ReturnType<typeof createGitFs>;
@@ -42,7 +41,6 @@ export function workRepo(root: string, base = ""): { dir: string; prefix: string
 }
 
 const isStory = (path: string) => /\.txt$/i.test(path);
-const isRecovery = (path: string) => path.split("/").includes(RECOVERY_DIRECTORY_NAME);
 
 export async function readWorkSync(fs: GitFs, root: string, base = ""): Promise<WorkSyncState | undefined> {
   const { dir, prefix } = workRepo(root, base);
@@ -51,7 +49,7 @@ export async function readWorkSync(fs: GitFs, root: string, base = ""): Promise<
   } catch {
     return undefined;
   }
-  const changes = await collectChanges(fs, dir, [], (path) => (prefix === "" || path.startsWith(prefix)) && !isRecovery(path));
+  const changes = await collectChanges(fs, dir, [], prefix ? (path) => path.startsWith(prefix) : undefined);
   const repoName = dir.slice(base.length + 1);
   const unsent: UnsentFile[] = [];
   let otherCount = 0;

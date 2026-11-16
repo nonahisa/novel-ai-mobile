@@ -97,6 +97,19 @@ describe("送る", () => {
     expect(await gh.files()).toEqual({ "原稿/第1話.txt": "書き足した\r\n", "設定/characters.json": "{}\n" });
   });
 
+  test("書き戻しの退避（.novelai-recovery）は、.gitignore で外していなくても送らない（作者の古い控えを外へ出さない）", async () => {
+    const { gh, fs, dir, input } = await setup();
+    await fs.promises.writeFile(`${dir}/原稿/第1話.txt`, "書き足した\r\n");
+    await fs.promises.mkdir(`${dir}/原稿/.novelai-recovery`);
+    await fs.promises.writeFile(`${dir}/原稿/.novelai-recovery/a-1-00000001-x.bak`, "吾輩は猫である。\r\n");
+    expect((await collectChanges(fs, dir, ["原稿/.novelai-recovery/a-1-00000001-x.bak"])).map((c) => c.path)).toEqual(["原稿/第1話.txt"]);
+    const result = await pushWork(input({ touched: ["原稿/.novelai-recovery/a-1-00000001-x.bak"] }));
+    expect(result).toMatchObject({ kind: "pushed" });
+    expect(await gh.files()).toEqual({ "原稿/第1話.txt": "書き足した\r\n", "原稿/第2話.txt": "名前はまだ無い。\n", "設定/characters.json": "{}\n" });
+    // 端末には残す
+    expect(await fs.promises.readFile(`${dir}/原稿/.novelai-recovery/a-1-00000001-x.bak`)).toBeDefined();
+  });
+
   test("2回続けて送れる（2回目は1回目の版の上に積む）", async () => {
     const { gh, fs, dir, input } = await setup();
     await fs.promises.writeFile(`${dir}/原稿/第1話.txt`, "一回目\n");

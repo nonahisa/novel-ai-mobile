@@ -9,6 +9,7 @@ import {
   type RepoRef,
 } from "./githubCommitApi";
 import { gitHttp } from "./gitHttp";
+import { RECOVERY_DIRECTORY_NAME } from "./textFile";
 import type { createGitFs } from "./gitFs";
 
 /**
@@ -29,6 +30,11 @@ import type { createGitFs } from "./gitFs";
  * 向こうが先へ進んでいた（`behind`）ときは、何も動かさずに返す。受け取って見比べるのは
  * 食い違いの扱い（`syncConflict.ts`。取ってきて `integrateIncoming` で取り込んでから、もう一度送る）。
  */
+
+/** 書き戻しの退避の中か（どの深さのフォルダーでも） */
+export function isRecoveryPath(path: string): boolean {
+  return path.split("/").includes(RECOVERY_DIRECTORY_NAME);
+}
 
 /** isomorphic-git の `fs` の形（`createGitFs` が返すもの） */
 type GitFs = ReturnType<typeof createGitFs>;
@@ -54,6 +60,10 @@ async function exists(fs: GitFs, path: string): Promise<boolean> {
 /**
  * 手元の HEAD から変わった話を集める。中身は作業の木から読み、名前（`oid`）も数えて添える。
  * `touched` はアプリが書いた道（isomorphic-git が見落としても拾う）。
+ *
+ * **書き戻しの退避（`.novelai-recovery/`）はいつも外す**。端末の中だけの、開く前の本文の写しで、
+ * 作品の `.gitignore` で外していない作品でも送らない（作者の古い控えを GitHub へ出さない。2026-11-16 母艦）。
+ * 前の版に入っていた退避も、消したことにしない（手を付けない）
  */
 export async function collectChanges(
   fs: GitFs,
@@ -62,14 +72,15 @@ export async function collectChanges(
   /** 数える道を絞る（書庫の中の1つの作品だけなど） */
   filter?: (path: string) => boolean
 ): Promise<FileChange[]> {
+  const keep = (path: string) => !isRecoveryPath(path) && (!filter || filter(path));
   const head = await git.resolveRef({ fs, dir, ref: "HEAD" });
-  const matrix = await git.statusMatrix({ fs, dir, ...(filter ? { filter } : {}) });
+  const matrix = await git.statusMatrix({ fs, dir, filter: keep });
   const candidates = new Set<string>();
   for (const [path, headState, workdirState] of matrix) {
     // 1 と 2 の違い＝書き換え、0 と 2＝新しい話、1 と 0＝消した話
     if (headState !== workdirState) candidates.add(path);
   }
-  for (const path of touched) if (!filter || filter(path)) candidates.add(path);
+  for (const path of touched) if (keep(path)) candidates.add(path);
 
   const changes: FileChange[] = [];
   for (const path of [...candidates].sort()) {

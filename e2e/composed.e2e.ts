@@ -373,3 +373,32 @@ test.describe("C 組んで書く", () => {
     expect((await aText(page)).startsWith("{吾輩|わがはい}は猫である。")).toBe(true);
   });
 });
+
+test.describe("C 組んで書く：キーボードが出たときのカーソルの行", () => {
+  /**
+   * 2026-11-17 AQUOS の試し11・作者の答え「もう少し下に出してほしい」：キーボードが出て見える範囲が縮んだとき、
+   * カーソルが道具の段（取り消し・ルビ・傍点）のすぐ下ぎりぎりに来ていた。上の余白が上のバーの分しか無く、
+   * バーの下に張りつく道具の段の分を数えていなかった
+   */
+  test("見える範囲が縮んでも、カーソルは道具の段の下から少し離れた所に出る", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await openC(page);
+    await caretBesideFirstChunk(page, "after");
+    // カーソルを、上のバーのすぐ下（道具の段の裏）へ送る
+    await page.evaluate(() => {
+      const caret = window.getSelection()!.getRangeAt(0).getBoundingClientRect();
+      const bar = document.querySelector(".appbar")!.getBoundingClientRect();
+      window.scrollBy(0, caret.top - (bar.bottom + 10));
+    });
+    // キーボードが出た形（見える範囲が縮む）
+    await page.setViewportSize({ width: 320, height: 420 });
+    await page.waitForTimeout(600);
+    const seen = await page.evaluate(() => {
+      const caret = window.getSelection()!.getRangeAt(0).getBoundingClientRect();
+      const tools = document.querySelector("#composedTools")!.getBoundingClientRect();
+      return { caretTop: caret.top, caretBottom: caret.bottom, toolsBottom: tools.bottom, vh: window.visualViewport!.height };
+    });
+    expect(seen.caretTop).toBeGreaterThanOrEqual(seen.toolsBottom + 16);
+    expect(seen.caretBottom).toBeLessThanOrEqual(seen.vh);
+  });
+});

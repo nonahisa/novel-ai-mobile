@@ -52,17 +52,26 @@ export function revealDelta(
   return delta;
 }
 
-/** 上の帯（`.appbar`）の下の端。帯が無ければ 0 */
-function appbarBottom(): number {
-  const bar = document.querySelector(".appbar");
-  if (!bar) return 0;
-  const r = bar.getBoundingClientRect();
-  return r.bottom > 0 ? r.bottom : 0;
+/**
+ * 上に張りつく帯の下の端（いちばん下のもの）。帯が無ければ 0。上のバー（`.appbar`）と、そのすぐ下に張りつく
+ * 組んで書く面の道具の段（`#composedTools`）を数える（2026-11-17 AQUOS の試し11：道具の段を数えていなかったので、
+ * カーソルが道具の段のすぐ下ぎりぎり、ときには裏に来た）
+ */
+function coveredTop(): number {
+  let bottom = 0;
+  for (const bar of Array.from(document.querySelectorAll(".appbar, #composedTools"))) {
+    const r = bar.getBoundingClientRect();
+    if (r.height > 0 && r.bottom > bottom) bottom = r.bottom;
+  }
+  return bottom;
 }
+
+/** 張りつく帯とカーソルの間に空ける幅（作者「もう少し下に出してほしい」2026-11-17。前は 8） */
+const GAP_BELOW_BARS = 24;
 
 /**
  * カーソルの印を見える所へ送る。`pane` を渡すと、その頭をなるべく見せたままにする。
- * 上の余白は、上の帯の下の端より下にする（帯の高さは機種で違う。AQUOS wish3 では 77 あった）
+ * 上の余白は、張りつく帯の下の端より少し下にする（帯の高さは機種で違う。AQUOS wish3 では 77 あった）
  */
 export function revealCaret(caret: Pick<Element, "getBoundingClientRect"> | null, pane?: Element | null): void {
   if (!caret) return;
@@ -72,7 +81,7 @@ export function revealCaret(caret: Pick<Element, "getBoundingClientRect"> | null
   // そこでページを大きく送っていた）
   if (band.height < 160) return;
   const r = caret.getBoundingClientRect();
-  const margins = { top: Math.max(64, appbarBottom() + 8), bottom: 48 };
+  const margins = { top: Math.max(64, coveredTop() + GAP_BELOW_BARS), bottom: 48 };
   const delta = revealDelta(r, band, margins, pane ? pane.getBoundingClientRect().top : undefined);
   if (delta !== 0) window.scrollBy(0, delta);
 }

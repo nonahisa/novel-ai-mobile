@@ -45,3 +45,16 @@ export function renderLicenses(text: string | undefined): string {
     `<pre class="license-text">${escapeHtml(text ?? "")}</pre></section>`
   );
 }
+
+/**
+ * 変換中の線（縦書きで、変換中の字に引く線を行の左に出すか右に出すか。引継ぎ書 76章）。既定は左。
+ * 右はテスト中（範囲を選べない・道具帯のルビと傍点は選んだ字に振れない）と、選べる所に書く
+ */
+export function renderLineSection(line: "left" | "right"): string {
+  const button = (value: "left" | "right", label: string) => `<button data-line="${value}" aria-pressed="${line === value}">${label}</button>`;
+  return (
+    `<section class="menu-section"><h2>変換中の線</h2><div class="seg line-choice">${button("left", "左")}${button("right", "右（テスト中）")}</div>` +
+    (line === "right" ? `<p class="flag warn long">テスト中：範囲を選べないので、ルビと傍点は選んだ字に振れません</p>` : "") +
+    `</section>`
+  );
+}

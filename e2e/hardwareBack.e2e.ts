@@ -63,7 +63,8 @@ test.describe("端末の［戻る］キー", () => {
       db.close();
     }, EPISODE);
     await page.locator("#msEditor").fill("こちらの書きかけ。\n");
-    await expect(page.locator(".dialog-message")).toHaveText(/外で変わったので/, { timeout: 5000 });
+    // 重なった所を選ぶ画面（引継ぎ書 76章）。［戻る］キーは［やめる］
+    await expect(page.locator(".merge-title")).toBeVisible({ timeout: 5000 });
     await pressBack(page);
     await expect(page.locator(".dialog-backdrop")).toHaveCount(0);
     await expect(page).toHaveURL(/#\/episode\//);

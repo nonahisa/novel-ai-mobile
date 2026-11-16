@@ -234,6 +234,12 @@ export function mountImeSinkPane(
       state = initialSinkState(next);
       render();
     },
+    getSelection: () => ({ start: state.selection, end: state.selection }),
+    setTextAt(next: string, caret: number) {
+      resetSink();
+      state = { ...initialSinkState(next), selection: Math.max(0, Math.min(caret, next.length)) };
+      render();
+    },
     setOrientation(next) {
       setOrientation(next);
       render();

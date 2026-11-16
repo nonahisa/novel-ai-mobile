@@ -34,6 +34,10 @@ export interface EpisodeSession {
   readonly path: string;
   /** 画面に出す本文（戻した書きかけがあればそれ） */
   text(): string;
+  /** 最後に保存した本文（開いたとき・保存が済んだときの字）。外で変わったときに合わせる元（引継ぎ書 76章） */
+  baseText(): string;
+  /** 書きかけの控えを消す（外で変わった本文と合わせて保存し終えたあと。開き直す前に呼ぶ） */
+  discardDraft(): Promise<void>;
   /** 開いたときに控えから書きかけを戻したか */
   readonly restored: boolean;
   status(): AutoSaveStatus;
@@ -136,6 +140,8 @@ function wrap(
     path,
     restored,
     text: () => autoSave.draft(),
+    baseText: () => base.text,
+    discardDraft: () => journal.clear(),
     status: () => autoSave.status(),
     edit(text) {
       autoSave.edit(text);

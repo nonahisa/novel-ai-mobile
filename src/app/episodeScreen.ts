@@ -2,9 +2,11 @@ import { App } from "@capacitor/app";
 import type { FileStore } from "../platform/fileStore";
 import type { AutoSaveStatus } from "./autoSave";
 import { failureMessage } from "./autoSave";
-import { askChoice, tell } from "./dialog";
+import { askChoice, askText, tell } from "./dialog";
 import { openEpisode, type BackgroundSource, type EpisodeSession } from "./episodeSession";
 import { escapeHtml, renderAppBar } from "./menuScreen";
+import { TOOL_STRIP, applyRuby, insertText, rubyPlan, toggleEmphasis, wrapBrackets, type TextEdit, type ToolId } from "./manuscriptTools";
+import { UndoHistory } from "./undoHistory";
 
 /**
  * **原稿エディター（C）の土台**：話の一覧から押した話を開いて書く画面（設計書 5.1〜5.4）。
@@ -14,6 +16,8 @@ import { escapeHtml, renderAppBar } from "./menuScreen";
  * - 上のバーの題の下に保存の状態（「保存済み」「保存待ち」「外で変わりました」。5.4）、右に［横で書く］［縦で書く］（5.3 の1）
  * - 保存できなかったとき・外で変わって保存を止めたときは、真ん中の窓で1回だけ知らせる（5.4）
  * - 離れる前に保存を済ませる。済まなければ訊く（書きかけは端末の控えに残っている）
+ * - 欄の下（キーボードのすぐ上）に道具帯（設計書 5.6 の案の並び。`manuscriptTools.ts`）。取り消しはアプリが持つ（5.5。
+ *   `undoHistory.ts`。ブラウザの取り消しは使わない）
  * - 止められる前の書きかけは、控えたあとで本文が変わっていたときだけ戻すかを訊く（{@link RESTORE_QUESTION}）。
  *   焦点・背景・端末の［戻る］キーは［書きかけを戻す］の側（字を失わない側）
  */
@@ -77,16 +81,30 @@ export function episodeScreenTitle(path: string): string {
   return name.replace(/\.txt$/i, "");
 }
 
+/** 道具帯（話を開くまで隠す） */
+function renderToolStrip(): string {
+  const buttons = TOOL_STRIP.map((tool) => `<button type="button" data-tool="${tool.id}">${escapeHtml(tool.label)}</button>`).join("");
+  return `<div class="ms-tools" id="msTools" role="toolbar" aria-label="道具" hidden>${buttons}</div>`;
+}
+
 export const EXTERNAL_CHANGE_MESSAGE = "外で変わったので、保存を止めました\n書きかけは残っています";
 
 /** 書く欄（いまは textarea。替えるときはここだけ） */
 interface WritingPane {
   setText(text: string): void;
+  value(): string;
+  selection(): { start: number; end: number };
+  /** 道具帯・取り消しで本文を替える（打ったのと同じく onChange へ渡す） */
+  apply(edit: TextEdit): void;
   setOrientation(orientation: WritingOrientation): void;
   destroy(): void;
 }
 
-function mountWritingPane(host: HTMLElement, orientation: WritingOrientation, onChange: (text: string) => void): WritingPane {
+function mountWritingPane(
+  host: HTMLElement,
+  orientation: WritingOrientation,
+  onChange: (text: string, kind: "type" | "other") => void
+): WritingPane {
   const area = document.createElement("textarea");
   area.className = `ms-editor ${orientation}`;
   area.id = "msEditor";
@@ -95,12 +113,30 @@ function mountWritingPane(host: HTMLElement, orientation: WritingOrientation, on
   area.spellcheck = false;
   area.setAttribute("autocapitalize", "off");
   area.setAttribute("autocomplete", "off");
-  const onInput = () => onChange(area.value);
+  // 打った字・⌫ の1字消し・変換中の字はまとめてよい手。改行・貼り付けなどはいつも1手
+  const onInput = (event: Event) => {
+    const type = (event as InputEvent).inputType ?? "";
+    const kind = /^(insertText|insertCompositionText|deleteContentBackward|deleteContentForward)$/.test(type) ? "type" : "other";
+    onChange(area.value, kind);
+  };
+  // ブラウザの取り消しは使わない（アプリの手と食い違う。設計書 5.5）
+  const onBeforeInput = (event: Event) => {
+    const type = (event as InputEvent).inputType;
+    if (type === "historyUndo" || type === "historyRedo") event.preventDefault();
+  };
   area.addEventListener("input", onInput);
+  area.addEventListener("beforeinput", onBeforeInput);
   host.appendChild(area);
   return {
     setText(text) {
       area.value = text;
+    },
+    value: () => area.value,
+    selection: () => ({ start: area.selectionStart, end: area.selectionEnd }),
+    apply(edit) {
+      area.value = edit.text;
+      area.setSelectionRange(edit.selStart, edit.selEnd);
+      onChange(edit.text, "other");
     },
     setOrientation(next) {
       area.classList.toggle("vertical", next === "vertical");
@@ -108,6 +144,7 @@ function mountWritingPane(host: HTMLElement, orientation: WritingOrientation, on
     },
     destroy() {
       area.removeEventListener("input", onInput);
+      area.removeEventListener("beforeinput", onBeforeInput);
       area.remove();
     },
   };
@@ -128,7 +165,7 @@ export function mountEpisodeScreen(
   options: { toast(text: string): void; stillHere(): boolean }
 ): EpisodeLeaveGuard {
   let orientation = readOrientation();
-  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-host" id="msHost" aria-busy="true"></div>`;
+  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-host" id="msHost" aria-busy="true"></div>${renderToolStrip()}`;
   // 上のバーの右に押し口を入れる
   const toggle = document.createElement("button");
   toggle.className = "appbar-action";
@@ -140,6 +177,72 @@ export function mountEpisodeScreen(
   let session: EpisodeSession | undefined;
   let pane: WritingPane | undefined;
   let destroyed = false;
+  const history = new UndoHistory();
+  /** 取り消しの手を積むための、ひとつ前の本文 */
+  let shown = "";
+  const strip = screen.querySelector<HTMLElement>("#msTools")!;
+  const button = (id: ToolId) => strip.querySelector<HTMLButtonElement>(`[data-tool="${id}"]`)!;
+  const refreshTools = () => {
+    button("undo").disabled = !history.canUndo();
+    button("redo").disabled = !history.canRedo();
+  };
+  const onEdit = (text: string, kind: "type" | "other") => {
+    history.record(shown, text, kind, Date.now());
+    shown = text;
+    session?.edit(text);
+    refreshTools();
+  };
+  // 押しても欄の焦点と選んだ範囲を外さない（選んだ字に振るため）
+  strip.addEventListener("pointerdown", (event) => event.preventDefault());
+  strip.addEventListener("click", (event) => {
+    const id = (event.target as HTMLElement).closest<HTMLElement>("[data-tool]")?.dataset.tool as ToolId | undefined;
+    if (id && pane) void runTool(id, pane);
+  });
+  const runTool = async (id: ToolId, target: WritingPane): Promise<void> => {
+    const text = target.value();
+    const { start, end } = target.selection();
+    switch (id) {
+      case "undo":
+      case "redo": {
+        const step = id === "undo" ? history.undo(text) : history.redo(text);
+        if (step) {
+          shown = step.text;
+          target.apply({ text: step.text, selStart: step.caret, selEnd: step.caret });
+        }
+        // apply は手を積まない（shown を先に合わせた）
+        refreshTools();
+        return;
+      }
+      case "brackets":
+        return target.apply(wrapBrackets(text, start, end));
+      case "dash":
+        return target.apply(insertText(text, start, end, "――"));
+      case "ellipsis":
+        return target.apply(insertText(text, start, end, "……"));
+      case "emphasis": {
+        const result = toggleEmphasis(text, start, end);
+        if (result.ok) target.apply(result.edit);
+        else options.toast(result.reason);
+        return;
+      }
+      case "ruby": {
+        const plan = rubyPlan(text, start, end);
+        if (plan.kind === "none") return options.toast(plan.reason);
+        const base = plan.kind === "new" ? plan.base : plan.chunk.base;
+        const reading = await askText(`「${base}」の読み`, {
+          initial: plan.kind === "edit" ? plan.chunk.reading : "",
+          ...(plan.kind === "edit" ? { note: "空にするとルビを外します" } : {}),
+          validate: (value) => (plan.kind === "new" && value === "" ? "読みを入れてください" : undefined),
+        });
+        // 訊いているあいだに本文が替わっていたら振らない（同期・取り消し）
+        if (reading === undefined || target.value() !== text) return;
+        const result = applyRuby(text, plan, reading);
+        if (result.ok) target.apply(result.edit);
+        else options.toast(result.reason);
+        return;
+      }
+    }
+  };
   const showState = (status: AutoSaveStatus) => {
     stateEl.textContent = status;
     stateEl.dataset.state = status;
@@ -167,8 +270,11 @@ export function mountEpisodeScreen(
       return;
     }
     session = result.session;
-    pane = mountWritingPane(host, orientation, (text) => session?.edit(text));
-    pane.setText(session.text());
+    pane = mountWritingPane(host, orientation, onEdit);
+    shown = session.text();
+    pane.setText(shown);
+    strip.hidden = false;
+    refreshTools();
     showState(session.status());
     session.onStatusChange((status) => {
       showState(status);

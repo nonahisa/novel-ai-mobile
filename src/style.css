@@ -960,8 +960,8 @@ button {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  /* 上のバー（52px）と下の余白を除いた高さ。キーボードが出たら WebView が縮む */
-  height: calc(100dvh - 52px - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  /* 上のバー（52px）・下の余白・道具帯（52px）を除いた高さ。キーボードが出たら WebView が縮む */
+  height: calc(100dvh - 52px - 24px - 52px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   min-height: 240px;
   padding: 14px 12px;
   border: 0;
@@ -989,4 +989,33 @@ button {
 /* ［書く］の頭の、最後に開いた話の札 */
 .last-episode {
   margin: 12px 0 4px;
+}
+/* 原稿エディターの道具帯（欄のすぐ下＝キーボードのすぐ上。設計書 5.6）。入りきらなければ横へ送る */
+.ms-tools {
+  display: flex;
+  gap: 6px;
+  height: 52px;
+  box-sizing: border-box;
+  padding: 6px 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.ms-tools[hidden] {
+  display: none;
+}
+.ms-tools button {
+  flex: none;
+  min-width: 52px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.ms-tools button:disabled {
+  opacity: 0.45;
 }

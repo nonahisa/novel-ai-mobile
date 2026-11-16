@@ -322,21 +322,59 @@ export function mountComposedPane(
     snapTimer = undefined;
     snapCaretOutOfChunk();
   };
+  /**
+   * 短く押しただけ（長押しでもなぞりでもない）なら、前のようにすぐ置き直す（2026-11-17 エミュレーター）。
+   * 待つと、そのあいだ Android がカーソルを書けない所（塊の中）にあると見て、キーボードを閉じた
+   */
+  const LONG_PRESS_MS = 350;
+  let touchStartedAt = 0;
+  let longGesture = false;
+  /**
+   * 指と選びの動きを記録に残す（2026-11-17。iPad の 0.1.70 で、長押しでなぞっても範囲ができなかった訳を、
+   * Mac の試しの記録で見分けるため）。選びは変わったときだけ、1秒に5行まで
+   */
+  let lastSelLog = "";
+  let lastSelLogAt = 0;
+  const logSelectionWhileTouching = () => {
+    const sel = selectionOffsets();
+    const text = sel ? (sel.start === sel.end ? `カーソル ${sel.start}字目` : `${sel.start}〜${sel.end}字目`) : "選びなし";
+    const now = Date.now();
+    if (text === lastSelLog || now - lastSelLogAt < 200) return;
+    lastSelLog = text;
+    lastSelLogAt = now;
+    log(`C 指の間の選び：${text}`);
+  };
   const onTouchStart = () => {
     touching = true;
+    touchStartedAt = Date.now();
+    longGesture = false;
+    lastSelLog = "";
     window.clearTimeout(snapTimer);
+    log("C 指：触れた");
   };
-  const onTouchEnd = () => {
+  const onTouchEnd = (e: TouchEvent) => {
     touching = false;
-    scheduleSnap();
+    longGesture = Date.now() - touchStartedAt >= LONG_PRESS_MS;
+    log(`C 指：${e.type === "touchcancel" ? "取り消された（端末が引き取った）" : "離れた"}（${Date.now() - touchStartedAt}ms）`);
+    window.clearTimeout(snapTimer);
+    snapTimer = undefined;
+    if (longGesture) scheduleSnap();
+    else snapCaretOutOfChunk();
   };
   const onSelectionChange = () => {
     if (composing) return;
     // ［ルビ］［傍点］を押したときに焦点が外れても使えるように、欄の中の最後の選択を覚える
     const seen = selectionOffsets();
     if (seen) lastSel = seen;
+    if (touching || longGesture) logSelectionWhileTouching();
     if (touching) return;
-    scheduleSnap();
+    if (longGesture) {
+      scheduleSnap();
+      return;
+    }
+    window.clearTimeout(snapTimer);
+    snapTimer = undefined;
+    snapCaretOutOfChunk();
   };
   /**
    * 範囲の頭や末が塊の中（書けない所）にあれば、塊ごと選び直す（2026-11-17 iPad の試し9）。
@@ -375,6 +413,31 @@ export function mountComposedPane(
     placeCaret(offset);
     log(`C カーソルを${inChunk ? "塊の外" : "字の節の中"}へ置き直した：${describeCaretAt(tokens, offset)}`);
   };
+  /**
+   * **塊を押したら、ブラウザに任せず、こちらで塊の前か後ろにカーソルを置く**（2026-11-17 エミュレーター）。
+   * 任せると、押した瞬間にカーソルが書けない所（塊の中）へ入り、Android はキーボードを閉じた。
+   * mousedown の既定を止めると、選びも焦点も動かない。長押し（選ぶ）は mousedown を出さないので、そのまま
+   */
+  const chunkAt = (target: EventTarget | null): HTMLElement | undefined => {
+    const el = target instanceof Element ? target.closest<HTMLElement>("[data-src]") : null;
+    return el && el.parentElement === element ? el : undefined;
+  };
+  const onMouseDown = (e: MouseEvent) => {
+    if (composing || !chunkAt(e.target)) return;
+    e.preventDefault();
+  };
+  const onClick = (e: MouseEvent) => {
+    const chunk = chunkAt(e.target);
+    if (composing || !chunk) return;
+    const index = Array.prototype.indexOf.call(element.childNodes, chunk) as number;
+    const box = chunk.getBoundingClientRect();
+    const vertical = getComputedStyle(element).writingMode.startsWith("vertical");
+    const before = vertical ? e.clientY < box.top + box.height / 2 : e.clientX < box.left + box.width / 2;
+    const offset = offsetOf(element, before ? index : index + 1);
+    if (document.activeElement !== element) element.focus({ preventScroll: true });
+    placeCaret(offset);
+    log(`C 塊を押したので、塊の${before ? "前" : "後ろ"}へカーソルを置いた：${describeCaretAt(tokens, offset)}`);
+  };
   /** 押したら、押した所のカーソルの様子を記録に残す（iPad・Android の実機の確かめ） */
   const onPointerUp = (e: PointerEvent) => {
     const point = `${Math.round(e.clientX)}/${Math.round(e.clientY)}`;
@@ -407,6 +470,8 @@ export function mountComposedPane(
   element.addEventListener("compositionstart", onCompStart);
   element.addEventListener("compositionend", onCompEnd);
   element.addEventListener("pointerup", onPointerUp);
+  element.addEventListener("mousedown", onMouseDown);
+  element.addEventListener("click", onClick);
   element.addEventListener("touchstart", onTouchStart, { passive: true });
   element.addEventListener("touchend", onTouchEnd, { passive: true });
   element.addEventListener("touchcancel", onTouchEnd, { passive: true });
@@ -474,6 +539,8 @@ export function mountComposedPane(
       element.removeEventListener("compositionstart", onCompStart);
       element.removeEventListener("compositionend", onCompEnd);
       element.removeEventListener("pointerup", onPointerUp);
+      element.removeEventListener("mousedown", onMouseDown);
+      element.removeEventListener("click", onClick);
       element.removeEventListener("touchstart", onTouchStart);
       element.removeEventListener("touchend", onTouchEnd);
       element.removeEventListener("touchcancel", onTouchEnd);

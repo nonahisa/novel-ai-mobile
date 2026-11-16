@@ -64,6 +64,13 @@ export function buildTermIndex(input: TermInput): TermIndex {
   return new TermIndex(termEntriesFrom(input));
 }
 
+/** 作品の設定資料から作った語（`platform/workTerms.ts`）で、本文の中の用語を探す */
+export function termFinderFrom(entries: readonly TermEntry[]): (text: string) => TermSpan[] {
+  if (entries.length === 0) return () => [];
+  const index = new TermIndex([...entries]);
+  return (text) => findTermSpans(index, text);
+}
+
 /** 本文の中の用語（前から順。重なりは本体と同じく最左最長で1つに） */
 export function findTermSpans(index: TermIndex, text: string): TermSpan[] {
   return index.find(text).map((m) => ({ start: m.start, end: m.end, kind: m.entry.kind }));

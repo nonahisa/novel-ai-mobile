@@ -13,6 +13,10 @@ import { mountEditContextPane } from "./editContextPane";
 import { mountImeSinkPane } from "./imeSinkPane";
 import { chooseMergeRegions, finishMerge, planExternalMerge, regionChoices } from "./externalMerge";
 import { readTextFile, writeTextFilePreservingFormat } from "../platform/textFile";
+import { readWorkLayout } from "../platform/workScan";
+import { readWorkTerms } from "../platform/workTerms";
+import { termFinderFrom } from "./termHighlight";
+import type { TermFinder } from "./editContextPane";
 
 /**
  * **原稿エディター（C）の土台**：話の一覧から押した話を開いて書く画面（設計書 5.1〜5.4）。
@@ -103,6 +107,8 @@ interface WritingPane {
   /** 道具帯・取り消しで本文を替える（打ったのと同じく onChange へ渡す） */
   apply(edit: TextEdit): void;
   setOrientation(orientation: WritingOrientation): void;
+  /** 用語の色（右の線の欄だけ。いまの形〈textarea〉は中の字に色を付けられない） */
+  setTerms?(find: TermFinder): void;
   destroy(): void;
 }
 
@@ -214,6 +220,7 @@ function mountRightLinePane(
       element.classList.toggle("horizontal", next === "horizontal");
       pane.setOrientation(next);
     },
+    setTerms: (find) => pane.setTerms(find),
     destroy() {
       pane.destroy();
       element.remove();
@@ -255,6 +262,8 @@ export function mountEpisodeScreen(
     stillHere(): boolean;
     /** 原稿を書く直前（アプリが書いた話の控え。`src/platform/touchedPaths.ts`） */
     beforeWrite?: (path: string) => Promise<void>;
+    /** 作品のフォルダー（用語の色の語を、作品の設定資料から作る。設計書 5.7） */
+    workRoot?: string;
   }
 ): EpisodeLeaveGuard {
   let orientation = readOrientation();
@@ -284,6 +293,27 @@ export function mountEpisodeScreen(
   const host = screen.querySelector<HTMLElement>("#msHost")!;
   let session: EpisodeSession | undefined;
   let pane: WritingPane | undefined;
+  /**
+   * 用語の色（設計書 5.7）：作品の設定資料から語を作り、欄が出てから色を付ける。読むのは画面を開いて1回。
+   * 設定が読めなくても色が無いだけで、書くのは止めない（本体の TermHighlighter と同じ）。`設定/` へは書かない
+   */
+  let termFinder: Promise<TermFinder | undefined> | undefined;
+  const applyWorkTerms = () => {
+    if (!options.workRoot || !pane?.setTerms) return;
+    const root = options.workRoot;
+    termFinder ??= (async () => {
+      try {
+        const layout = await readWorkLayout(store, root);
+        return termFinderFrom((await readWorkTerms(store, layout.settings)).entries);
+      } catch {
+        return undefined;
+      }
+    })();
+    const target = pane;
+    void termFinder.then((find) => {
+      if (find && pane === target && options.stillHere()) target.setTerms?.(find);
+    });
+  };
   let destroyed = false;
   const history = new UndoHistory();
   /** 取り消しの手を積むための、ひとつ前の本文 */
@@ -389,6 +419,7 @@ export function mountEpisodeScreen(
       pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, orientation, onEdit) : mountWritingPane(host, orientation, onEdit);
       shown = session.text();
       pane.setText(shown);
+      applyWorkTerms();
       history.clear();
       strip.hidden = false;
       refreshTools();

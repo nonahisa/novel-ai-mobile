@@ -9,6 +9,7 @@ import {
 } from "../shared";
 import { fromStorePath } from "../platform/paths";
 import type { ScannedWork, WorkListItem } from "../platform/workScan";
+import type { WorkSyncState } from "../platform/workSync";
 
 /**
  * 作品一覧（A）と話の一覧（B）に出す中身（設計書 4.2）。画面の描き方は `workScreens.ts`、ここは何をどの順に出すかだけ。
@@ -101,4 +102,15 @@ function episodeRow(episode: EpisodeFile, work: ScannedWork): EpisodeListRow {
 /** 章立ての開始の話（作品フォルダーからの相対）と照らす作品の場所（話の `filePath` と同じ形） */
 function workFolderLocation(work: ScannedWork): string {
   return fromStorePath(work.root);
+}
+
+/**
+ * 同期の状態の印（見本の作品一覧の「送っていない話：1」「同期済み」）。git で持っていない作品は出さない。
+ * 原稿のほかの変更しか無いときは「送っていない変更」（送り忘れに気づけるように。設計書 6章）
+ */
+export function syncFlag(state: WorkSyncState | undefined): { text: string; tone: "warn" | "ok" } | undefined {
+  if (!state) return undefined;
+  if (state.unsent.length > 0) return { text: `送っていない話：${state.unsent.length}`, tone: "warn" };
+  if (state.otherCount > 0) return { text: `送っていない変更：${state.otherCount}`, tone: "warn" };
+  return { text: "同期済み", tone: "ok" };
 }

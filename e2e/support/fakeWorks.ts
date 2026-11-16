@@ -31,7 +31,10 @@ export const FAKE_WORKS: Record<string, string> = {
 };
 
 /** 作り物の作品を置いて、`hash` を開き直す */
-export async function openWithWorks(page: Page, hash: string, files: Record<string, string> = FAKE_WORKS): Promise<void> {
+/** 置く中身。字はそのまま UTF-8 で、バイト（git の中身など）は base64 で渡す */
+export type FakeFile = string | { base64: string };
+
+export async function openWithWorks(page: Page, hash: string, files: Record<string, FakeFile> = FAKE_WORKS): Promise<void> {
   await page.goto("/#/other");
   await page.evaluate(async (entries) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -57,10 +60,15 @@ export async function openWithWorks(page: Page, hash: string, files: Record<stri
     }
     for (const [path, text] of entries) {
       const full = `/DATA/works/${path}`;
-      const bytes = new TextEncoder().encode(text);
-      let binary = "";
-      bytes.forEach((b) => (binary += String.fromCharCode(b)));
-      const content = btoa(binary);
+      let content: string;
+      if (typeof text === "string") {
+        const bytes = new TextEncoder().encode(text);
+        let binary = "";
+        bytes.forEach((b) => (binary += String.fromCharCode(b)));
+        content = btoa(binary);
+      } else {
+        content = text.base64;
+      }
       store.put({ path: full, folder: full.slice(0, full.lastIndexOf("/")), type: "file", size: content.length, ctime: now, mtime: now, content });
     }
     await new Promise<void>((resolve, reject) => {

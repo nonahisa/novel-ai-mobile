@@ -1024,3 +1024,20 @@ button {
   background: var(--ok-soft, color-mix(in srgb, var(--ok) 14%, transparent));
   color: var(--ok);
 }
+/* 話の一覧の頭の同期の印（押すと同期の画面 G） */
+button.sync-open {
+  border: 0;
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: inherit;
+}
+/* 同期の画面（G）。［取ってくる］［送る］は、作るまで灰色 */
+.sync-actions {
+  margin: 12px 0;
+}
+.sync-actions .planned {
+  color: var(--muted);
+}
+.sync-state {
+  margin: 4px 0;
+}

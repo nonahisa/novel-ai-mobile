@@ -135,6 +135,16 @@ test.describe("左の線の欄の用語の色（テスト中）", () => {
     await cdp.send("Input.imeSetComposition", { text: "あね", selectionStart: 2, selectionEnd: 2 });
     await expect(page.locator(".ms-editor-wrap")).toHaveClass(/composing/);
     expect(await page.locator("#msEditor").evaluate((el) => getComputedStyle(el).color)).not.toBe("rgba(0, 0, 0, 0)");
+    // 裏の層は字だけ隠し、欄の地は残す（層ごと隠すと、変換のあいだ欄が灰色になった）
+    const back = await page.locator(".ms-backdrop").evaluate((el) => {
+      const style = getComputedStyle(el);
+      const term = el.querySelector(".term-character");
+      return { visibility: style.visibility, background: style.backgroundColor, color: style.color, term: term ? getComputedStyle(term).color : "" };
+    });
+    expect(back.visibility).toBe("visible");
+    expect(back.background).not.toBe("rgba(0, 0, 0, 0)");
+    expect(back.color).toBe("rgba(0, 0, 0, 0)");
+    expect(back.term).toBe("rgba(0, 0, 0, 0)");
     await cdp.send("Input.imeSetComposition", { text: "姉", selectionStart: 1, selectionEnd: 1 });
     await cdp.send("Input.insertText", { text: "姉" });
     await cdp.detach();

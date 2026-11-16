@@ -1012,12 +1012,16 @@ button {
   color: transparent;
   background: color-mix(in srgb, var(--ink) 22%, transparent);
 }
-/* 変換中は textarea の字を見せる（変換中の線を字の色で描く端末がある）。裏の層は隠す */
+/*
+  変換中は textarea の字を見せる（変換中の線を字の色で描く端末がある）。裏の層は字だけ隠し、欄の地は残す
+  （層ごと隠すと地も消え、変換のあいだ欄が灰色になった。2026-11-17 エミュレーター）
+*/
 .ms-editor-wrap.composing .ms-editor-over {
   color: var(--ink);
 }
-.ms-editor-wrap.composing .ms-backdrop {
-  visibility: hidden;
+.ms-editor-wrap.composing .ms-backdrop,
+.ms-editor-wrap.composing .ms-backdrop * {
+  color: transparent;
 }
 /*
   幅で3段（設計書 4.1・4.3）。狭い（600dp 未満）は原稿だけ。中（600〜840dp）は左に話の一覧 280dp、

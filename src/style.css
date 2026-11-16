@@ -986,6 +986,58 @@ button {
   overflow-x: hidden;
   overflow-y: auto;
 }
+/*
+  幅で3段（設計書 4.1・4.3）。狭い（600dp 未満）は原稿だけ。中（600〜840dp）は左に話の一覧 280dp、
+  広い（840dp 以上）は 260dp。段は窓の幅だけで決め、原稿の欄は作り直さない（4.5）。［一覧］で畳める
+*/
+.ms-side,
+.ms-side-toggle {
+  display: none;
+}
+.ms-main {
+  min-width: 0;
+}
+@media (min-width: 600px) {
+  .ms-layout {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .ms-layout[data-side="closed"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ms-side {
+    display: block;
+    height: calc(100dvh - 52px - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-right: 1px solid var(--line);
+  }
+  .ms-layout[data-side="closed"] .ms-side {
+    display: none;
+  }
+  .ms-side-toggle {
+    display: inline-flex;
+    align-items: center;
+  }
+  .ms-side-toggle[aria-pressed="true"] {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+@media (min-width: 840px) {
+  .ms-layout {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+}
+.ms-side-title {
+  margin: 12px 12px 4px;
+  font-size: 14px;
+  color: var(--sub);
+}
+.ms-side .ep[aria-current="page"] {
+  background: var(--accent-soft);
+}
 /* ［書く］の頭の、最後に開いた話の札 */
 .last-episode {
   margin: 12px 0 4px;

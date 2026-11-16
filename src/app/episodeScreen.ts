@@ -158,6 +158,23 @@ export interface EpisodeLeaveGuard {
   destroy(): void;
 }
 
+/** 中・広い段の左の話の一覧を開いておくか（端末に覚える。既定は開く） */
+export const SIDE_KEY = "novelai.episodeSide";
+function readSideOpen(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(SIDE_KEY) !== "closed";
+  } catch {
+    return true;
+  }
+}
+function writeSideOpen(open: boolean): void {
+  try {
+    globalThis.localStorage?.setItem(SIDE_KEY, open ? "open" : "closed");
+  } catch {
+    /* 覚えられなくても、いまの画面は替わる */
+  }
+}
+
 export function mountEpisodeScreen(
   screen: HTMLElement,
   store: FileStore,
@@ -170,8 +187,23 @@ export function mountEpisodeScreen(
   }
 ): EpisodeLeaveGuard {
   let orientation = readOrientation();
-  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-host" id="msHost" aria-busy="true"></div>${renderToolStrip()}`;
-  // 上のバーの右に押し口を入れる
+  // 幅が 600dp 以上（中・広い段）なら、左に話の一覧（`#msSide`。中身は呼ぶ側が入れる）。段は CSS だけで切り替え、
+  // 原稿の欄は作り直さない（回転や分割画面で、書きかけ・カーソル・変換中の字を保つ。設計書 4.3・4.5）
+  const sideOpen = readSideOpen();
+  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div>${renderToolStrip()}</div></div>`;
+  // 上のバーの右に押し口を入れる。［一覧］は中・広い段だけ（CSS で出す）
+  const sideToggle = document.createElement("button");
+  sideToggle.className = "appbar-action ms-side-toggle";
+  sideToggle.id = "sideToggle";
+  sideToggle.textContent = "一覧";
+  sideToggle.setAttribute("aria-pressed", String(sideOpen));
+  sideToggle.addEventListener("click", () => {
+    const open = sideToggle.getAttribute("aria-pressed") !== "true";
+    sideToggle.setAttribute("aria-pressed", String(open));
+    screen.querySelector<HTMLElement>("#msLayout")!.dataset.side = open ? "open" : "closed";
+    writeSideOpen(open);
+  });
+  screen.querySelector<HTMLElement>(".appbar")!.appendChild(sideToggle);
   const toggle = document.createElement("button");
   toggle.className = "appbar-action";
   toggle.id = "orientToggle";

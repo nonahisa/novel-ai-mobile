@@ -165,6 +165,50 @@ describe("打って保存する", () => {
     session.dispose();
     expect(visibility.size).toBe(0);
   });
+
+  test("端末のアプリが裏に回ったら（visibilitychange が来なくても）保存する。閉じたら外す", async () => {
+    const store = new MemoryFileStore();
+    store.putExternally(FILE, utf8("姉から手紙が届いた。\n"));
+    let onBackground: (() => void) | undefined;
+    const detach = vi.fn(() => {
+      onBackground = undefined;
+    });
+    const result = await openEpisode(store, FILE, {
+      visibility: new FakeVisibility(),
+      background: (listener) => {
+        onBackground = listener;
+        return detach;
+      },
+    });
+    if (!result.ok) throw new Error(result.reason);
+    const { session } = result;
+    session.edit("姉から手紙が届いた。アプリが裏へ。\n");
+    onBackground!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(textOf(await store.readFile(FILE))).toBe("姉から手紙が届いた。アプリが裏へ。\n");
+    expect(session.status()).toBe("保存済み");
+    session.dispose();
+    expect(detach).toHaveBeenCalledTimes(1);
+  });
+
+  test("裏に回ったとき保存できない字なら、控えをすぐ書く", async () => {
+    const store = new MemoryFileStore();
+    store.putExternally(FILE, iconv.encode("猫\r\n", "Shift_JIS"));
+    let onBackground: (() => void) | undefined;
+    const result = await openEpisode(store, FILE, {
+      visibility: new FakeVisibility(),
+      background: (listener) => {
+        onBackground = listener;
+        return () => undefined;
+      },
+    });
+    if (!result.ok) throw new Error(result.reason);
+    result.session.edit("猫♡\n");
+    onBackground!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await journalText(store)).toBe("猫♡\n");
+    result.session.dispose();
+  });
 });
 
 describe("止められたあと開き直す", () => {

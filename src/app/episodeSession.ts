@@ -19,8 +19,12 @@ import { createDraftJournal, restoreDecision, type DraftJournal } from "./draftJ
  *   （`confirmRestore`。同じなら黙って戻す。2026-11-16 作者の答え「本文が変わったときだけ訊く」）
  * - **控えを消すのは、保存が済んだ（「保存済み」になった）ときだけ**。「保存待ち」「外で変わりました」の
  *   あいだと、閉じたときに保存できていなければ控えを残す（次に開いたとき戻る）
- * - 裏に回ったら、保存と控えの両方をすぐ書く
+ * - 裏に回ったら、保存と控えの両方をすぐ書く（`visibilitychange` と、端末のアプリの状態 `background`。
+ *   どちらか一方が届かない端末があっても書く。設計書 5.4「アプリが裏に回るとき」）
  */
+
+/** アプリが裏に回ったことを知らせる所（端末では Capacitor の `appStateChange`）。外す関数を返す */
+export type BackgroundSource = (onBackground: () => void) => () => void;
 
 export type OpenEpisodeResult =
   | { ok: true; session: EpisodeSession }
@@ -46,6 +50,8 @@ export interface EpisodeSession {
 export interface OpenEpisodeOptions {
   /** 裏に回ったことを知る所（既定は `document`） */
   visibility?: VisibilitySource;
+  /** アプリが裏に回ったことを知る所（端末のアプリの状態）。在れば、裏に回ったとき保存と控えを書く */
+  background?: BackgroundSource;
   /** 自動保存と控えの時計（テストで偽の時計に差し替える） */
   timer?: AutoSaveTimer;
   /** 控えを書けなかったとき（原稿は自動保存が書くので、知らせるだけ） */
@@ -84,7 +90,7 @@ export async function openEpisode(store: FileStore, path: string, options: OpenE
   const restored = decision === "restore" || (decision === "ask" && (options.confirmRestore ? await options.confirmRestore() : true));
   if (restored) autoSave.edit(kept!.text);
   else if (kept !== undefined) await journal.clear();
-  return { ok: true, session: wrap(path, autoSave, journal, restored, base, options.visibility) };
+  return { ok: true, session: wrap(path, autoSave, journal, restored, base, options.visibility, options.background) };
 }
 
 function wrap(
@@ -93,7 +99,8 @@ function wrap(
   journal: DraftJournal,
   restored: boolean,
   base: { text: string },
-  visibility: VisibilitySource | undefined
+  visibility: VisibilitySource | undefined,
+  background: BackgroundSource | undefined
 ): EpisodeSession {
   // 保存が済んだら控えは要らない（保存のあいだに打った字があれば「保存待ち」のままなので消さない）。
   // 置き場の本文はいまの字になったので、これからの控えのもとはこの字
@@ -109,6 +116,14 @@ function wrap(
   };
   source?.addEventListener("visibilitychange", onHidden);
 
+  const flush = async (): Promise<AutoSaveStatus> => {
+    const status = await autoSave.flush();
+    if (status === "保存済み") await journal.clear();
+    else await journal.flush();
+    return status;
+  };
+  const detachBackground = background?.(() => void flush());
+
   return {
     path,
     restored,
@@ -119,17 +134,13 @@ function wrap(
       if (autoSave.status() === "保存済み") void journal.clear();
       else journal.note(text);
     },
-    async flush() {
-      const status = await autoSave.flush();
-      if (status === "保存済み") await journal.clear();
-      else await journal.flush();
-      return status;
-    },
+    flush,
     onStatusChange: (listener) => autoSave.onStatusChange(listener),
     onFailure: (listener) => autoSave.onFailure(listener),
     dispose() {
       detachAutoSave();
       source?.removeEventListener("visibilitychange", onHidden);
+      detachBackground?.();
       // 待っている控えは書いてから外す（保存できていない書きかけを失わない）
       if (autoSave.status() !== "保存済み") void journal.flush();
       autoSave.dispose();

@@ -107,3 +107,6 @@ export {
 export { checkWorkEpisodeNumbers, workEpisodeNumberMarks, type WorkEpisodeNumberReport } from "novel-ai-assistant/src/core/episodeNumberCheck";
 export { episodeUnit } from "novel-ai-assistant/src/core/episodeLabel";
 export { parseLockEvents, resolveLocks, lockOf, type FileLock } from "novel-ai-assistant/src/models/fileLock";
+// 有料の AI へ送る前の確認の文言（本体のまま）と、手元の AI かの判定（引継ぎ書 72章）
+export { paidUsageNotice, type PaidUsageNotice, type PaidUsageNoticeOptions } from "novel-ai-assistant/src/core/paidUsageNotice";
+export { isLocalProviderId } from "novel-ai-assistant/src/core/localProviders";

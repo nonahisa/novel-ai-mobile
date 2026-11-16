@@ -8,6 +8,7 @@ import { CapacitorGitFsBackend } from "../platform/gitFs";
 import { chooseTransport } from "../platform/fetchTimeouts";
 import { LedgerWriteGate } from "../platform/sharedVersionGate";
 import { DeviceSettings, capacitorPreferencesBackend } from "../platform/deviceSettings";
+import { confirmPaidUsage } from "./paidConfirm";
 
 /** 動作確認ページを描く（開発用。下のタブの［ほか］→ ヘルプから開く） */
 export function mountCheckPage(app: HTMLElement): void {
@@ -101,6 +102,13 @@ app.innerHTML = `
     </p>
     <button id="abortRoute">試す</button>
     <pre id="abortResult" class="result">まだ試していません</pre>
+  </section>
+
+  <section class="card">
+    <h2>8. 有料の AI へ送る前の確認の窓</h2>
+    <p class="note">本体と同じ文言の窓を出すだけです。どこにも送りません。</p>
+    <button id="paidConfirm">窓を出す</button>
+    <pre id="paidResult" class="result">まだ試していません</pre>
   </section>
 `;
 
@@ -352,5 +360,19 @@ document.querySelector<HTMLButtonElement>("#abortRoute")!.addEventListener("clic
   const answer = gate.check();
   lines.push(answer.allowed ? "✅ 設定の台帳を書けます" : `⛔ ${answer.message}`);
   show();
+});
+
+/* ---------- 8. 有料の AI へ送る前の確認の窓（送らない。引継ぎ書 72章） ---------- */
+
+const paidResult = document.querySelector<HTMLPreElement>("#paidResult")!;
+document.querySelector<HTMLButtonElement>("#paidConfirm")!.addEventListener("click", async () => {
+  const go = await confirmPaidUsage({
+    actionLabel: "誤字脱字",
+    providerId: "claude",
+    providerName: "Claude（クラウド・有料）",
+    model: "（見本のモデル）",
+    notice: { sends: "本文 約4,321字（1話）", calls: 1 },
+  });
+  paidResult.textContent = go ? "［実行］を選びました（送っていません）" : "［やめる］を選びました";
 });
 }

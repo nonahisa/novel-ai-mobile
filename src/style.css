@@ -1269,3 +1269,22 @@ a.gh-open {
 #workListSlot {
   padding-bottom: 72px;
 }
+/* 有料の AI へ送る前の確認の窓（本体の文言の3行と［詳しく］） */
+.dialog-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+.paid-lines,
+.paid-more ul {
+  margin: 0 0 10px;
+  padding-left: 1.2em;
+}
+.paid-more {
+  margin: 0 0 14px;
+  color: var(--sub);
+  font-size: 13px;
+}
+.paid-more summary {
+  min-height: 32px;
+  cursor: pointer;
+}

@@ -1019,3 +1019,8 @@ button {
 .ms-tools button:disabled {
   opacity: 0.45;
 }
+/* 同期済みの印（見本の .flag.ok） */
+.flag.ok {
+  background: var(--ok-soft, color-mix(in srgb, var(--ok) 14%, transparent));
+  color: var(--ok);
+}

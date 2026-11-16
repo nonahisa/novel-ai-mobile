@@ -38,7 +38,9 @@ import { askChoice } from "./dialog";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
 import { listWorks, scanWorkFolder, type ScanOptions } from "../platform/workScan";
 import { lastCommitTime } from "../platform/git";
-import { workSummary } from "./workListView";
+import { dayLabel, syncFlag, workSummary } from "./workListView";
+import { createGitFs, CapacitorGitFsBackend } from "../platform/gitFs";
+import { latestUnsentTime, readWorkSync, type WorkSyncState } from "../platform/workSync";
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
 import { mountEpisodeScreen } from "./episodeScreen";
 import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastEpisode } from "./lastEpisode";
@@ -298,15 +300,55 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
 
 /* ---------- 作品一覧（A）と話の一覧（B） ---------- */
 
+/**
+ * 作品の同期の状態（送っていない話。設計書 6章）。端末の置き場のときだけ（git の置き場も同じ `works` を指す）。
+ * 読めなければ出さない（同期の状態が分からないだけで、一覧は出す）
+ */
+async function syncStateOf(store: FileStore, root: string): Promise<WorkSyncState | undefined> {
+  if (!(store instanceof CapacitorFileStore)) return undefined;
+  try {
+    return await readWorkSync(createGitFs(new CapacitorGitFsBackend()), root);
+  } catch {
+    return undefined;
+  }
+}
+
+function flagHtml(state: WorkSyncState | undefined, extraClass = ""): string {
+  const flag = syncFlag(state);
+  return flag ? `<span class="flag ${flag.tone}${extraClass}" data-sync-flag>${escapeHtml(flag.text)}</span>` : "";
+}
+
+/**
+ * 一覧を描いたあとで、札ごとに同期の状態を足す（数えるのに作品のファイルを全部見るので、描くのを待たせない）。
+ * 送っていない話があれば、「最後に書いた日」はその話を書いた日にする（2026-11-16 作者の答え。引継ぎ書 48章）
+ */
+async function fillWorkSync(slot: HTMLElement, store: FileStore, stillHere: () => boolean): Promise<void> {
+  for (const card of [...slot.querySelectorAll<HTMLElement>(".work-card[data-work]")]) {
+    const state = await syncStateOf(store, card.dataset.work!);
+    if (!stillHere()) return;
+    card.insertAdjacentHTML("beforeend", flagHtml(state));
+    const latest = latestUnsentTime(state);
+    if (latest === undefined) continue;
+    const label = `最後に書いた日：${dayLabel(new Date(latest), new Date())}`;
+    const meta = card.querySelector<HTMLElement>(".work-meta");
+    const dateSpan = [...(meta?.children ?? [])].find((el) => el.textContent?.startsWith("最後に書いた日："));
+    if (dateSpan) dateSpan.textContent = label;
+    else meta?.insertAdjacentHTML("beforeend", `<span>${escapeHtml(label)}</span>`);
+  }
+}
+
 /** 作品を読み終えたら一覧を描く（読む間は空の枠のまま） */
 function mountWorkList(slot: HTMLElement, store: FileStore, options: ScanOptions, stillHere: () => boolean): void {
   const show = (html: string) => {
-    if (!stillHere()) return;
+    if (!stillHere()) return false;
     slot.innerHTML = html;
     slot.removeAttribute("aria-busy");
+    return true;
   };
   listWorks(store, options).then(
-    (items) => show(renderWorkList(items, new Date())),
+    (items) => {
+      if (show(renderWorkList(items, new Date()))) void fillWorkSync(slot, store, stillHere);
+    },
     (error) => show(renderWorkError(error instanceof Error ? error.message : String(error)))
   );
 }
@@ -326,6 +368,10 @@ function mountEpisodeList(screen: HTMLElement, store: FileStore, root: string, o
       screen.querySelector<HTMLElement>(".appbar-title")!.firstChild!.textContent = work.title;
       screen.querySelector<HTMLElement>("#workSummary")!.textContent = workSummary(work);
       show(renderEpisodeList(work));
+      void syncStateOf(store, root).then((state) => {
+        const flag = flagHtml(state, " work-warn");
+        if (flag && stillHere()) slot.insertAdjacentHTML("afterbegin", flag);
+      });
     },
     (error) => show(renderWorkError(error instanceof Error ? error.message : String(error)))
   );

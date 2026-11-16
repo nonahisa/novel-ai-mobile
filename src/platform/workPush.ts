@@ -55,15 +55,21 @@ async function exists(fs: GitFs, path: string): Promise<boolean> {
  * 手元の HEAD から変わった話を集める。中身は作業の木から読み、名前（`oid`）も数えて添える。
  * `touched` はアプリが書いた道（isomorphic-git が見落としても拾う）。
  */
-export async function collectChanges(fs: GitFs, dir: string, touched: readonly string[] = []): Promise<FileChange[]> {
+export async function collectChanges(
+  fs: GitFs,
+  dir: string,
+  touched: readonly string[] = [],
+  /** 数える道を絞る（書庫の中の1つの作品だけなど） */
+  filter?: (path: string) => boolean
+): Promise<FileChange[]> {
   const head = await git.resolveRef({ fs, dir, ref: "HEAD" });
-  const matrix = await git.statusMatrix({ fs, dir });
+  const matrix = await git.statusMatrix({ fs, dir, ...(filter ? { filter } : {}) });
   const candidates = new Set<string>();
   for (const [path, headState, workdirState] of matrix) {
     // 1 と 2 の違い＝書き換え、0 と 2＝新しい話、1 と 0＝消した話
     if (headState !== workdirState) candidates.add(path);
   }
-  for (const path of touched) candidates.add(path);
+  for (const path of touched) if (!filter || filter(path)) candidates.add(path);
 
   const changes: FileChange[] = [];
   for (const path of [...candidates].sort()) {

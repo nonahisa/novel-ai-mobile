@@ -183,6 +183,10 @@ test.describe("C 組んで書く", () => {
     expect(stayed.endNodeIsAfterChunk).toBe(true);
     expect(stayed.endOffset).toBe(2);
     await expect(page.locator("#imeLog")).not.toContainText("塊の外へ置き直した");
+    // 指と選びの動きは記録に残る（iPad の試しの見分けのため）
+    await expect(page.locator("#imeLog")).toContainText("C 指：触れた");
+    await expect(page.locator("#imeLog")).toContainText("C 指の間の選び：");
+    await expect(page.locator("#imeLog")).toContainText("C 指：離れた");
   });
 
   test("塊の中から始めた範囲は、指を離すと塊ごと選び直し、⌫ で選んだ所が消える（iPad の試し9）", async ({ page }) => {

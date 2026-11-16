@@ -329,15 +329,33 @@ export function mountComposedPane(
   const LONG_PRESS_MS = 350;
   let touchStartedAt = 0;
   let longGesture = false;
+  /**
+   * 指と選びの動きを記録に残す（2026-11-17。iPad の 0.1.70 で、長押しでなぞっても範囲ができなかった訳を、
+   * Mac の試しの記録で見分けるため）。選びは変わったときだけ、1秒に5行まで
+   */
+  let lastSelLog = "";
+  let lastSelLogAt = 0;
+  const logSelectionWhileTouching = () => {
+    const sel = selectionOffsets();
+    const text = sel ? (sel.start === sel.end ? `カーソル ${sel.start}字目` : `${sel.start}〜${sel.end}字目`) : "選びなし";
+    const now = Date.now();
+    if (text === lastSelLog || now - lastSelLogAt < 200) return;
+    lastSelLog = text;
+    lastSelLogAt = now;
+    log(`C 指の間の選び：${text}`);
+  };
   const onTouchStart = () => {
     touching = true;
     touchStartedAt = Date.now();
     longGesture = false;
+    lastSelLog = "";
     window.clearTimeout(snapTimer);
+    log("C 指：触れた");
   };
-  const onTouchEnd = () => {
+  const onTouchEnd = (e: TouchEvent) => {
     touching = false;
     longGesture = Date.now() - touchStartedAt >= LONG_PRESS_MS;
+    log(`C 指：${e.type === "touchcancel" ? "取り消された（端末が引き取った）" : "離れた"}（${Date.now() - touchStartedAt}ms）`);
     window.clearTimeout(snapTimer);
     snapTimer = undefined;
     if (longGesture) scheduleSnap();
@@ -348,6 +366,7 @@ export function mountComposedPane(
     // ［ルビ］［傍点］を押したときに焦点が外れても使えるように、欄の中の最後の選択を覚える
     const seen = selectionOffsets();
     if (seen) lastSel = seen;
+    if (touching || longGesture) logSelectionWhileTouching();
     if (touching) return;
     if (longGesture) {
       scheduleSnap();

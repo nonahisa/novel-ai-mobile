@@ -49,13 +49,15 @@ test.describe("GitHub から取り寄せる", () => {
     const tabbar = (await page.locator("#tabbar").boundingBox())!;
     expect(fab.y + fab.height).toBeLessThanOrEqual(tabbar.y);
     await add.click();
-    await expect(page.locator(".dialog-list [data-choice]")).toHaveText(["GitHub から取り寄せる", "新しく作る未"]);
+    await expect(page.locator(".dialog-list [data-choice]")).toHaveText(["GitHub から取り寄せる", "新しく作る"]);
     await page.evaluate(() => document.dispatchEvent(new Event("backbutton")));
     await expect(page.locator(".dialog-backdrop")).toHaveCount(0);
     await expect(page).toHaveURL(/#\/works$/);
     await add.click();
+    // サインインしていなければ、新しく作るはサインインの画面へ
     await page.locator("[data-choice=new]").click();
-    await expect(page.locator("#toast")).toHaveText("まだ作っていません");
+    await expect(page).toHaveURL(/#\/github$/);
+    await page.evaluate(() => (location.hash = "#/works"));
     await add.click();
     await page.locator("[data-choice=import]").click();
     await expect(page).toHaveURL(/#\/import$/);
@@ -93,5 +95,35 @@ test.describe("GitHub から取り寄せる", () => {
     await page.evaluate(() => (location.hash = "#/works"));
     await expect(page.locator(".work-card").first()).toBeVisible();
     await expect(page.locator(".work-card", { hasText: "toudai" })).toHaveCount(0);
+  });
+});
+
+test.describe("新しく作る", () => {
+  test("題 → リポジトリの名前（英数字でなければ断る）→「GitHub に非公開のリポジトリ〈名前〉を作ります」→ 作る。同じ名前があれば知らせる", async ({ page }) => {
+    await signIn(page);
+    const created: unknown[] = [];
+    await page.route("https://api.github.com/user/repos", (route) => {
+      created.push(route.request().postDataJSON());
+      return route.fulfill({ status: 422, headers: CORS, contentType: "application/json", body: JSON.stringify({ message: "name already exists" }) });
+    });
+    await openWithWorks(page, "#/github");
+    await page.getByRole("button", { name: "サインイン" }).click();
+    await expect(page.locator(".gh-state")).toContainText("サインイン済み", { timeout: 10_000 });
+    await page.evaluate(() => (location.hash = "#/works"));
+    await page.locator("#addWork").click();
+    await page.locator("[data-choice=new]").click();
+    await expect(page.locator(".dialog-message")).toHaveText("作品の題");
+    await page.locator("#dialogInput").fill("港の灯_確認用");
+    await page.locator("[data-answer=yes]").click();
+    await expect(page.locator(".dialog-message")).toHaveText("GitHub のリポジトリの名前（英数字）");
+    await page.locator("#dialogInput").fill("港");
+    await page.locator("[data-answer=yes]").click();
+    await expect(page.locator(".dialog-note")).toContainText("英数字");
+    await page.locator("#dialogInput").fill("minato-kakuninyou");
+    await page.locator("[data-answer=yes]").click();
+    await expect(page.locator(".dialog-message")).toHaveText("GitHub に非公開のリポジトリ「minato-kakuninyou」を作ります");
+    await page.locator("[data-answer=yes]").click();
+    await expect(page.locator(".dialog-message")).toContainText("同じ名前のリポジトリが、もう GitHub にあります");
+    expect(created).toEqual([{ name: "minato-kakuninyou", description: "港の灯_確認用", private: true, auto_init: true }]);
   });
 });

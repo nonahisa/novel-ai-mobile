@@ -103,3 +103,7 @@ export {
   type CharCounts,
   type EpisodeFile,
 } from "novel-ai-assistant/src/models/types";
+// 話の一覧の印：話数の重複・欠番（本体の作品一覧と同じ点検）と、校閲中の鍵（引継ぎ書 69章）
+export { checkWorkEpisodeNumbers, workEpisodeNumberMarks, type WorkEpisodeNumberReport } from "novel-ai-assistant/src/core/episodeNumberCheck";
+export { episodeUnit } from "novel-ai-assistant/src/core/episodeLabel";
+export { parseLockEvents, resolveLocks, lockOf, type FileLock } from "novel-ai-assistant/src/models/fileLock";

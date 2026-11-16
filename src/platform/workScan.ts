@@ -33,6 +33,9 @@ import {
   type Listing,
   type MemoMarkers,
   type WorkFormatKey,
+  parseLockEvents,
+  resolveLocks,
+  type FileLock,
 } from "../shared";
 import { FileNotFoundError, dirname, joinStorePath, normalizeStorePath, type FileStore } from "./fileStore";
 import { readWorkMemoMarkers } from "./memoMarkers";
@@ -76,6 +79,11 @@ export interface ScannedWork {
   chapterError?: string;
   /** 最後に書いた日（ミリ秒）。分からなければ undefined */
   lastWrittenAt?: number;
+  /**
+   * 校閲中の鍵（`.aiwriter/locks/locks.jsonl`。本体の `resolveLocks`。鍵は作品フォルダーからの道で引く）。
+   * 無ければ空。編集者の鍵も作者の鍵も入る（印にするのは呼ぶ側が決める）
+   */
+  locks: Map<string, FileLock>;
 }
 
 /** 作品一覧の1件。読めなかった作品は理由だけ持つ */
@@ -308,6 +316,7 @@ export async function scanWorkFolder(store: FileStore, root: string, options: Sc
   }
 
   const { chapters, chapterError } = await readChapters(store, layout.settings);
+  const locks = await readLocks(store, root);
   let lastWrittenAt: number | undefined;
   try {
     lastWrittenAt = await options.lastWrittenOf?.(root);
@@ -321,9 +330,20 @@ export async function scanWorkFolder(store: FileStore, root: string, options: Sc
     episodes,
     stats: { episodeCount, totals, conflictedCount },
     chapters,
+    locks,
     ...(chapterError !== undefined ? { chapterError } : {}),
     ...(lastWrittenAt !== undefined ? { lastWrittenAt } : {}),
   };
+}
+
+/** 校閲中の鍵を読む（本体の `FileLockStore` と同じ置き場・読み方）。無い・読めなければ空 */
+async function readLocks(store: FileStore, root: string): Promise<Map<string, FileLock>> {
+  try {
+    const bytes = await store.readFile(joinStorePath(root, AIWRITER_DIR, "locks", "locks.jsonl"));
+    return resolveLocks(parseLockEvents(decodeBytes(bytes).text));
+  } catch {
+    return new Map();
+  }
 }
 
 /** 形式は、補いの要る話が無ければ読まない（本体と同じ）。読んだときだけ載せる */

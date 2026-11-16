@@ -13,7 +13,7 @@ import { ACTION_TREE, isItemShownInActionList, type ActionGroup, type ActionItem
  */
 
 /** 開ける画面 */
-export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses";
+export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai";
 
 /** メニューの1項目 */
 export interface PlannedItem {
@@ -155,7 +155,7 @@ export const TABS: readonly PlannedTab[] = [
       {
         title: "設定",
         items: [
-          { label: "AI", action: "AI設定" },
+          { label: "AI", action: "AI設定", built: "ai" },
           { label: "GitHub と同期", built: "github" },
           { label: "表示", built: "display" },
           { label: "確認省略解除・初回設定" },
@@ -227,6 +227,7 @@ export const PLACES: Readonly<Record<string, string>> = {
 /** 本体の操作のうち、モバイル版で作ってあるもの（名前 → 開く画面） */
 export const BUILT_ACTIONS: Readonly<Record<string, ScreenId>> = {
   バージョン確認: "check",
+  AI設定: "ai",
 };
 
 function hiddenReason(label: string, group: string, section?: string): string | undefined {

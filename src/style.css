@@ -1268,4 +1268,40 @@ a.gh-open {
 /* ［＋］が最後の札を隠さないように */
 #workListSlot {
   padding-bottom: 72px;
+/* 設定 → AI：AI ごとに1枚（名前と印・押す所・確かめた結果） */
+.ai-row {
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.ai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-head .name {
+  flex: 1 1 auto;
+}
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ai-actions button {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 400;
+}
+.ai-result {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--ok);
+}
+.ai-result.warn {
+  color: var(--shu);
 }

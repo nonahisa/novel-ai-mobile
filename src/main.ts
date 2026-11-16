@@ -1,5 +1,7 @@
 import "./style.css";
+import { App } from "@capacitor/app";
 import { mountShell } from "./app/shell";
+import { handleHardwareBack } from "./app/hardwareBack";
 
 /**
  * モバイル版の入口。
@@ -13,3 +15,13 @@ import { mountShell } from "./app/shell";
  * この入口から静的 import をたどって見張る。
  */
 mountShell(document.querySelector<HTMLDivElement>("#app")!);
+
+/*
+  端末の［戻る］キー（`src/app/hardwareBack.ts`）。App に聞き手を付けると、Capacitor は
+  WebView の履歴を戻すのをやめ、聞き手へ知らせたうえで document に "backbutton" を送る。
+  受けるのは document の側だけにする（2つで受けると1回の押しで2回戻る。画面の試験からも起こせる）
+*/
+void App.addListener("backButton", () => undefined).catch(() => undefined);
+document.addEventListener("backbutton", () => {
+  handleHardwareBack(document, () => void App.minimizeApp().catch(() => undefined));
+});

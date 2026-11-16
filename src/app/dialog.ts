@@ -37,7 +37,16 @@ export function askChoice(message: string, yesLabel: string, noLabel: string): P
  */
 export function askText(
   message: string,
-  options: { initial?: string; okLabel?: string; cancelLabel?: string; note?: string; validate?: (value: string) => string | undefined } = {}
+  options: {
+    initial?: string;
+    okLabel?: string;
+    cancelLabel?: string;
+    note?: string;
+    validate?: (value: string) => string | undefined;
+    /** 打った字を伏せる（API キー。画面に出さない・端末の予測や控えに残さない） */
+    password?: boolean;
+    placeholder?: string;
+  } = {}
 ): Promise<string | undefined> {
   return new Promise((resolve) => {
     const backdrop = document.createElement("div");
@@ -53,6 +62,13 @@ export function askText(
     note.textContent = options.note ?? "";
     input.value = options.initial ?? "";
     input.setAttribute("aria-label", message);
+    if (options.password) {
+      input.type = "password";
+      input.setAttribute("autocapitalize", "off");
+      input.setAttribute("spellcheck", "false");
+      input.removeAttribute("lang");
+    }
+    if (options.placeholder) input.placeholder = options.placeholder;
     const yes = backdrop.querySelector<HTMLButtonElement>('[data-answer="yes"]')!;
     const no = backdrop.querySelector<HTMLButtonElement>('[data-answer="no"]')!;
     yes.textContent = options.okLabel ?? "決める";

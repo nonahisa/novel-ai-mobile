@@ -34,7 +34,7 @@ import {
   saveFailureMessage,
   type TrialPrefs,
 } from "./tategakiDraft";
-import { askChoice, chooseFrom, tell } from "./dialog";
+import { askChoice, askText, chooseFrom, tell } from "./dialog";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
 import { listWorks, scanWorkFolder, type ScanOptions } from "../platform/workScan";
 import { lastCommitTime } from "../platform/git";
@@ -50,6 +50,8 @@ import { GITHUB_CLIENT_ID, fetchGithubLogin, mountGithubScreen, readGithubUser, 
 import { createTouchedRecorder } from "../platform/touchedPaths";
 import { createAutoFetch } from "./autoFetch";
 import { DeviceFontShelf } from "../platform/fontShelf";
+import { CLOUD_PROVIDERS, checkApiKey, keyCheckText, saveApiKey, validateApiKeyFormat, type CloudProviderId } from "../platform/aiKeys";
+import { keyPrompt, removeQuestion, renderAiScreen, renderKeyRows, type KeyRow } from "./aiScreen";
 import { MINCHO_FONT, downloadFont, readVerifiedFont, useFont } from "../platform/fontDownload";
 import { FONT_FAILURE, renderDisplayScreen, renderFontRow, renderLicenses, type FontView } from "./displayScreen";
 import { importWork, listGithubRepos, progressLabel, type GithubRepo } from "../platform/workImport";
@@ -83,6 +85,7 @@ import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastE
  * | `#/import` | GitHub から取り寄せる |
  * | `#/display` | 表示（書体の取り寄せ） |
  * | `#/licenses` | ライセンス |
+ * | `#/ai` | 設定 → AI（クラウドの AI の鍵） |
  * | `#/check` | 動作確認ページ（開発用） |
  *
  * 原稿エディター・縦書きの試し・動作確認ページを開いている間は、下のタブを隠す（4.3「原稿エディターを
@@ -101,7 +104,8 @@ type Route =
   | { kind: "github" }
   | { kind: "import" }
   | { kind: "display" }
-  | { kind: "licenses" };
+  | { kind: "licenses" }
+  | { kind: "ai" };
 
 /** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
 function isWorkRoot(root: string): boolean {
@@ -137,6 +141,7 @@ export function parseRoute(hash: string): Route {
   if (name === "import") return { kind: "import" };
   if (name === "display") return { kind: "display" };
   if (name === "licenses") return { kind: "licenses" };
+  if (name === "ai") return { kind: "ai" };
   if (name.startsWith("conflict/")) {
     const pieces = name.slice("conflict/".length).split("/");
     try {
@@ -172,7 +177,7 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", ai: "#/ai" } as const;
 
 /**
  * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。
@@ -342,7 +347,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "ai" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
@@ -410,6 +415,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         return;
       case "tategaki":
         leaveGuard = mountTategaki(screen, store);
+        return;
+      case "ai":
+        lastTabHash = "#/other";
+        mountAiScreen(screen, stillHere);
         return;
       case "display":
         lastTabHash = "#/other";
@@ -798,6 +807,57 @@ function mountImportScreen(screen: HTMLElement, store: FileStore, stillHere: () 
     })();
   });
   void load();
+}
+
+/* ---------- 設定 → AI（クラウドの AI の鍵。引継ぎ書 71章） ---------- */
+
+function mountAiScreen(screen: HTMLElement, stillHere: () => boolean): void {
+  screen.innerHTML = `${renderAppBar("AI", { back: true })}${renderAiScreen([])}`;
+  const slot = screen.querySelector<HTMLElement>("#aiKeys")!;
+  const results = new Map<CloudProviderId, { text: string; ok: boolean }>();
+  const paint = async () => {
+    const rows: KeyRow[] = [];
+    for (const provider of CLOUD_PROVIDERS) {
+      const registered = (await secretVault().get(provider.secret)) !== undefined;
+      const result = results.get(provider.id);
+      rows.push({ provider, registered, ...(result ? { result } : {}) });
+    }
+    if (stillHere()) slot.innerHTML = renderKeyRows(rows);
+  };
+  slot.addEventListener("click", (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-ai-set],[data-ai-check],[data-ai-remove]");
+    if (!target) return;
+    const id = (target.dataset.aiSet ?? target.dataset.aiCheck ?? target.dataset.aiRemove) as CloudProviderId;
+    const provider = CLOUD_PROVIDERS.find((candidate) => candidate.id === id);
+    if (!provider) return;
+    void (async () => {
+      if (target.dataset.aiSet) {
+        const prompt = keyPrompt(provider);
+        const value = await askText(prompt.message, {
+          password: true,
+          placeholder: prompt.placeholder,
+          note: prompt.note,
+          okLabel: "登録",
+          validate: (raw) => validateApiKeyFormat(raw),
+        });
+        if (value === undefined) return;
+        await saveApiKey(secretVault(), provider, value);
+        results.delete(provider.id);
+      } else if (target.dataset.aiCheck) {
+        const key = await secretVault().get(provider.secret);
+        if (!key) return;
+        target.setAttribute("aria-busy", "true");
+        const check = await checkApiKey(provider.id, key);
+        results.set(provider.id, { text: keyCheckText(check), ok: check.kind === "ok" });
+      } else {
+        if (!(await askChoice(removeQuestion(provider), "消す", "やめる"))) return;
+        await secretVault().remove(provider.secret);
+        results.delete(provider.id);
+      }
+      await paint();
+    })();
+  });
+  void paint();
 }
 
 /* ---------- 表示（書体の取り寄せ。引継ぎ書 68章） ---------- */

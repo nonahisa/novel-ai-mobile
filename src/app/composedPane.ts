@@ -237,6 +237,7 @@ export function mountComposedPane(
 
   const onBeforeInput = (e: InputEvent) => {
     if (e.isComposing || composing) return;
+    flushSnap();
     // ブラウザの取り消し（Ctrl+Z・iPad の取り消しのキーなど）は使わず、こちらの手で戻す
     if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
       e.preventDefault();
@@ -287,11 +288,43 @@ export function mountComposedPane(
    * **カーソルが塊の中や欄の直下に来たら、近いほうの塊の外（字の節の中）へ置き直す**（本体もルビの中には
    * カーソルを入れない。字の節の中に置くのは、iOS が字の節の外のカーソルを描かないことがあったため）
    */
+  /**
+   * 置き直すのは、指が離れてカーソルが止まってから（2026-11-16 iPad の試し9）。iPad の長押しは、指の動きに
+   * 合わせてカーソルを動かす。動くたびに塊の外へ戻すと、指と引っぱり合って範囲が作れなかった
+   */
+  let touching = false;
+  let snapTimer: number | undefined;
+  const SNAP_SETTLE_MS = 150;
+  const scheduleSnap = () => {
+    window.clearTimeout(snapTimer);
+    snapTimer = window.setTimeout(snapCaretOutOfChunk, SNAP_SETTLE_MS);
+  };
+  /** 待っている置き直しを、いますぐ済ませる（打つ前に） */
+  const flushSnap = () => {
+    if (snapTimer === undefined) return;
+    window.clearTimeout(snapTimer);
+    snapTimer = undefined;
+    snapCaretOutOfChunk();
+  };
+  const onTouchStart = () => {
+    touching = true;
+    window.clearTimeout(snapTimer);
+  };
+  const onTouchEnd = () => {
+    touching = false;
+    scheduleSnap();
+  };
   const onSelectionChange = () => {
     if (composing) return;
     // ［ルビ］［傍点］を押したときに焦点が外れても使えるように、欄の中の最後の選択を覚える
     const seen = selectionOffsets();
     if (seen) lastSel = seen;
+    if (touching) return;
+    scheduleSnap();
+  };
+  const snapCaretOutOfChunk = () => {
+    snapTimer = undefined;
+    if (composing || touching) return;
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return;
     const node = selection.anchorNode;
@@ -308,9 +341,10 @@ export function mountComposedPane(
   /** 押したら、押した所のカーソルの様子を記録に残す（iPad・Android の実機の確かめ） */
   const onPointerUp = (e: PointerEvent) => {
     const point = `${Math.round(e.clientX)}/${Math.round(e.clientY)}`;
-    window.setTimeout(() => logCaret(`C 押した（点 ${point}、${e.pointerType}）`), 150);
+    window.setTimeout(() => logCaret(`C 押した（点 ${point}、${e.pointerType}）`), SNAP_SETTLE_MS + 150);
   };
   const onCompStart = () => {
+    flushSnap();
     composing = true;
     logCaret("C 変換の始まり");
   };
@@ -336,6 +370,9 @@ export function mountComposedPane(
   element.addEventListener("compositionstart", onCompStart);
   element.addEventListener("compositionend", onCompEnd);
   element.addEventListener("pointerup", onPointerUp);
+  element.addEventListener("touchstart", onTouchStart, { passive: true });
+  element.addEventListener("touchend", onTouchEnd, { passive: true });
+  element.addEventListener("touchcancel", onTouchEnd, { passive: true });
   document.addEventListener("selectionchange", onSelectionChange);
   write(text);
   log(composed ? `C 組んだ（塊 ${tokens.filter(isChunk).length}つ）` : "C 記法のまま出した");
@@ -400,7 +437,11 @@ export function mountComposedPane(
       element.removeEventListener("compositionstart", onCompStart);
       element.removeEventListener("compositionend", onCompEnd);
       element.removeEventListener("pointerup", onPointerUp);
+      element.removeEventListener("touchstart", onTouchStart);
+      element.removeEventListener("touchend", onTouchEnd);
+      element.removeEventListener("touchcancel", onTouchEnd);
       document.removeEventListener("selectionchange", onSelectionChange);
+      window.clearTimeout(snapTimer);
       stopWatching();
     },
   };

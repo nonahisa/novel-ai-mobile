@@ -14,7 +14,12 @@ const WORK = "灯台守_確認用";
 const author = { name: "確認用", email: "check@example.invalid", timestamp: 1_763_200_000, timezoneOffset: -540 };
 
 /** FAKE_WORKS の作品をリポジトリにして、`.git` を含む全部のファイルを返す（`edits` は記録したあとに書き換える） */
-async function workAsRepo(edits: Record<string, string> = {}, remote?: string): Promise<Record<string, FakeFile>> {
+async function workAsRepo(
+  edits: Record<string, string> = {},
+  remote?: string,
+  /** 取ってきたことにする、あちらの版の書き換え（`refs/remotes/origin/main` に置く。道は作品の中） */
+  theirs?: Record<string, string>
+): Promise<Record<string, FakeFile>> {
   const tmp = nodeFs.mkdtempSync(path.join(os.tmpdir(), "novelai-sync-"));
   const dir = path.join(tmp, WORK);
   try {
@@ -26,7 +31,20 @@ async function workAsRepo(edits: Record<string, string> = {}, remote?: string): 
     }
     await git.init({ fs: nodeFs, dir, defaultBranch: "main" });
     for (const [p] of own) await git.add({ fs: nodeFs, dir, filepath: p.slice(WORK.length + 1) });
-    await git.commit({ fs: nodeFs, dir, message: "はじめ\n", author, committer: author });
+    const base = await git.commit({ fs: nodeFs, dir, message: "はじめ\n", author, committer: author });
+    if (theirs) {
+      for (const [p, text] of Object.entries(theirs)) {
+        nodeFs.writeFileSync(path.join(dir, p), text);
+        await git.add({ fs: nodeFs, dir, filepath: p });
+      }
+      await git.commit({ fs: nodeFs, dir, message: "パソコン\n", author, committer: author, ref: "refs/remotes/origin/main", parent: [base] });
+      // 作業の木と索引は「はじめ」に戻す
+      for (const [p] of Object.entries(theirs)) {
+        const { blob } = await git.readBlob({ fs: nodeFs, dir, oid: base, filepath: p });
+        nodeFs.writeFileSync(path.join(dir, p), blob);
+        await git.resetIndex({ fs: nodeFs, dir, filepath: p });
+      }
+    }
     if (remote) await git.setConfig({ fs: nodeFs, dir, path: "remote.origin.url", value: remote });
     for (const [p, text] of Object.entries(edits)) nodeFs.writeFileSync(path.join(tmp, p), text);
     const files: Record<string, FakeFile> = { ...FAKE_WORKS };
@@ -113,6 +131,34 @@ test.describe("同期の画面（G）", () => {
     expect(asked[0]).toContain("/sakka-kakuninyou/toudai.git/info/refs");
     expect(asked.join(" ")).not.toContain("gho_tukurimono_sync");
     await expect(page.locator("[data-sync-run=fetch]")).toBeEnabled();
+  });
+
+  test("競合の話を並べ、押すと選ぶ画面。［あちらにする］は確かめてから。選び終えると取り込んで同期の画面へ", async ({ page }) => {
+    const story = "本文/第1話 手紙.txt";
+    await openWithWorks(
+      page,
+      `#/sync/${encodeURIComponent(WORK)}`,
+      await workAsRepo({ [`${WORK}/${story}`]: "こちらで書いた。\n" }, undefined, { [story]: "あちらで書いた。\n" })
+    );
+    await expect(page.locator(".conflict-list .chap")).toHaveText("競合：1話");
+    await page.locator(".conflict-list .ep", { hasText: "第1話 手紙" }).click();
+    await expect(page).toHaveURL(/#\/conflict\//);
+    await expect(page.locator(".cf-text")).toContainText("こちらで書いた。");
+    await page.locator("[data-cf-view=theirs]").click();
+    await expect(page.locator(".cf-text")).toContainText("あちらで書いた。");
+    await expect(page.locator(".cf-text .cf-diff")).toHaveText("あちらで書いた。");
+    // ［あちらにする］は確かめる。［やめる］なら何も変えない
+    await page.locator("[data-cf-choice=theirs]").click();
+    await expect(page.locator(".dialog-message")).toContainText("こちらの文は消えます");
+    await page.locator('[data-answer="no"]').click();
+    await expect(page).toHaveURL(/#\/conflict\//);
+    await page.locator("[data-cf-choice=theirs]").click();
+    await page.locator('[data-answer="yes"]').click();
+    await expect(page).toHaveURL(/#\/sync\//);
+    await expect(page.locator("#syncResult")).toHaveText("取ってきました");
+    await expect(page.locator(".conflict-list")).toHaveCount(0);
+    await expect(page.locator(".sync-state")).toHaveText("同期済み");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   });
 
   test("そろっていれば「同期済み」だけ", async ({ page }) => {

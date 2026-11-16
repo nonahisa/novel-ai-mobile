@@ -7,6 +7,9 @@ import {
   fetchWork,
   githubIdentity,
   outcomeText,
+  chooseConflict,
+  listConflicts,
+  readConflictMaterial,
   parseGitHubUrl,
   pushMessage,
   readRepoTarget,
@@ -71,7 +74,7 @@ async function setup(remoteUrl: string | null = "https://github.com/sakka/toudai
   const store = new GitFsFileStore(backend);
   const fetch = () => fetchWork({ ...deps, store, storeDir: `works/${WORK}`, fetchHead });
   const read = async (path: string) => new TextDecoder().decode((await fs.promises.readFile(`${DIR}/${path}`)) as Uint8Array);
-  return { gh, fs, send, fetch, read };
+  return { gh, fs, send, fetch, read, store };
 }
 
 describe("送り先", () => {
@@ -148,6 +151,28 @@ describe("取ってくる", () => {
     expect(outcomeText(result)).toContain("1話");
     expect(await read("本文/第1話 手紙.txt")).toBe("こちら\n");
     expect(await git.resolveRef({ fs, dir: DIR, ref: "HEAD" })).toBe(head);
+  });
+
+  test("競合の話を並べ、選び終えたら取り込む。そのあと送れる", async () => {
+    const { gh, fs, fetch, send, read, store } = await setup("https://github.com/sakka/toudai.git");
+    await fs.promises.writeFile(`${DIR}/本文/第1話 手紙.txt`, utf8("こちら\n"));
+    await fs.promises.writeFile(`${DIR}/本文/第2話 灯.txt`, utf8("こちら二\n"));
+    await gh.commitFiles({ "本文/第1話 手紙.txt": "あちら\n", "本文/第2話 灯.txt": "あちら二\n" });
+    expect(await fetch()).toMatchObject({ kind: "conflicts" });
+    expect(await listConflicts(fs, WORK, BASE)).toEqual([{ path: "本文/第1話 手紙.txt" }, { path: "本文/第2話 灯.txt" }]);
+    const io = { fs, root: WORK, base: BASE, store, storeDir: `works/${WORK}` };
+    const first = (await readConflictMaterial({ ...io, path: "本文/第1話 手紙.txt" }))!;
+    expect([first.ours.text, first.theirs.text]).toEqual(["こちら\n", "あちら\n"]);
+    // 1つ目を選んだだけでは取り込まない
+    expect(await chooseConflict({ ...io, material: first, choice: "ours" })).toEqual({ applied: { ok: true, choice: "ours" } });
+    expect(await listConflicts(fs, WORK, BASE)).toEqual([{ path: "本文/第1話 手紙.txt", decision: "ours" }, { path: "本文/第2話 灯.txt" }]);
+    const second = (await readConflictMaterial({ ...io, path: "本文/第2話 灯.txt" }))!;
+    const done = await chooseConflict({ ...io, material: second, choice: "theirs" });
+    expect(done).toEqual({ applied: { ok: true, choice: "theirs", exact: true }, outcome: { kind: "fetched", taken: 0, kept: 1 } });
+    expect(await read("本文/第2話 灯.txt")).toBe("あちら二\n");
+    expect(await listConflicts(fs, WORK, BASE)).toEqual([]);
+    expect(await send()).toEqual({ kind: "pushed", adopted: true });
+    expect(await gh.files()).toMatchObject({ "本文/第1話 手紙.txt": "こちら\n", "本文/第2話 灯.txt": "あちら二\n" });
   });
 
   test("取得の失敗の分け方（401・404・届かない）", () => {

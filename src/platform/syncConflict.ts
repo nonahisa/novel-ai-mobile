@@ -71,8 +71,11 @@ export interface IncomingEntry {
   ours: string | null;
   /** あちらの中身の名前（消していれば null） */
   theirs: string | null;
-  /** 競合で、もう選んだもの（［こちら］か［両方残す］。［あちら］は選ぶと「同じ」になる） */
-  decision?: "ours" | "both";
+  /**
+   * 競合で、もう選んだもの（［こちら］か［両方残す］。［あちら］はふつう選ぶと「同じ」になる。
+   * こちらと文字コード・改行が違い、こちらの形で書いたときだけ `theirs` を控える）
+   */
+  decision?: "ours" | "both" | "theirs";
 }
 
 export interface IncomingPlan {
@@ -102,7 +105,7 @@ const CHOICES_FILE = "novelai-conflict-choices.json";
 
 interface ChoiceRecord {
   theirs: string;
-  entries: Record<string, { choice: "ours" | "both"; ours: string | null }>;
+  entries: Record<string, { choice: "ours" | "both" | "theirs"; ours: string | null }>;
 }
 
 /** 版の木を「道 → 中身の名前」に開く */
@@ -430,7 +433,12 @@ export async function applyConflictChoice(
     }
     const written = await writeTextFilePreservingFormat(store, storePath, material.theirs.text, original, original.hash);
     if (!written.ok) return { ok: false, reason: written.reason, ...(written.detail ? { detail: written.detail } : {}) };
-    return { ok: true, choice, exact: (await worktreeOid(fs, dir, material.path)) === material.theirs.oid };
+    const now = await worktreeOid(fs, dir, material.path);
+    if (now === material.theirs.oid) return { ok: true, choice, exact: true };
+    // こちらの形（文字コード・改行）で書いたので、中身の名前はあちらと違う＝まだ「競合」に見える。
+    // 選んだことを、書いたあとの中身の名前と一緒に控える（取り込むと、送っていない話として残る）
+    await recordChoice(fs, dir, material, "theirs", now);
+    return { ok: true, choice, exact: false };
   }
 
   let sidePath: string | undefined;
@@ -459,11 +467,15 @@ export async function applyConflictChoice(
     sidePath = `${slash >= 0 ? material.path.slice(0, slash + 1) : ""}${name}`;
   }
 
+  await recordChoice(fs, dir, material, choice, entry.ours);
+  return { ok: true, choice, ...(sidePath ? { sidePath } : {}) };
+}
+
+async function recordChoice(fs: GitFs, dir: string, material: ConflictMaterial, choice: "ours" | "both" | "theirs", ours: string | null): Promise<void> {
   const record = (await readChoices(fs, dir)) ?? { theirs: material.theirsCommit, entries: {} };
   const next: ChoiceRecord = record.theirs === material.theirsCommit ? record : { theirs: material.theirsCommit, entries: {} };
-  next.entries[material.path] = { choice, ours: entry.ours };
+  next.entries[material.path] = { choice, ours };
   await writeChoices(fs, dir, next);
-  return { ok: true, choice, ...(sidePath ? { sidePath } : {}) };
 }
 
 /**

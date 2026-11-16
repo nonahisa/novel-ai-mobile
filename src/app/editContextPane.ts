@@ -47,6 +47,10 @@ export type TermFinder = (text: string) => TermSpan[];
 export interface EditContextPane {
   getText(): string;
   setText(text: string): void;
+  /** カーソルの位置（範囲の選び方はまだ無いので、始まりと終わりは同じ。原稿エディターの右傍線で使う。引継ぎ書 76章） */
+  getSelection(): { start: number; end: number };
+  /** 本文を替え、カーソルを `caret` に置く（道具帯・取り消し） */
+  setTextAt(text: string, caret: number): void;
   setOrientation(orientation: Orientation): void;
   /** 用語の探し方を替える（語を打ち直したとき）。描き直す */
   setTerms(find: TermFinder): void;
@@ -180,6 +184,14 @@ export function mountEditContextPane(
       ec.updateText(0, state.text.length, next);
       state = initialPaneState(next);
       ec.updateSelection(state.selection, state.selection);
+      render();
+    },
+    getSelection: () => ({ start: state.selection, end: state.selection }),
+    setTextAt(next: string, caret: number) {
+      ec.updateText(0, state.text.length, next);
+      const at = Math.max(0, Math.min(caret, next.length));
+      state = { ...initialPaneState(next), selection: at };
+      ec.updateSelection(at, at);
       render();
     },
     setOrientation(next) {

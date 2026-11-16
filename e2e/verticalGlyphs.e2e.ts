@@ -19,3 +19,17 @@ test.describe("縦書きの字の向き", () => {
     expect(await orientation("#tategaki")).toBe("mixed");
   });
 });
+
+test.describe("縦書きの試しの C の道具", () => {
+  test("画面を送っても、取り消し・ルビ・傍点は上のバーのすぐ下に見えている（字を選んだまま押せる）", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 420 });
+    await openWithWorks(page, "#/tategaki");
+    await page.locator('[data-mode="C"]').click();
+    await expect(page.locator("#composedTools")).toBeVisible();
+    await page.evaluate(() => window.scrollTo(0, 400));
+    const bar = (await page.locator(".appbar").boundingBox())!;
+    const tools = (await page.locator("#composedTools").boundingBox())!;
+    expect(Math.round(tools.y)).toBe(Math.round(bar.y + bar.height));
+    await expect(page.locator("#composedRuby")).toBeInViewport();
+  });
+});

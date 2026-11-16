@@ -1,0 +1,42 @@
+import { expect, test } from "@playwright/test";
+import { openWithWorks, readFakeFile } from "./support/fakeWorks";
+
+/**
+ * **変換中の線：左（既定）／右（テスト中）**（設定 → 表示。`src/app/episodeScreen.ts`。引継ぎ書 76章）。
+ * 右は字と変換中の線をこの画面が描く欄（EditContext）。作品は作り物（`_確認用`）だけ
+ */
+
+const EPISODE = "灯台守_確認用/本文/第1話 手紙.txt";
+
+test.describe("変換中の線", () => {
+  test("既定は左（ブラウザの入力欄）。設定で右にすると、テスト中の断りが出て、原稿エディターがこの画面の描く欄になる。打った字も道具帯も保存される", async ({ page }) => {
+    await openWithWorks(page, "#/display");
+    await expect(page.locator('[data-line="left"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".line-choice + .flag")).toHaveCount(0);
+    await page.locator('[data-line="right"]').click();
+    await expect(page.locator('[data-line="right"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#lineSlot .flag.warn")).toContainText("テスト中");
+
+    await page.evaluate(() => (location.hash = "#/works"));
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await page.locator("#episodeSlot .ep").first().click();
+    const editor = page.locator("#msEditor");
+    await expect(editor).toHaveAttribute("data-line", "right");
+    await expect(editor).toContainText("姉から手紙が届いた。");
+    // 道具帯：カーソルの所（終わり）に「」を入れ、カーソルは括弧の中
+    await editor.click();
+    await page.keyboard.press("End");
+    await page.locator('[data-tool="brackets"]').click();
+    await page.keyboard.type("abc");
+    await expect(page.locator("#saveState")).toHaveText("保存済み", { timeout: 6000 });
+    expect(await readFakeFile(page, EPISODE)).toContain("「abc」");
+
+    // 左に戻すと、ふつうの入力欄
+    await page.evaluate(() => (location.hash = "#/display"));
+    await page.locator('[data-line="left"]').click();
+    await page.evaluate(() => (location.hash = "#/works"));
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await page.locator("#episodeSlot .ep").first().click();
+    await expect(page.locator("textarea#msEditor")).toBeVisible();
+  });
+});

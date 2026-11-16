@@ -1338,3 +1338,55 @@ a.gh-open {
   gap: 4px;
   justify-content: flex-end;
 }
+/* 外で変わったときに、重なった所を選ぶ画面（原稿の上に重ねる。引継ぎ書 76章） */
+.merge-sheet {
+  max-inline-size: 640px;
+  max-block-size: 90vh;
+  overflow-y: auto;
+}
+.merge-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+.merge-region {
+  margin-bottom: 12px;
+}
+.merge-side {
+  display: block;
+  inline-size: 100%;
+  margin: 6px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 400;
+  text-align: start;
+}
+.merge-side[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.merge-label {
+  display: block;
+  font-size: 12px;
+  color: var(--sub);
+}
+.merge-text {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-ms);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+/*
+  縦書き・横書きの試しの C の道具（取り消し・やり直し・ルビ・傍点）は、上のバーのすぐ下に留める。
+  AQUOS（幅 320）で字を長押しして選ぶとキーボードが出て画面が送られ、道具が上のバーの裏へ流れて指が届かなかった（引継ぎ書 77章）
+*/
+#composedTools {
+  position: sticky;
+  top: calc(52px + env(safe-area-inset-top));
+  z-index: 5;
+  padding: 6px 0;
+  background: var(--bg);
+}

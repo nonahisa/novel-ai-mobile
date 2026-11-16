@@ -11,6 +11,28 @@ import { FAKE_WORKS, listFakeFiles, openWithWorks, readFakeFile } from "./suppor
 const EPISODE = "灯台守_確認用/本文/第1話 手紙.txt";
 const ORIGINAL = "姉から手紙が届いた。\n// 付箋：ここは後で直す\n";
 
+/** 同期で入れ替わったことにする（置き場の記録を直に書き換える） */
+async function replaceExternally(page: Page, text: string): Promise<void> {
+  await page.evaluate(
+    async ({ path, text }) => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("Disc", 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const store = db.transaction(["FileStorage"], "readwrite").objectStore("FileStorage");
+      const record = await new Promise<Record<string, unknown>>((resolve) => {
+        const get = store.get(`/DATA/works/${path}`);
+        get.onsuccess = () => resolve(get.result as Record<string, unknown>);
+      });
+      record.content = btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+      store.put(record);
+      db.close();
+    },
+    { path: EPISODE, text }
+  );
+}
+
 async function openEpisode(page: Page): Promise<void> {
   await openWithWorks(page, "#/works");
   await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
@@ -55,39 +77,54 @@ test.describe("原稿エディター（C）の土台", () => {
     expect(await readFakeFile(page, EPISODE)).toBe("書き直した。\n");
   });
 
-  test("外で変わったら保存を止め、真ん中の窓で知らせる。本文は外の字のまま、書きかけは控えに残す", async ({ page }) => {
+  test("外で変わって書きかけと重なれば、重なった所を選ぶ画面。［やめる］なら保存を止めたまま、本文は外の字・書きかけは控えに残す", async ({ page }) => {
     await openEpisode(page);
-    // 同期で入れ替わったことにする（置き場の記録を直に書き換える）
-    await page.evaluate(async (path) => {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("Disc", 1);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-      const store = db.transaction(["FileStorage"], "readwrite").objectStore("FileStorage");
-      const full = `/DATA/works/${path}`;
-      const record = await new Promise<Record<string, unknown>>((resolve) => {
-        const get = store.get(full);
-        get.onsuccess = () => resolve(get.result as Record<string, unknown>);
-      });
-      record.content = btoa(String.fromCharCode(...new TextEncoder().encode("外で入れ替わった。\n")));
-      store.put(record);
-      db.close();
-    }, EPISODE);
+    await replaceExternally(page, "外で入れ替わった。\n");
     await page.locator("#msEditor").fill("こちらの書きかけ。\n");
-    await expect(page.locator(".dialog-message")).toHaveText(/外で変わったので、保存を止めました/, { timeout: 5000 });
+    await expect(page.locator(".merge-title")).toHaveText("外の変更と、書きかけが重なった所：1", { timeout: 5000 });
+    await expect(page.locator(".merge-side")).toHaveCount(2);
+    await expect(page.locator("[data-merge-save]")).toBeDisabled();
+    await page.locator("[data-merge-cancel]").click();
     await expect(page.locator("#saveState")).toHaveText("外で変わりました");
     expect(await readFakeFile(page, EPISODE)).toBe("外で入れ替わった。\n");
     const drafts = await listFakeFiles(page, ".novelai-drafts/");
     expect(drafts).toHaveLength(1);
     // 頭の1行はもとの本文のハッシュ（開き直したとき、本文が変わったかを見る）
     expect(await readFakeFile(page, drafts[0]!)).toMatch(/^#novelai-draft base=[0-9a-f]{64}\nこちらの書きかけ。\n$/);
-    await page.locator('.dialog [data-answer="ok"]').click();
     // 戻ろうとすると訊く（書きかけは控えにある）
     await page.locator(".appbar-back").click();
     await expect(page.locator(".dialog-message")).toContainText("書きかけは端末に残っています");
     await page.locator('.dialog [data-answer="no"]').click();
     await expect(page).toHaveURL(/#\/episode\//);
+  });
+
+  test("重なった所で［あちら］を選んで［合わせて保存］：合わせた本文を保存し、入れ替わった本文は退避に、控えは消える", async ({ page }) => {
+    await openEpisode(page);
+    await replaceExternally(page, "外で入れ替わった。\n");
+    await page.locator("#msEditor").fill("こちらの書きかけ。\n");
+    await page.locator('[data-merge-pick="theirs"]').click();
+    await expect(page.locator('[data-merge-pick="theirs"]')).toHaveAttribute("aria-pressed", "true");
+    await page.locator("[data-merge-save]").click();
+    await expect(page.locator("#toast")).toHaveText("選んだとおりに合わせて保存しました");
+    await expect(page.locator("#saveState")).toHaveText("保存済み");
+    await expect(page.locator("#msEditor")).toHaveValue("外で入れ替わった。\n");
+    expect(await readFakeFile(page, EPISODE)).toBe("外で入れ替わった。\n");
+    const recoveries = await listFakeFiles(page, "灯台守_確認用/本文/.novelai-recovery");
+    expect(recoveries).toHaveLength(1);
+    expect(await readFakeFile(page, recoveries[0]!)).toBe("外で入れ替わった。\n");
+    expect(await listFakeFiles(page, ".novelai-drafts/")).toEqual([]);
+  });
+
+  test("外の変更と書きかけが重ならなければ、黙って両方を合わせて保存する", async ({ page }) => {
+    await openEpisode(page);
+    // もとの本文は2行（「姉から手紙が届いた。」「// 付箋：ここは後で直す」）。こちらは1行目を変え、あちらは3行目を足す。
+    // 間に変わっていない2行目があるので重ならない（隣り合う行の変更は git と同じく「同じ場所」になる）
+    await replaceExternally(page, "姉から手紙が届いた。\n// 付箋：ここは後で直す\n妹からも届いた。\n");
+    await page.locator("#msEditor").fill("姉から長い手紙が届いた。\n// 付箋：ここは後で直す\n");
+    await expect(page.locator("#toast")).toHaveText("外の変更と合わせて保存しました", { timeout: 5000 });
+    await expect(page.locator("#msEditor")).toHaveValue("姉から長い手紙が届いた。\n// 付箋：ここは後で直す\n妹からも届いた。\n");
+    expect(await readFakeFile(page, EPISODE)).toBe("姉から長い手紙が届いた。\n// 付箋：ここは後で直す\n妹からも届いた。\n");
+    await expect(page.locator(".merge-backdrop")).toHaveCount(0);
   });
 
   test("［横で書く］で横書きへ、押し口は［縦で書く］に替わり、開き直しても覚えている", async ({ page }) => {

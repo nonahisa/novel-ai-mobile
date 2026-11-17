@@ -459,6 +459,41 @@ test.describe("C 組んで書く：iPad の塊の選び（2026-11-17 Mac の iPa
     expect(Date.now() - started).toBeLessThan(3000);
   });
 
+  /**
+   * 2026-11-18 Mac の iPad mini シミュレーター 0.1.86 の試し9後半：つまみで範囲の終わりを引いて、押さえたまま
+   * 2秒止めると、まだ押さえているのに約1秒で「離れたと見なした」。つまみを引くあいだは指の知らせ（touchmove）が
+   * 来ないので、選びが止まっても指が離れたとは限らない。範囲を持ったまま止まっているあいだは、離れたと見なさない
+   */
+  test("範囲のつまみを押さえたまま止めても、離れたと見なさない。打てば離れたと見なす", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    await pane.click();
+    const select = (end: number) =>
+      pane.evaluate((el, to) => {
+        const text = Array.from(el.childNodes).find((n) => n.nodeType === Node.TEXT_NODE && (n.nodeValue ?? "").length > 6)!;
+        const range = document.createRange();
+        range.setStart(text, 0);
+        range.setEnd(text, to);
+        window.getSelection()!.removeAllRanges();
+        window.getSelection()!.addRange(range);
+      }, end);
+    // つまみを掴む：touchstart だけが来て、あとは選びだけが動く
+    await pane.evaluate((el) => el.dispatchEvent(new Event("touchstart", { bubbles: true })));
+    await select(2);
+    await page.waitForTimeout(300);
+    await select(4);
+    // 押さえたまま止める
+    await page.waitForTimeout(2500);
+    await expect(page.locator("#imeLog")).not.toContainText("C 指：離れたと見なした");
+    // 引き続き動かしても、指が離れたあとの置き直しは走らない
+    await select(5);
+    await page.waitForTimeout(400);
+    await expect(page.locator("#imeLog")).not.toContainText("C 指：離れたと見なした");
+    // 打てば、指はもう離れている
+    await page.keyboard.press("Shift");
+    await expect(page.locator("#imeLog")).toContainText("C 指：離れたと見なした");
+  });
+
   test("あとから本文を入れても、組んだ塊の数を記録に出す", async ({ page }) => {
     await openC(page);
     await expect(page.locator("#imeLog")).toContainText(/C 組んだ（塊 [1-9]\d*つ）/);

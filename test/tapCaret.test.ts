@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { caretFromPoint, type CharBox } from "../src/app/tapCaret";
+import { caretFromPoint, charFromPoint, type CharBox } from "../src/app/tapCaret";
 import { caretPlacement, clampCaretToPane, isPlainShape, plainValue, replaceRange, stripSupport } from "../src/app/editableText";
 
 /**
@@ -98,5 +98,22 @@ describe("A：ページを送るカーソルの位置を欄の中に収める（
   test("横書きで欄の外なら、近いほうの端", () => {
     expect(clampCaretToPane({ top: 450, bottom: 470, left: 10, right: 30 }, pane, false)).toMatchObject({ top: 380, bottom: 400 });
     expect(clampCaretToPane({ top: 50, bottom: 70, left: 10, right: 30 }, pane, false)).toMatchObject({ top: 100, bottom: 120 });
+  });
+});
+
+describe("押した点の下の字（名前を押したかを見る）", () => {
+  const chars: CharBox[] = [
+    { i: 0, n: 1, newline: false, left: 0, top: 0, right: 20, bottom: 20 },
+    { i: 1, n: 1, newline: false, left: 0, top: 20, right: 20, bottom: 40 },
+    { i: 2, n: 1, newline: true, left: 0, top: 40, right: 20, bottom: 60 },
+  ];
+  test("点を含む字を返す。字と字の境の近くでも、点のある字", () => {
+    expect(charFromPoint(chars, 10, 5)).toBe(0);
+    expect(charFromPoint(chars, 10, 21)).toBe(1);
+    expect(charFromPoint(chars, 10, 19)).toBe(0);
+  });
+  test("字の無い所・改行の字では返さない", () => {
+    expect(charFromPoint(chars, 30, 5)).toBeUndefined();
+    expect(charFromPoint(chars, 10, 50)).toBeUndefined();
   });
 });

@@ -79,3 +79,13 @@ export function readCharBoxes(root: ParentNode): CharBox[] {
     };
   });
 }
+
+/**
+ * **押した点の下の字**（名前を押したかどうかを見る。2026-11-18 iPad mini シミュレーター 0.1.86 の試し6）。
+ * カーソルの位置だけでは、名前の後ろ半分を押したのか、次の字の前半分（字と字の境）を押したのか見分けられない。
+ * 点を含む字が無ければ（字の無い所・改行）`undefined`
+ */
+export function charFromPoint(chars: readonly CharBox[], x: number, y: number): number | undefined {
+  const hit = chars.find((c) => !c.newline && c.right > c.left && c.bottom > c.top && x >= c.left && x < c.right && y >= c.top && y < c.bottom);
+  return hit?.i;
+}

@@ -305,6 +305,8 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   });
 
   let currentHash = location.hash;
+  /** 原稿エディターで名前が出る行へ飛ぶとき、開いた先でカーソルを置く所 */
+  let pendingCaret: { path: string; offset: number } | undefined;
   /** 保存を済ませている最中（重ねて離れようとしても1回だけ） */
   let leaving = false;
   const render = () => {
@@ -410,7 +412,23 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         lastTabHash = workHash(route.root);
         rememberLastEpisode(globalThis.localStorage, { root: route.root, path: route.path });
         ensureTermColorStyle();
-        leaveGuard = mountEpisodeScreen(screen, store, route.path, { toast, stillHere, workRoot: route.root, ...(touchedRecorder(store) ? { beforeWrite: touchedRecorder(store)! } : {}) });
+        {
+          // 名前が出る行へ飛んで来たときは、その字にカーソルを置く（1回だけ使う）
+          const caret = pendingCaret?.path === route.path ? pendingCaret.offset : undefined;
+          pendingCaret = undefined;
+          const episodeRoot = route.root;
+          leaveGuard = mountEpisodeScreen(screen, store, route.path, {
+            toast,
+            stillHere,
+            workRoot: episodeRoot,
+            openEpisodeAt: (target, offset) => {
+              pendingCaret = { path: target, offset };
+              location.hash = episodeHash(episodeRoot, target);
+            },
+            ...(caret !== undefined ? { initialCaret: caret } : {}),
+            ...(touchedRecorder(store) ? { beforeWrite: touchedRecorder(store)! } : {}),
+          });
+        }
         fillEpisodeSide(screen, store, route.root, route.path, scanOptions, stillHere);
         return;
       case "all":

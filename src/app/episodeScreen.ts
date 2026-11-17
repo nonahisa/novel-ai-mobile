@@ -13,7 +13,9 @@ import { mountEditContextPane } from "./editContextPane";
 import { mountImeSinkPane } from "./imeSinkPane";
 import { chooseMergeRegions, finishMerge, planExternalMerge, regionChoices } from "./externalMerge";
 import { readTextFile, writeTextFilePreservingFormat } from "../platform/textFile";
-import { readWorkLayout } from "../platform/workScan";
+import { readWorkLayout, scanWorkFolder } from "../platform/workScan";
+import { toStorePath } from "../platform/paths";
+import { findTermOccurrences } from "./termOccurrences";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
 import { termAtFrom, termFinderFrom, termTagLabel } from "./termHighlight";
 import type { TermEntry } from "../shared";
@@ -110,6 +112,8 @@ interface WritingPane {
   setOrientation(orientation: WritingOrientation): void;
   /** 用語の色（右の線の欄と、色を付ける左の線の欄〈テスト中〉。色を付けない textarea は中の字に色を付けられない） */
   setTerms?(find: TermFinder): void;
+  /** カーソルを置いて欄に焦点を当てる（名前が出る行へ飛んだとき）。本文は替えず、手も積まない */
+  placeCaret(offset: number): void;
   destroy(): void;
 }
 
@@ -161,6 +165,10 @@ function mountWritingPane(
       backdrop?.setOrientation(next);
     },
     ...(backdrop ? { setTerms: (find: TermFinder) => backdrop.setTerms(find) } : {}),
+    placeCaret(offset) {
+      area.focus();
+      area.setSelectionRange(offset, offset);
+    },
     destroy() {
       area.removeEventListener("input", onInput);
       area.removeEventListener("beforeinput", onBeforeInput);
@@ -321,6 +329,10 @@ function mountRightLinePane(
       pane.setTextAt(edit.text, edit.selEnd);
       onChange(edit.text, "other");
     },
+    placeCaret(offset) {
+      pane.setTextAt(pane.getText(), offset);
+      pane.focus();
+    },
     setOrientation(next) {
       element.classList.toggle("vertical", next === "vertical");
       element.classList.toggle("horizontal", next === "horizontal");
@@ -370,13 +382,17 @@ export function mountEpisodeScreen(
     beforeWrite?: (path: string) => Promise<void>;
     /** 作品のフォルダー（用語の色の語を、作品の設定資料から作る。設計書 5.7） */
     workRoot?: string;
+    /** 同じ作品のほかの話を開き、`offset` にカーソルを置く（名前が出る行へ飛ぶ。保存は離れるときに済ませる） */
+    openEpisodeAt?: (path: string, offset: number) => void;
+    /** 開いたらカーソルを置く所（`openEpisodeAt` で来たとき） */
+    initialCaret?: number;
   }
 ): EpisodeLeaveGuard {
   let orientation = readOrientation();
   // 幅が 600dp 以上（中・広い段）なら、左に話の一覧（`#msSide`。中身は呼ぶ側が入れる）。段は CSS だけで切り替え、
   // 原稿の欄は作り直さない（回転や分割画面で、書きかけ・カーソル・変換中の字を保つ。設計書 4.3・4.5）
   const sideOpen = readSideOpen();
-  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}</div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p></div>`;
+  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}</div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><ol class="term-hits" id="termSheetHits"></ol></div>`;
   // 上のバーの右に押し口を入れる。［一覧］は中・広い段だけ（CSS で出す）
   const sideToggle = document.createElement("button");
   sideToggle.className = "appbar-action ms-side-toggle";
@@ -403,7 +419,10 @@ export function mountEpisodeScreen(
    * 用語の色（設計書 5.7）：作品の設定資料から語を作り、欄が出てから色を付ける。読むのは画面を開いて1回。
    * 設定が読めなくても色が無いだけで、書くのは止めない（本体の TermHighlighter と同じ）。`設定/` へは書かない
    */
-  let termFinder: Promise<{ find: TermFinder; at: (text: string, offset: number) => TermEntry | undefined } | undefined> | undefined;
+  let termFinder:
+    | Promise<{ find: TermFinder; at: (text: string, offset: number) => TermEntry | undefined; entries: TermEntry[] } | undefined>
+    | undefined;
+  let termEntries: TermEntry[] = [];
   const applyWorkTerms = () => {
     if (!options.workRoot || !pane?.setTerms) return;
     const root = options.workRoot;
@@ -413,7 +432,7 @@ export function mountEpisodeScreen(
         // シリーズでつないだ作品の語は自分の語の後ろに積む（同じ所では先に入った自分の資料が勝つ。本体と同じ）
         const own = (await readWorkTerms(store, layout.settings)).entries;
         const entries = [...own, ...(await readSeriesTerms(store, root))];
-        return { find: termFinderFrom(entries), at: termAtFrom(entries) };
+        return { find: termFinderFrom(entries), at: termAtFrom(entries), entries };
       } catch {
         return undefined;
       }
@@ -423,6 +442,7 @@ export function mountEpisodeScreen(
       if (terms && pane === target && options.stillHere()) {
         target.setTerms?.(terms.find);
         termAt = terms.at;
+        termEntries = terms.entries;
       }
     });
   };
@@ -471,6 +491,60 @@ export function mountEpisodeScreen(
     summary.textContent = tagged.summary ?? "";
     summary.hidden = !tagged.summary;
     sheet.hidden = false;
+    void listOccurrences(tagged);
+  });
+  /**
+   * 名前が出る話と行（設計書 5.7「資料の側からは、その名前が出る話と行を並べ、押すとその場所へ飛ぶ」）。
+   * 開いている話は欄の字（保存前の書きかけも）で、ほかの話は置き場の字で探す。読めない話は飛ばす
+   */
+  const hitsEl = sheet.querySelector<HTMLOListElement>("#termSheetHits")!;
+  let occurrenceRun = 0;
+  const listOccurrences = async (entry: TermEntry) => {
+    const run = ++occurrenceRun;
+    hitsEl.innerHTML = "";
+    hitsEl.setAttribute("aria-busy", "true");
+    const root = options.workRoot;
+    const docs: { path: string; text: string; label: string }[] = [];
+    if (root) {
+      try {
+        for (const episode of (await scanWorkFolder(store, root)).episodes) {
+          const episodePath = toStorePath(episode.filePath);
+          if (!episodePath) continue;
+          const label = episodeScreenTitle(episodePath);
+          if (episodePath === path && pane) docs.push({ path: episodePath, text: pane.value(), label });
+          else {
+            try {
+              docs.push({ path: episodePath, text: (await readTextFile(store, episodePath)).text, label });
+            } catch {
+              /* 読めない話は飛ばす */
+            }
+          }
+        }
+      } catch {
+        /* 作品が読めなければ、並べないだけ */
+      }
+    }
+    if (run !== occurrenceRun || sheet.hidden) return;
+    const labels = new Map(docs.map((doc) => [doc.path, doc.label]));
+    const { hits, more } = findTermOccurrences(termEntries, entry.id, docs);
+    hitsEl.innerHTML =
+      hits
+        .map(
+          (hit) =>
+            `<li><button type="button" data-hit-path="${escapeHtml(hit.path)}" data-hit-offset="${hit.offset}"><span class="term-hit-where">${escapeHtml(labels.get(hit.path) ?? "")}・${hit.line}行</span><span class="term-hit-line">${escapeHtml(hit.excerpt)}</span></button></li>`
+        )
+        .join("") + (more ? `<li class="term-hits-more">…</li>` : "");
+    hitsEl.removeAttribute("aria-busy");
+  };
+  hitsEl.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLElement>("[data-hit-path]");
+    if (!button) return;
+    const target = button.dataset.hitPath!;
+    const offset = Number(button.dataset.hitOffset);
+    closeSheet();
+    hideTag();
+    if (target === path) pane?.placeCaret(offset);
+    else options.openEpisodeAt?.(target, offset);
   });
   sheet.querySelector("#termSheetClose")!.addEventListener("click", closeSheet);
   let destroyed = false;
@@ -579,6 +653,7 @@ export function mountEpisodeScreen(
       pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, orientation, onEdit) : mountWritingPane(host, orientation, onEdit, readLeftLineTermColors());
       shown = session.text();
       pane.setText(shown);
+      if (options.initialCaret !== undefined && options.initialCaret <= shown.length) pane.placeCaret(options.initialCaret);
       applyWorkTerms();
       history.clear();
       strip.hidden = false;

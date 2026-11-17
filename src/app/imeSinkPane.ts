@@ -251,6 +251,7 @@ export function mountImeSinkPane(
     },
     getSelection: () => rangeOf(state),
     setSelection: (anchor, focus) => setRange(anchor, focus),
+    isComposing: () => state.composing,
     setTextAt(next: string, caret: number) {
       resetSink();
       state = collapseTo(initialSinkState(next), caret);

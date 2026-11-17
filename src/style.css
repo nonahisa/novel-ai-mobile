@@ -1676,3 +1676,73 @@ a.gh-open {
 .ec-pane .sel {
   background: var(--select);
 }
+/* 範囲のつまみ（`src/app/rangeGestures.ts`）。欄の外の層に置き、範囲の両端に重ねる。押せる所は 44px */
+.range-host {
+  position: relative;
+}
+.range-handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.range-handle {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.range-handle[hidden] {
+  display: none;
+}
+/* 丸（つまみの中心）と、範囲の端の線（列の幅。丸から列の側へ） */
+.range-handle i {
+  position: absolute;
+  left: 15px;
+  top: 15px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.range-handle::before {
+  content: "";
+  position: absolute;
+  background: var(--accent);
+}
+.range-handle[data-dir="vertical"]::before {
+  top: 21px;
+  height: 2px;
+  width: var(--line, 20px);
+}
+.range-handle[data-dir="vertical"][data-end="start"]::before {
+  left: calc(22px - 9px - var(--line, 20px));
+}
+.range-handle[data-dir="vertical"][data-end="end"]::before {
+  left: calc(22px + 9px);
+}
+.range-handle[data-dir="horizontal"]::before {
+  left: 21px;
+  width: 2px;
+  height: var(--line, 20px);
+}
+.range-handle[data-dir="horizontal"][data-end="start"]::before {
+  top: calc(22px + 9px);
+}
+.range-handle[data-dir="horizontal"][data-end="end"]::before {
+  top: calc(22px - 9px - var(--line, 20px));
+}
+/* 範囲を選んでいるあいだはカーソルの線を出さない（範囲の端はつまみの線で見える） */
+.ec-pane .sel + .caret,
+.ec-pane .caret:has(+ .sel) {
+  visibility: hidden !important;
+}
+.ec-pane {
+  -webkit-touch-callout: none;
+}

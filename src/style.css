@@ -1032,7 +1032,82 @@ button {
   display: none;
 }
 .ms-main {
+  position: relative;
   min-width: 0;
+}
+/* 色の付いた名前を押したときの札（設計書 5.7）。原稿の下の端に細く出す（道具帯の上） */
+.term-tag {
+  position: absolute;
+  left: 8px;
+  bottom: 60px;
+  max-width: calc(100% - 16px);
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--term-tag, var(--accent));
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+.term-tag[hidden] {
+  display: none;
+}
+.term-tag[data-kind="character"] { --term-tag: var(--term-character); }
+.term-tag[data-kind="location"] { --term-tag: var(--term-location); }
+.term-tag[data-kind="ability"] { --term-tag: var(--term-ability); }
+.term-tag[data-kind="organization"] { --term-tag: var(--term-organization); }
+/* 札を押したときの資料。狭い段は下から半分の高さ */
+.term-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  height: 50dvh;
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  border-radius: 14px 14px 0 0;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+}
+.term-sheet[hidden] {
+  display: none;
+}
+.term-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.term-sheet-head h2 {
+  margin: 8px 0;
+  font-size: 17px;
+}
+.term-sheet p {
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+/* 中・広い段は右から半分の幅の引き出し */
+@media (min-width: 600px) {
+  .term-sheet {
+    top: 0;
+    left: auto;
+    width: 50vw;
+    height: auto;
+    padding-top: calc(8px + env(safe-area-inset-top));
+    border-top: 0;
+    border-left: 1px solid var(--line);
+    border-radius: 14px 0 0 14px;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.18);
+  }
 }
 @media (min-width: 600px) {
   .ms-layout {

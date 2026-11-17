@@ -15,7 +15,8 @@ import { chooseMergeRegions, finishMerge, planExternalMerge, regionChoices } fro
 import { readTextFile, writeTextFilePreservingFormat } from "../platform/textFile";
 import { readWorkLayout } from "../platform/workScan";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
-import { termFinderFrom } from "./termHighlight";
+import { termAtFrom, termFinderFrom, termTagLabel } from "./termHighlight";
+import type { TermEntry } from "../shared";
 import type { TermFinder } from "./editContextPane";
 
 /**
@@ -375,7 +376,7 @@ export function mountEpisodeScreen(
   // 幅が 600dp 以上（中・広い段）なら、左に話の一覧（`#msSide`。中身は呼ぶ側が入れる）。段は CSS だけで切り替え、
   // 原稿の欄は作り直さない（回転や分割画面で、書きかけ・カーソル・変換中の字を保つ。設計書 4.3・4.5）
   const sideOpen = readSideOpen();
-  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div>${renderToolStrip()}</div></div>`;
+  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}</div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p></div>`;
   // 上のバーの右に押し口を入れる。［一覧］は中・広い段だけ（CSS で出す）
   const sideToggle = document.createElement("button");
   sideToggle.className = "appbar-action ms-side-toggle";
@@ -402,7 +403,7 @@ export function mountEpisodeScreen(
    * 用語の色（設計書 5.7）：作品の設定資料から語を作り、欄が出てから色を付ける。読むのは画面を開いて1回。
    * 設定が読めなくても色が無いだけで、書くのは止めない（本体の TermHighlighter と同じ）。`設定/` へは書かない
    */
-  let termFinder: Promise<TermFinder | undefined> | undefined;
+  let termFinder: Promise<{ find: TermFinder; at: (text: string, offset: number) => TermEntry | undefined } | undefined> | undefined;
   const applyWorkTerms = () => {
     if (!options.workRoot || !pane?.setTerms) return;
     const root = options.workRoot;
@@ -411,16 +412,67 @@ export function mountEpisodeScreen(
         const layout = await readWorkLayout(store, root);
         // シリーズでつないだ作品の語は自分の語の後ろに積む（同じ所では先に入った自分の資料が勝つ。本体と同じ）
         const own = (await readWorkTerms(store, layout.settings)).entries;
-        return termFinderFrom([...own, ...(await readSeriesTerms(store, root))]);
+        const entries = [...own, ...(await readSeriesTerms(store, root))];
+        return { find: termFinderFrom(entries), at: termAtFrom(entries) };
       } catch {
         return undefined;
       }
     })();
     const target = pane;
-    void termFinder.then((find) => {
-      if (find && pane === target && options.stillHere()) target.setTerms?.(find);
+    void termFinder.then((terms) => {
+      if (terms && pane === target && options.stillHere()) {
+        target.setTerms?.(terms.find);
+        termAt = terms.at;
+      }
     });
   };
+  /**
+   * **色の付いた名前を押したときの札**（設計書 5.7【決定】2026-11-15 作者「下に小さい札だけ出す」）。
+   * 名前を押すと原稿の下に細い札（「灯（人物）›」）だけを出し、資料はすぐには開かない（カーソルを置くつもりで押しても
+   * 原稿が隠れない）。札を押すと資料の紹介を出す（狭い段は下から半分の高さ、中・広い段は右から半分の幅。CSS で切り替え）。
+   * 追いかけるのは押したときだけ（打鍵・矢印キーでは追いかけない）。変換中は動かさない。欄の DOM は書き換えない
+   */
+  let termAt: ((text: string, offset: number) => TermEntry | undefined) | undefined;
+  let tagged: TermEntry | undefined;
+  let composing = false;
+  const tag = screen.querySelector<HTMLButtonElement>("#termTag")!;
+  const sheet = screen.querySelector<HTMLElement>("#termSheet")!;
+  const hideTag = () => {
+    tagged = undefined;
+    tag.hidden = true;
+  };
+  const closeSheet = () => {
+    sheet.hidden = true;
+  };
+  host.addEventListener("compositionstart", () => (composing = true));
+  host.addEventListener("compositionend", () => (composing = false));
+  // click ではなく pointerup：右の線の欄は押したときに字を描き直すので、押した字が入れ替わり click が届かない
+  host.addEventListener("pointerup", () => {
+    if (composing || !termAt || !pane) return;
+    // カーソルが置かれてから見る（押した所へカーソルが動くのは指を離したあと）
+    const target = pane;
+    const before = target.value();
+    setTimeout(() => {
+      // 待つあいだに打った字があれば出さない（打つと札は消す）
+      if (pane !== target || composing || !termAt || target.value() !== before) return;
+      const { start, end } = target.selection();
+      const entry = start === end ? termAt(target.value(), start) : undefined;
+      if (!entry) return hideTag();
+      tagged = entry;
+      tag.textContent = `${termTagLabel(entry)} ›`;
+      tag.dataset.kind = entry.kind;
+      tag.hidden = false;
+    }, 0);
+  });
+  tag.addEventListener("click", () => {
+    if (!tagged) return;
+    sheet.querySelector("#termSheetTitle")!.textContent = termTagLabel(tagged);
+    const summary = sheet.querySelector<HTMLElement>("#termSheetSummary")!;
+    summary.textContent = tagged.summary ?? "";
+    summary.hidden = !tagged.summary;
+    sheet.hidden = false;
+  });
+  sheet.querySelector("#termSheetClose")!.addEventListener("click", closeSheet);
   let destroyed = false;
   const history = new UndoHistory();
   /** 取り消しの手を積むための、ひとつ前の本文 */
@@ -432,6 +484,7 @@ export function mountEpisodeScreen(
     button("redo").disabled = !history.canRedo();
   };
   const onEdit = (text: string, kind: "type" | "other") => {
+    hideTag();
     history.record(shown, text, kind, Date.now());
     shown = text;
     session?.edit(text);

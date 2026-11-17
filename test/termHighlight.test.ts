@@ -8,7 +8,9 @@ import {
   buildTermIndex,
   findTermSpans,
   termColorCss,
+  termAtFrom,
   termEntriesFrom,
+  termTagLabel,
   type TermInput,
 } from "../src/app/termHighlight";
 import { SAMPLE_TEXT } from "../src/app/tategakiDraft";
@@ -115,5 +117,42 @@ describe("A：contenteditable の中身と本文の位置の対応", () => {
     expect(trailingBreakNeeded("灯\n")).toBe(true);
     expect(trailingBreakNeeded("灯")).toBe(false);
     expect(trailingBreakNeeded("")).toBe(false);
+  });
+});
+
+describe("色の付いた名前を押したときの札（設計書 5.7「下に小さい札だけ出す」）", () => {
+  const entries = [
+    { text: "マルキオ・イークェス", kind: "character" as const, id: "char_001", canonicalName: "マルキオ・イークェス", summary: "灯台の番人" },
+    { text: "マルキオ", kind: "character" as const, id: "char_001", canonicalName: "マルキオ・イークェス", summary: "灯台の番人" },
+    { text: "北の岬", kind: "location" as const, id: "loc_001", canonicalName: "北の岬" },
+  ];
+  const at = termAtFrom(entries);
+  const text = "朝。\nマルキオは北の岬へ。\nマルキオ・イークェスが来た";
+
+  test("カーソルが名前の中か端にあれば、その語（正式名称・種類・紹介）を返す", () => {
+    const line = text.indexOf("マルキオは");
+    expect(at(text, line + 2)).toMatchObject({ canonicalName: "マルキオ・イークェス", kind: "character", summary: "灯台の番人" });
+    expect(at(text, line)).toMatchObject({ id: "char_001" });
+    expect(at(text, line + 4)).toMatchObject({ id: "char_001" });
+    expect(at(text, text.indexOf("北の岬") + 1)).toMatchObject({ id: "loc_001", kind: "location" });
+  });
+
+  test("名前でない所・別の行の名前・空の本文では返さない", () => {
+    expect(at(text, 1)).toBeUndefined();
+    expect(at(text, text.indexOf("へ") + 1)).toBeUndefined();
+    expect(at("", 0)).toBeUndefined();
+    expect(termAtFrom([])(text, 5)).toBeUndefined();
+  });
+
+  test("長い名前が優先（本体と同じ最左最長）", () => {
+    const last = text.lastIndexOf("マルキオ");
+    expect(at(text, last + 6)).toMatchObject({ text: "マルキオ・イークェス" });
+  });
+
+  test("札の字は「名前（種類）」。種類は人物・場所・能力・組織", () => {
+    expect(termTagLabel(entries[0])).toBe("マルキオ・イークェス（人物）");
+    expect(termTagLabel(entries[2])).toBe("北の岬（場所）");
+    expect(termTagLabel({ ...entries[2], kind: "organization" })).toBe("北の岬（組織）");
+    expect(termTagLabel({ ...entries[2], kind: "ability" })).toBe("北の岬（能力）");
   });
 });

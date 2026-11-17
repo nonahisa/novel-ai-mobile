@@ -1,4 +1,4 @@
-import { revealCaret, watchVisibleBand } from "./caretVisible";
+import { fitPane, revealCaret, watchVisibleBand } from "./caretVisible";
 import {
   type ComposedToken,
   chunkSignature,
@@ -511,7 +511,11 @@ export function mountComposedPane(
 
   /** キーボードが出て見える範囲が縮んだら、カーソルを見える所へ */
   const stopWatching = watchVisibleBand(() => {
-    if (document.activeElement === element && !composing) revealCaret(caretMark(), element);
+    if (document.activeElement === element && !composing) {
+      // 見える所が低いとき（上下を細くしたとき）は、欄ごと見える所にそろえる（欄の中ならカーソルも見える）
+      const fitted = document.documentElement.dataset.compact === "on" && fitPane(element);
+      if (!fitted) revealCaret(caretMark(), element);
+    }
     paintOwnCaret();
   });
 

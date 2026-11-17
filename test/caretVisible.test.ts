@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { caretScrollDelta, revealDelta, watchVisibleBand } from "../src/app/caretVisible";
+import { caretScrollDelta, fitPaneDelta, revealDelta, watchVisibleBand } from "../src/app/caretVisible";
 
 /**
  * キーボードが出ても、カーソルのある所を見える位置へ送る量（2026-11-07 Mac の iOS シミュレーター：
@@ -113,5 +113,17 @@ describe("キーボードが出入りしたときの見張り", () => {
     vv.dispatchEvent(new Event("resize"));
     vi.advanceTimersByTime(1000);
     expect(calls).toBe(1);
+  });
+});
+
+describe("fitPaneDelta（見える所が低いとき、欄ごと見える所にそろえる）", () => {
+  test("入りきる欄は、下の端を見える範囲の下の端にそろえる（iPad Air 11 横：欄 135〜421・見える 0〜398 → 23 下へ）", () => {
+    expect(fitPaneDelta({ top: 135, bottom: 421 }, { top: 0, height: 398 })).toBe(23);
+  });
+  test("欄が上へ行きすぎていれば戻す", () => {
+    expect(fitPaneDelta({ top: 40, bottom: 326 }, { top: 0, height: 398 })).toBe(-72);
+  });
+  test("見える範囲より高い欄はそろえない", () => {
+    expect(fitPaneDelta({ top: 0, bottom: 500 }, { top: 0, height: 398 })).toBeUndefined();
   });
 });

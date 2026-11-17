@@ -1572,7 +1572,12 @@ a.gh-open {
 :root[data-compact] .ms-side {
   height: calc(var(--vvh, 100dvh) - 37px - 4px - env(safe-area-inset-top));
 }
+/*
+  試しの画面（C）の欄は、細いバー（37）と細い道具の段（約40）と間（4）だけを除く。欄の高さが足りないと、
+  送ったときに道具の段がバーに張りつかず、上の説明の行が半分だけ見えた（2026-11-17 iPad Air 11インチのシミュレーター）。
+  多めに取って欄の頭が道具の段の裏へ少しかかっても、かかるのは欄の余白（12px）だけ
+*/
 :root[data-compact] .draft-input {
-  height: calc(var(--vvh, 100dvh) - 37px - 4px - 52px - 8px - env(safe-area-inset-top));
+  height: calc(var(--vvh, 100dvh) - 37px - 40px - 4px - env(safe-area-inset-top));
   min-height: 0;
 }

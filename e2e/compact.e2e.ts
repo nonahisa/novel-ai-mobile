@@ -70,6 +70,30 @@ test.describe("キーボードが出て見える所が低いとき（iPad mini �
   });
 });
 
+test.describe("キーボードが出て見える所が低いとき（iPad Air 11インチ 横）", () => {
+  // 2026-11-17 Mac のシミュレーター（1180×820pt・キーボード約422pt）：試しの画面（C）で、題の下の説明の行が半分だけ見えて切れた
+  const AIR = { width: 1180, height: 398 };
+  test.use({ viewport: AIR });
+
+  test("試しの画面（C）：欄を見える所へ送ると、道具の段はバーに張りつき、上の説明の行は半端に残らない", async ({ page }) => {
+    await page.goto("/#/tategaki");
+    await expect(page.locator("#draftResult")).not.toBeEmpty();
+    await page.locator('[data-mode="C"]').click();
+    await page.locator(".draft-input.composed").evaluate((el) => el.scrollIntoView({ block: "end" }));
+    const r = await page.evaluate(() => {
+      const box = (s: string) => document.querySelector(s)!.getBoundingClientRect();
+      return { bar: box(".appbar").bottom, note: box("#modeNote").bottom, tools: box("#composedTools"), field: box(".draft-input.composed") };
+    });
+    // 説明の行はバーの裏へ隠れきる
+    expect(r.note).toBeLessThanOrEqual(r.bar);
+    // 道具の段はバーのすぐ下に張りつき、欄はそのすぐ下から見える所の下の端まで
+    expect(r.tools.top).toBeLessThanOrEqual(r.bar);
+    expect(r.field.top).toBeGreaterThanOrEqual(r.tools.bottom - 1);
+    expect(r.field.top - r.tools.bottom).toBeLessThanOrEqual(8);
+    expect(r.field.bottom).toBeLessThanOrEqual(AIR.height + 1);
+  });
+});
+
 test.describe("見える所が高いときは、いまのまま", () => {
   test.use({ viewport: { width: 1133, height: 744 } });
 

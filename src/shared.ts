@@ -131,3 +131,20 @@ export { parseCharacter, type Character } from "novel-ai-assistant/src/models/ch
 export { parseAbility, type Ability } from "novel-ai-assistant/src/models/ability";
 export { parseLocation, type Location } from "novel-ai-assistant/src/models/location";
 export { parseOrganization, type Organization } from "novel-ai-assistant/src/models/organization";
+
+/*
+  誤字脱字（段2。設計書 7章）：区切り・行番号・頼みの文・答えの読み方と確かめ・当て方は本体と同じものを使う。
+  AI への頼みの部品（本体の ai/*Provider.ts）は vscode に頼るので借りられない（`platform/typoCheck.ts` で写す）
+*/
+export { withLineNumbers, locateChunkLine, type Chunk } from "novel-ai-assistant/src/core/chunker";
+export { chunksOfEpisodeFile } from "novel-ai-assistant/src/core/episodeChunks";
+export {
+  buildTypoCheckPrompt,
+  TYPO_CHECK_SCHEMA,
+  TYPO_CHECK_SYSTEM_PROMPT,
+  TYPO_CHECK_TEMPERATURE,
+  TYPO_DICTIONARY_LIMIT,
+} from "novel-ai-assistant/src/prompts/typoCheck";
+export { parseTypoCheckResult, validateTypoIssues, looksArchaicText, type AcceptedTypoIssue } from "novel-ai-assistant/src/core/typoCheckValidation";
+export { applyFindingToText } from "novel-ai-assistant/src/core/findingApply";
+export { toOpenAIJsonSchema, toGeminiSchema } from "novel-ai-assistant/src/ai/jsonSchema";

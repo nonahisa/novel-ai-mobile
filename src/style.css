@@ -1581,3 +1581,94 @@ a.gh-open {
   height: calc(var(--vvh, 100dvh) - 37px - 40px - 4px - env(safe-area-inset-top));
   min-height: 0;
 }
+
+/* ---------- 誤字脱字（段2）：走らせる前の見積もり（F）と提案（D） ---------- */
+.estimate {
+  display: block;
+  font-size: 15px;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.estimate-row {
+  display: grid;
+  grid-template-columns: 4em minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.estimate-row:last-child {
+  border-bottom: 0;
+}
+.estimate dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.estimate dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.proposal-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.proposal {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.proposal p {
+  margin: 0;
+}
+.proposal-line {
+  font-family: var(--font-ms);
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.proposal-line mark {
+  background: var(--shu-soft);
+  color: var(--shu);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.proposal-fix {
+  margin-top: 6px !important;
+  font-size: 14px;
+}
+.proposal-from {
+  color: var(--shu);
+  text-decoration: line-through;
+}
+.proposal-to {
+  color: var(--accent);
+  font-weight: 700;
+}
+.proposal-why {
+  font-size: 12px;
+  color: var(--muted);
+}
+.proposal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.proposal-actions button {
+  min-height: 40px;
+  padding: 6px 18px;
+}
+.proposal-actions button.ghost {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 400;
+}
+.proposal-list .work-empty {
+  margin-top: 12px;
+}

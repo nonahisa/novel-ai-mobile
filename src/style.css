@@ -1672,3 +1672,7 @@ a.gh-open {
 .proposal-list .work-empty {
   margin-top: 12px;
 }
+/* 右の線の欄で選んだ範囲（2026-11-18 作者の答え D）。字をこの画面が描くので、範囲の色もこの画面が塗る */
+.ec-pane .sel {
+  background: var(--select);
+}

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
   applyTextUpdate,
+  collapseTo,
+  hasRange,
+  rangeOf,
+  selectRange,
   editAtCaret,
   editContextSupport,
   initialPaneState,
@@ -17,6 +21,7 @@ import {
 const composing = (text: string, formats: PaneState["formats"], selection = text.length): PaneState => ({
   text,
   selection,
+  anchor: selection,
   composing: true,
   formats,
 });
@@ -61,7 +66,7 @@ describe("変換中の線（線の向きは CSS。ここではどの字に線を
   });
 
   test("1字ずつ span にし、カーソルの位置に印を置く。< & はタグにしない", () => {
-    const html = renderPaneHtml({ ...composing("a<b", [{ start: 0, end: 1, style: "solid", thickness: "thin" }]), selection: 1 });
+    const html = renderPaneHtml({ ...composing("a<b", [{ start: 0, end: 1, style: "solid", thickness: "thin" }]), selection: 1, anchor: 1 });
     expect(html).toBe(
       '<span data-i="0" data-n="1" class="comp">a</span><span class="caret" aria-hidden="true">&#8203;</span><span data-i="1" data-n="1">&lt;</span><span data-i="2" data-n="1">b</span>'
     );
@@ -75,17 +80,17 @@ describe("変換中の線（線の向きは CSS。ここではどの字に線を
 
 describe("改行・削除はページが受け持つ", () => {
   test("改行はカーソルの位置に入る", () => {
-    const done = editAtCaret({ ...initialPaneState("あい"), selection: 1 }, "newline");
+    const done = editAtCaret({ ...initialPaneState("あい"), selection: 1, anchor: 1 }, "newline");
     expect(done).toMatchObject({ start: 1, end: 1, inserted: "\n", state: { text: "あ\nい", selection: 2 } });
   });
 
   test("後ろへ消す（Backspace）は2単位の字を割らない。頭では何もしない", () => {
     expect(editAtCaret(initialPaneState("野𠮷"), "backspace")).toMatchObject({ start: 1, end: 3, state: { text: "野", selection: 1 } });
-    expect(editAtCaret({ ...initialPaneState("あ"), selection: 0 }, "backspace")).toBeUndefined();
+    expect(editAtCaret({ ...initialPaneState("あ"), selection: 0, anchor: 0 }, "backspace")).toBeUndefined();
   });
 
   test("前へ消す（Delete）は2単位の字を割らない。末尾では何もしない", () => {
-    expect(editAtCaret({ ...initialPaneState("𠮷野"), selection: 0 }, "delete")).toMatchObject({ start: 0, end: 2, state: { text: "野" } });
+    expect(editAtCaret({ ...initialPaneState("𠮷野"), selection: 0, anchor: 0 }, "delete")).toMatchObject({ start: 0, end: 2, state: { text: "野" } });
     expect(editAtCaret(initialPaneState("あ"), "delete")).toBeUndefined();
   });
 });
@@ -103,5 +108,31 @@ describe("B を使えるか", () => {
     const answer = editContextSupport({}, "android");
     expect(answer.ok).toBe(false);
     if (!answer.ok) expect(answer.reason).toContain("EditContext");
+  });
+});
+
+describe("選んだ範囲（2026-11-18 作者の答え D）", () => {
+  const ranged = (text: string, anchor: number, selection: number): PaneState => ({ ...initialPaneState(text), anchor, selection });
+  test("範囲は前から後ろへ読む（引いた向きによらない）", () => {
+    expect(rangeOf(ranged("あいうえ", 3, 1))).toEqual({ start: 1, end: 3 });
+    expect(hasRange(ranged("あいうえ", 2, 2))).toBe(false);
+  });
+  test("範囲があれば、後ろへ消す・前へ消すは範囲を消し、改行は範囲と置き換わる", () => {
+    expect(editAtCaret(ranged("あいうえ", 1, 3), "backspace")).toMatchObject({ start: 1, end: 3, inserted: "", state: { text: "あえ", selection: 1, anchor: 1 } });
+    expect(editAtCaret(ranged("あいうえ", 3, 1), "delete")).toMatchObject({ state: { text: "あえ", selection: 1, anchor: 1 } });
+    expect(editAtCaret(ranged("あいうえ", 1, 3), "newline")?.state.text).toBe("あ" + String.fromCharCode(10) + "え");
+  });
+  test("IME の書き換えのあとは範囲を外す", () => {
+    expect(applyTextUpdate(ranged("あいう", 0, 2), { start: 0, end: 2, text: "朝", selection: 1 })).toMatchObject({ text: "朝う", selection: 1, anchor: 1 });
+  });
+  test("範囲の字に印。変換中は付けない", () => {
+    const html = renderPaneHtml(ranged("あいう", 1, 2));
+    expect(html).toContain('<span data-i="1" data-n="1" class="sel">い</span>');
+    expect(html).not.toContain('data-i="0" data-n="1" class="sel"');
+    expect(renderPaneHtml({ ...ranged("あいう", 1, 2), composing: true })).not.toContain("sel");
+  });
+  test("カーソルを置くと範囲は外れ、範囲を選ぶと本文の外を指さない", () => {
+    expect(collapseTo(ranged("あい", 0, 2), 1)).toMatchObject({ selection: 1, anchor: 1 });
+    expect(selectRange(initialPaneState("あい"), -3, 9)).toMatchObject({ anchor: 0, selection: 2 });
   });
 });

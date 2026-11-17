@@ -74,6 +74,9 @@ import {
 } from "../platform/workSyncRun";
 import { nativePostForm } from "../platform/githubDeviceFlow";
 import { applyLook, parseLook, readLook, renderLookSection, writeLook } from "./look";
+import { readProposals, renderProposals, renderTypoEntry, withoutProposal, writeProposals, type TypoProposal } from "./typoProposals";
+import { mountTypoRun } from "./typoScreen";
+import { applyOutcomeText, applyProposal } from "../platform/applyProposal";
 import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLead, type LastEpisode } from "./lastEpisode";
 
 /**
@@ -103,6 +106,7 @@ type Route =
   | { kind: "sync"; root: string }
   | { kind: "conflict"; root: string; path: string }
   | { kind: "episode"; root: string; path: string }
+  | { kind: "typo"; root: string; path: string }
   | { kind: "all" }
   | { kind: "tategaki" }
   | { kind: "check" }
@@ -133,6 +137,19 @@ export function parseRoute(hash: string): Route {
         const root = decodeURIComponent(pieces[0]!);
         const relative = decodeURIComponent(pieces[1]!);
         if (isWorkRoot(root) && isEpisodeInWork(relative)) return { kind: "episode", root, path: `${root}/${relative}` };
+      }
+    } catch {
+      /* 読めない名前は作品一覧へ */
+    }
+    return { kind: "tab", tab: TABS[0] };
+  }
+  if (name.startsWith("typo/")) {
+    const pieces = name.slice("typo/".length).split("/");
+    try {
+      if (pieces.length === 2) {
+        const root = decodeURIComponent(pieces[0]!);
+        const relative = decodeURIComponent(pieces[1]!);
+        if (isWorkRoot(root) && isEpisodeInWork(relative)) return { kind: "typo", root, path: `${root}/${relative}` };
       }
     } catch {
       /* 読めない名前は作品一覧へ */
@@ -216,6 +233,11 @@ export function syncHash(root: string): string {
 export function episodeHash(root: string, path: string): string {
   if (!path.startsWith(`${root}/`)) throw new Error(`作品の外の話です: ${path}`);
   return `#/episode/${encodeURIComponent(root)}/${encodeURIComponent(path.slice(root.length + 1))}`;
+}
+
+/** 誤字脱字を走らせる画面（見積もり F） */
+export function typoHash(root: string, path: string): string {
+  return episodeHash(root, path).replace("#/episode/", "#/typo/");
 }
 
 /** 覚えていた最後の話。作品の外・隠したフォルダーを指していたら捨てる */
@@ -363,7 +385,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "ai" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "ai" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
@@ -383,8 +405,11 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
             ? `<div id="workListSlot" aria-busy="true"></div>`
             : route.tab.id === "write"
               ? renderWriteLead(lastEpisodeInWorks(), recentEpisodesInWorks())
-              : undefined
+              : route.tab.id === "proposals"
+                ? `<div id="proposalsRoot">${renderTypoEntry(lastEpisodeInWorks())}<div id="proposalSlot">${renderProposals(readProposals(globalThis.localStorage))}</div></div>`
+                : undefined
         );
+        if (route.tab.id === "proposals") wireProposals(screen, store, toast);
         if (route.tab.id === "works") {
           mountWorkList(screen.querySelector<HTMLElement>("#workListSlot")!, store, scanOptions, stillHere);
           // 右下の［＋］：取り寄せる／新しく作る（設計書 4.4.3）
@@ -446,6 +471,20 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "all":
         mountAllActions(screen);
         return;
+      case "typo": {
+        lastTabHash = "#/proposals";
+        const stop = mountTypoRun(screen, {
+          store,
+          root: route.root,
+          path: route.path,
+          settings: DeviceSettings.load(capacitorPreferencesBackend).then(({ settings }) => settings),
+          vault: secretVault(),
+          toast,
+          stillHere,
+        });
+        leaveGuard = { isDirty: () => false, destroy: stop };
+        return;
+      }
       case "tategaki":
         leaveGuard = mountTategaki(screen, store);
         return;
@@ -1076,6 +1115,45 @@ function mountDisplayScreen(screen: HTMLElement, stillHere: () => boolean): void
     await loadInstalledFont();
     show(installedFace ? { kind: "installed" } : { kind: "absent" });
   })();
+}
+
+/* ---------- 提案（D）：誤字脱字の指摘を採る・見送る（段2） ---------- */
+
+function wireProposals(screen: HTMLElement, store: FileStore, toast: (text: string) => void): void {
+  // 聞き手は、この描画で作った入れ物に付ける（screen に付けると、タブを開くたびに重なり、［採る］が2回当たる）
+  const host = screen.querySelector<HTMLElement>("#proposalsRoot");
+  if (!host) return;
+  const slot = host.querySelector<HTMLElement>("#proposalSlot");
+  const repaint = (list: TypoProposal[]) => {
+    writeProposals(globalThis.localStorage, list);
+    if (slot) slot.innerHTML = renderProposals(list);
+  };
+  let busy = false;
+  host.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    const entry = target.closest<HTMLElement>("[data-typo-path]");
+    if (entry?.dataset.typoPath && entry.dataset.typoRoot) {
+      location.hash = typoHash(entry.dataset.typoRoot, entry.dataset.typoPath);
+      return;
+    }
+    const dismiss = target.closest<HTMLElement>("[data-dismiss]")?.dataset.dismiss;
+    if (dismiss) return repaint(withoutProposal(readProposals(globalThis.localStorage), dismiss));
+    const accept = target.closest<HTMLElement>("[data-accept]")?.dataset.accept;
+    if (!accept || busy) return;
+    const proposal = readProposals(globalThis.localStorage).find((item) => item.id === accept);
+    if (!proposal) return;
+    busy = true;
+    const recorder = touchedRecorder(store);
+    void applyProposal(store, proposal, recorder)
+      .then((outcome) => {
+        toast(applyOutcomeText(outcome));
+        // 当てた・当てられなくなった指摘は外す。書けなかった（外で変わった など）ときは残す
+        if (outcome.kind === "applied" || outcome.kind === "stale") repaint(withoutProposal(readProposals(globalThis.localStorage), accept));
+      })
+      .finally(() => {
+        busy = false;
+      });
+  });
 }
 
 /* ---------- すべての機能 ---------- */

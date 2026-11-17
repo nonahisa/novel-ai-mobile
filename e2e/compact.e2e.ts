@@ -75,11 +75,19 @@ test.describe("キーボードが出て見える所が低いとき（iPad Air 11
   const AIR = { width: 1180, height: 398 };
   test.use({ viewport: AIR });
 
-  test("試しの画面（C）：欄を見える所へ送ると、道具の段はバーに張りつき、上の説明の行は半端に残らない", async ({ page }) => {
+  test("試しの画面（C）：欄を押してキーボードが出ると、欄は見える所に入りきり、道具の段はバーに張りつき、上の説明の行は半端に残らない", async ({ page }) => {
+    // 0.1.81 の Mac：欄を手で送る e2e では通ったが、本物はカーソルの所までしか送らず、欄の下の約23pt がキーボードの裏に残った
+    await page.setViewportSize({ width: AIR.width, height: 820 });
     await page.goto("/#/tategaki");
     await expect(page.locator("#draftResult")).not.toBeEmpty();
     await page.locator('[data-mode="C"]').click();
-    await page.locator(".draft-input.composed").evaluate((el) => el.scrollIntoView({ block: "end" }));
+    const field = page.locator(".draft-input.composed");
+    await field.click({ position: { x: 900, y: 40 } });
+    // キーボードが出る（見える高さが縮む）
+    await page.setViewportSize(AIR);
+    await expect
+      .poll(() => page.evaluate(() => Math.round(document.querySelector(".draft-input.composed")!.getBoundingClientRect().bottom)))
+      .toBeLessThanOrEqual(AIR.height + 1);
     const r = await page.evaluate(() => {
       const box = (s: string) => document.querySelector(s)!.getBoundingClientRect();
       return { bar: box(".appbar").bottom, note: box("#modeNote").bottom, tools: box("#composedTools"), field: box(".draft-input.composed") };
@@ -90,7 +98,7 @@ test.describe("キーボードが出て見える所が低いとき（iPad Air 11
     expect(r.tools.top).toBeLessThanOrEqual(r.bar);
     expect(r.field.top).toBeGreaterThanOrEqual(r.tools.bottom - 1);
     expect(r.field.top - r.tools.bottom).toBeLessThanOrEqual(8);
-    expect(r.field.bottom).toBeLessThanOrEqual(AIR.height + 1);
+    expect(r.field.bottom).toBeGreaterThanOrEqual(AIR.height - 2);
   });
 });
 

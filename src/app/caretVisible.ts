@@ -86,6 +86,28 @@ export function revealCaret(caret: Pick<Element, "getBoundingClientRect"> | null
   if (delta !== 0) window.scrollBy(0, delta);
 }
 
+/**
+ * **欄が見える範囲に入りきる高さなら、欄の下の端を見える範囲の下の端にそろえる**送りの量（正なら下へ）。入りきらなければ undefined。
+ * キーボードが出て見える所が低いとき（`compactMode`）、組んで書く面（C）の欄は「見える高さ − 細いバー − 道具の段」の高さにしてある。
+ * カーソルの所までしか送らないと、欄の下の端がキーボードの裏に、上の説明の行がバーと道具の段のあいだに半端に残った
+ * （2026-11-17 iPad Air 11インチのシミュレーター 0.1.81：欄の下 約23pt がキーボードの裏）
+ */
+export function fitPaneDelta(pane: { top: number; bottom: number }, band: VisibleBand): number | undefined {
+  if (pane.bottom - pane.top > band.height + 1) return undefined;
+  return pane.bottom - (band.top + band.height);
+}
+
+/** 欄が入りきるなら、欄の下の端を見える範囲の下の端にそろえる。そろえたら true */
+export function fitPane(pane: Element): boolean {
+  const vv = window.visualViewport;
+  const band = vv ? { top: vv.offsetTop, height: vv.height } : { top: 0, height: window.innerHeight };
+  if (band.height < 160) return false;
+  const delta = fitPaneDelta(pane.getBoundingClientRect(), band);
+  if (delta === undefined) return false;
+  if (Math.abs(delta) >= 1) window.scrollBy(0, delta);
+  return true;
+}
+
 /** キーボードが出入りしたあと、ブラウザが自分でページを送るのを待つ間（AQUOS では 80ms ほどあとに2回送った） */
 const FOLLOW_MS = 600;
 /** ブラウザの送りが止まったと見なす間 */

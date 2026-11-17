@@ -88,3 +88,26 @@ export function termColorCss(): string {
   ).join("\n");
   return `:root { ${light} }\n@media (prefers-color-scheme: dark) { :root { ${dark} } }\n${rules}`;
 }
+
+/**
+ * **色の付いた名前を押したときの札**（設計書 5.7【決定】2026-11-15 作者「下に小さい札だけ出す」）。
+ * カーソルの所（名前の中か端）にある語を、用語の色と同じ本体の索引で見つける。見るのはカーソルの行だけ
+ * （長い本文でも押すたびに全部を探さない）。DOM には触らない
+ */
+export function termAtFrom(entries: readonly TermEntry[]): (text: string, offset: number) => TermEntry | undefined {
+  if (entries.length === 0) return () => undefined;
+  const index = new TermIndex([...entries]);
+  return (text, offset) => {
+    if (!text || offset < 0 || offset > text.length) return undefined;
+    const lineStart = text.lastIndexOf("\n", offset - 1) + 1;
+    const next = text.indexOf("\n", offset);
+    const line = text.slice(lineStart, next < 0 ? text.length : next);
+    const at = offset - lineStart;
+    return index.find(line).find((m) => m.start <= at && at <= m.end)?.entry;
+  };
+}
+
+/** 札の字：「マルキオ・イークェス（人物）」 */
+export function termTagLabel(entry: Pick<TermEntry, "canonicalName" | "kind">): string {
+  return `${entry.canonicalName}（${TERM_KIND_LABELS[entry.kind]}）`;
+}

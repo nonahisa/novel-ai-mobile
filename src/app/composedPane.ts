@@ -254,6 +254,7 @@ export function mountComposedPane(
   };
 
   const onBeforeInput = (e: InputEvent) => {
+    releaseByTyping();
     if (e.isComposing || composing) return;
     flushSnap();
     // ブラウザの取り消し（Ctrl+Z・iPad の取り消しのキーなど）は使わず、こちらの手で戻す
@@ -350,9 +351,31 @@ export function mountComposedPane(
     silentTimer = window.setTimeout(() => {
       silentTimer = undefined;
       if (!touching || composing) return;
+      /*
+        **範囲を持ったまま止まっているなら、離れたと見なさない**（2026-11-18 Mac の iPad mini シミュレーター 0.1.86：
+        つまみで範囲の終わりを引いて押さえたまま止めると、まだ押さえているのに約1秒で離れたと見なした）。
+        つまみを引くあいだは指の知らせが来ないので、止まっていても指が離れたとは限らない。範囲は、打てば
+        （{@link releaseByTyping}）か次に触れれば、指は離れている。範囲の消し・置き換えは打つ所で塊ごと扱う
+      */
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed && element.contains(selection.anchorNode)) {
+        if (!holdLogged) log(`C 指：範囲を持ったまま止まっている（${Date.now() - lastMoveAt}ms。離れたとは見なさない）`);
+        holdLogged = true;
+        return;
+      }
       releaseBySilence();
       scheduleSnap();
     }, TOUCH_SILENT_MS + 50);
+  };
+  /** 最後に指か選びが動いた時刻（記録のため） */
+  let lastMoveAt = 0;
+  let holdLogged = false;
+  /** 打ったなら、指はもう離れている（範囲を持ったまま止まっていたとき） */
+  const releaseByTyping = () => {
+    if (!touching) return;
+    window.clearTimeout(silentTimer);
+    silentTimer = undefined;
+    releaseBySilence();
   };
   const releaseBySilence = () => {
     touching = false;
@@ -378,6 +401,8 @@ export function mountComposedPane(
     touching = true;
     touchStartedAt = Date.now();
     lastTouchAt = touchStartedAt;
+    lastMoveAt = touchStartedAt;
+    holdLogged = false;
     longGesture = false;
     lastSelLog = "";
     window.clearTimeout(snapTimer);
@@ -401,11 +426,14 @@ export function mountComposedPane(
   };
   const onTouchMove = () => {
     lastTouchAt = Date.now();
+    lastMoveAt = lastTouchAt;
     watchSilence();
   };
   const onSelectionChange = () => {
     if (composing) return;
-    if (touching && Date.now() - lastTouchAt > TOUCH_SILENT_MS) releaseBySilence();
+    // 指の知らせが来なくても、選びが動いているあいだは触れているかもしれない（つまみを引いている）。
+    // 離れたと見なすのは、選びも止まってから（watchSilence）
+    lastMoveAt = Date.now();
     watchSilence();
     // ［ルビ］［傍点］を押したときに焦点が外れても使えるように、欄の中の最後の選択を覚える
     const seen = selectionOffsets();
@@ -521,6 +549,7 @@ export function mountComposedPane(
     window.setTimeout(() => logCaret(`C 押した（点 ${point}、${e.pointerType}）`), SNAP_SETTLE_MS + 150);
   };
   const onCompStart = () => {
+    releaseByTyping();
     flushSnap();
     composing = true;
     logCaret("C 変換の始まり");
@@ -636,6 +665,7 @@ export function mountComposedPane(
   }
 
   element.addEventListener("beforeinput", onBeforeInput);
+  element.addEventListener("keydown", releaseByTyping);
   element.addEventListener("input", onInput);
   element.addEventListener("copy", onCopyEvent);
   element.addEventListener("cut", onCutEvent);
@@ -716,6 +746,7 @@ export function mountComposedPane(
         hideOwnCaret();
       }
       element.removeEventListener("beforeinput", onBeforeInput);
+      element.removeEventListener("keydown", releaseByTyping);
       element.removeEventListener("input", onInput);
       element.removeEventListener("copy", onCopyEvent);
       element.removeEventListener("cut", onCutEvent);

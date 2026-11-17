@@ -17,7 +17,8 @@ import { readWorkLayout, scanWorkFolder } from "../platform/workScan";
 import { toStorePath } from "../platform/paths";
 import { findTermOccurrences } from "./termOccurrences";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
-import { termAtFrom, termFinderFrom, termTagLabel } from "./termHighlight";
+import { termAtFrom, termFinderFrom, termOnCharFrom, termTagLabel } from "./termHighlight";
+import { charFromPoint, readCharBoxes } from "./tapCaret";
 import type { TermEntry } from "../shared";
 import type { TermFinder } from "./editContextPane";
 
@@ -114,6 +115,11 @@ interface WritingPane {
   setTerms?(find: TermFinder): void;
   /** カーソルを置いて欄に焦点を当てる（名前が出る行へ飛んだとき）。本文は替えず、手も積まない */
   placeCaret(offset: number): void;
+  /**
+   * いちばん新しい押しで、指の下にあった字（右の線の欄だけ。字をこの画面が描くので字の四隅が読める）。
+   * 字の無い所を押したら `null`。持たない欄（textarea）は、カーソルの位置で札を決める
+   */
+  pressedChar?(): number | null;
   destroy(): void;
 }
 
@@ -321,7 +327,14 @@ function mountRightLinePane(
   const pane = support.ok
     ? mountEditContextPane(element, "", orientation, (text) => onChange(text, "type"))
     : mountImeSinkPane(element, "", orientation, (text) => onChange(text, "type"));
+  /** 押し始めの指の下の字（キーボードが出始めると欄が動くので、押し始めで読む。`imeSinkPane.ts` と同じ考え） */
+  let pressed: number | null = null;
+  const onPressStart = (e: PointerEvent) => {
+    pressed = charFromPoint(readCharBoxes(element), e.clientX, e.clientY) ?? null;
+  };
+  element.addEventListener("pointerdown", onPressStart, true);
   return {
+    pressedChar: () => pressed,
     setText: (text) => pane.setText(text),
     value: () => pane.getText(),
     selection: () => pane.getSelection(),
@@ -340,6 +353,7 @@ function mountRightLinePane(
     },
     setTerms: (find) => pane.setTerms(find),
     destroy() {
+      element.removeEventListener("pointerdown", onPressStart, true);
       pane.destroy();
       element.remove();
     },
@@ -420,7 +434,15 @@ export function mountEpisodeScreen(
    * 設定が読めなくても色が無いだけで、書くのは止めない（本体の TermHighlighter と同じ）。`設定/` へは書かない
    */
   let termFinder:
-    | Promise<{ find: TermFinder; at: (text: string, offset: number) => TermEntry | undefined; entries: TermEntry[] } | undefined>
+    | Promise<
+        | {
+            find: TermFinder;
+            at: (text: string, offset: number) => TermEntry | undefined;
+            onChar: (text: string, charIndex: number) => TermEntry | undefined;
+            entries: TermEntry[];
+          }
+        | undefined
+      >
     | undefined;
   let termEntries: TermEntry[] = [];
   const applyWorkTerms = () => {
@@ -432,7 +454,7 @@ export function mountEpisodeScreen(
         // シリーズでつないだ作品の語は自分の語の後ろに積む（同じ所では先に入った自分の資料が勝つ。本体と同じ）
         const own = (await readWorkTerms(store, layout.settings)).entries;
         const entries = [...own, ...(await readSeriesTerms(store, root))];
-        return { find: termFinderFrom(entries), at: termAtFrom(entries), entries };
+        return { find: termFinderFrom(entries), at: termAtFrom(entries), onChar: termOnCharFrom(entries), entries };
       } catch {
         return undefined;
       }
@@ -442,6 +464,7 @@ export function mountEpisodeScreen(
       if (terms && pane === target && options.stillHere()) {
         target.setTerms?.(terms.find);
         termAt = terms.at;
+        termOnChar = terms.onChar;
         termEntries = terms.entries;
       }
     });
@@ -453,6 +476,7 @@ export function mountEpisodeScreen(
    * 追いかけるのは押したときだけ（打鍵・矢印キーでは追いかけない）。変換中は動かさない。欄の DOM は書き換えない
    */
   let termAt: ((text: string, offset: number) => TermEntry | undefined) | undefined;
+  let termOnChar: ((text: string, charIndex: number) => TermEntry | undefined) | undefined;
   let tagged: TermEntry | undefined;
   let composing = false;
   const tag = screen.querySelector<HTMLButtonElement>("#termTag")!;
@@ -464,7 +488,11 @@ export function mountEpisodeScreen(
   const closeSheet = () => {
     sheet.hidden = true;
   };
-  host.addEventListener("compositionstart", () => (composing = true));
+  // 変換が始まったら札は閉じる（2026-11-18 iPad mini シミュレーター 0.1.86 の試し6：変換中も札が残った）
+  host.addEventListener("compositionstart", () => {
+    composing = true;
+    hideTag();
+  });
   host.addEventListener("compositionend", () => (composing = false));
   /*
     押したあとのカーソルで札を出す。pointerup と click の両方で見る：
@@ -481,7 +509,10 @@ export function mountEpisodeScreen(
       // 待つあいだに打った字があれば出さない（打つと札は消す）
       if (pane !== target || composing || !termAt || target.value() !== before) return;
       const { start, end } = target.selection();
-      const entry = start === end ? termAt(target.value(), start) : undefined;
+      // 右の線の欄は、指の下の字で決める（名前の直後＝字と字の境を押しても、名前を押したことにしない）
+      const pressed = target.pressedChar?.();
+      const entry =
+        start !== end ? undefined : pressed === undefined ? termAt(target.value(), start) : pressed === null ? undefined : termOnChar?.(target.value(), pressed);
       if (!entry) return hideTag();
       tagged = entry;
       tag.textContent = `${termTagLabel(entry)} ›`;

@@ -178,6 +178,43 @@ test.describe("右の線の欄（見えない受け口の作り）", () => {
     await expect(page.locator("#termTag")).toHaveText("姉（人物） ›");
   });
 
+  /**
+   * 2026-11-18 Mac の iPad mini シミュレーター 0.1.86 の試し6：名前の直後（字と字の境）を押して打ち始めると、
+   * 名前を押していないのに札「姉（人物） ›」が出たまま、変換中も残った
+   */
+  test("名前の直後の字を押しても札は出ない。札が出ていても、変換が始まったら閉じる", async ({ page }) => {
+    await openWithWorks(page, "#/display", WITH_TERMS);
+    await page.locator('[data-line="right"]').click();
+    await page.evaluate(() => (location.hash = "#/works"));
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await page.locator(".ep-list .ep").first().click();
+    const editor = page.locator("#msEditor");
+    const tag = page.locator("#termTag");
+    await expect(editor.locator(".term-character")).toHaveCount(1);
+    // 名前の次の字の、名前に近いほうの半分を押す（カーソルは名前の直後＝字と字の境に来る）
+    const point = await page.evaluate(() => {
+      const editorEl = document.querySelector("#msEditor")!;
+      const name = editorEl.querySelector(".term-character")!;
+      const nameChar = name.matches("[data-i]") ? name : name.querySelector("[data-i]")!;
+      const after = Number((nameChar as HTMLElement).dataset.i) + Number((nameChar as HTMLElement).dataset.n ?? "1");
+      const next = editorEl.querySelector<HTMLElement>(`[data-i="${after}"]`)!;
+      const r = next.getBoundingClientRect();
+      const vertical = editorEl.classList.contains("vertical");
+      return vertical ? { x: r.x + r.width / 2, y: r.y + r.height * 0.25 } : { x: r.x + r.width * 0.25, y: r.y + r.height / 2 };
+    });
+    await page.mouse.click(point.x, point.y);
+    await page.waitForTimeout(100);
+    await expect(tag).toBeHidden();
+
+    await editor.locator(".term-character").click();
+    await expect(tag).toHaveText("姉（人物） ›");
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Input.imeSetComposition", { text: "あ", selectionStart: 1, selectionEnd: 1 });
+    await expect(tag).toBeHidden();
+    await cdp.send("Input.insertText", { text: "あ" });
+    await expect(editor.locator(".term-character")).toHaveText("姉");
+  });
+
   test.fixme("範囲を選べる（長押し・つまみ）。選んだ字にルビ・傍点を振れる（案 D。iPad で1〜6が通ってから作る）", async () => {});
 });
 

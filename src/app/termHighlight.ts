@@ -107,6 +107,20 @@ export function termAtFrom(entries: readonly TermEntry[]): (text: string, offset
   };
 }
 
+/** 字（`charIndex` から始まる1字）を含む語。押した字が名前の字かを見る（名前の直後の境では出さない） */
+export function termOnCharFrom(entries: readonly TermEntry[]): (text: string, charIndex: number) => TermEntry | undefined {
+  if (entries.length === 0) return () => undefined;
+  const index = new TermIndex([...entries]);
+  return (text, charIndex) => {
+    if (!text || charIndex < 0 || charIndex >= text.length || text[charIndex] === "\n") return undefined;
+    const lineStart = text.lastIndexOf("\n", charIndex - 1) + 1;
+    const next = text.indexOf("\n", charIndex);
+    const line = text.slice(lineStart, next < 0 ? text.length : next);
+    const at = charIndex - lineStart;
+    return index.find(line).find((m) => m.start <= at && at < m.end)?.entry;
+  };
+}
+
 /** 札の字：「マルキオ・イークェス（人物）」 */
 export function termTagLabel(entry: Pick<TermEntry, "canonicalName" | "kind">): string {
   return `${entry.canonicalName}（${TERM_KIND_LABELS[entry.kind]}）`;

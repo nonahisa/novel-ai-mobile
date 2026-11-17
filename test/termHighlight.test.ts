@@ -9,6 +9,7 @@ import {
   findTermSpans,
   termColorCss,
   termAtFrom,
+  termOnCharFrom,
   termEntriesFrom,
   termTagLabel,
   type TermInput,
@@ -142,6 +143,16 @@ describe("色の付いた名前を押したときの札（設計書 5.7「下に
     expect(at(text, text.indexOf("へ") + 1)).toBeUndefined();
     expect(at("", 0)).toBeUndefined();
     expect(termAtFrom([])(text, 5)).toBeUndefined();
+  });
+
+  test("押した字で見るときは、名前の字だけ。名前の直後の字（境）では返さない（2026-11-18 iPad mini 0.1.86 の試し6）", () => {
+    const onChar = termOnCharFrom(entries);
+    const line = text.indexOf("マルキオは");
+    expect(onChar(text, line)).toMatchObject({ id: "char_001" });
+    expect(onChar(text, line + 3)).toMatchObject({ id: "char_001" });
+    expect(onChar(text, line + 4)).toBeUndefined();
+    expect(onChar(text, text.indexOf("\n"))).toBeUndefined();
+    expect(onChar(text, text.length)).toBeUndefined();
   });
 
   test("長い名前が優先（本体と同じ最左最長）", () => {

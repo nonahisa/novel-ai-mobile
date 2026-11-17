@@ -2,6 +2,9 @@ import "./style.css";
 import { App } from "@capacitor/app";
 import { mountShell } from "./app/shell";
 import { handleHardwareBack } from "./app/hardwareBack";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard } from "@capacitor/keyboard";
+import { watchCompact } from "./app/compactMode";
 
 /**
  * モバイル版の入口。
@@ -25,3 +28,14 @@ void App.addListener("backButton", () => undefined).catch(() => undefined);
 document.addEventListener("backbutton", () => {
   handleHardwareBack(document, () => void App.minimizeApp().catch(() => undefined));
 });
+
+/* キーボードが出て見える所が低いときは、上下を細くする（`src/app/compactMode.ts`。2026-11-17 作者の答え） */
+watchCompact(window, document.documentElement);
+/*
+  iPad だけ、キーボードの上の「完了」などの帯を消す（同じ答え。横向きで約40pt 広がる）。iPhone は消さない：
+  iPhone のキーボードには閉じるキーが無く、帯の「完了」でしか閉じられない。iPad の名乗りは「Macintosh」なので、
+  「iPhone」を含まない iOS を iPad とみなす
+*/
+if (Capacitor.getPlatform() === "ios" && !/iPhone|iPod/.test(navigator.userAgent)) {
+  void Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => undefined);
+}

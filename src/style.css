@@ -1533,3 +1533,46 @@ a.gh-open {
   padding: 6px 0;
   background: var(--bg);
 }
+
+/*
+  キーボードが出て見える所が低いとき（横長で高さ 480 未満。`src/app/compactMode.ts`）は、上下を細くする
+  （2026-11-17 作者の答え。iPad mini を横にしてキーボードを出すと、本文の枠が約130pt しか見えなかった）。
+  上のバーを細くして副題を隠し、欄の下限をやめて見えている高さ（--vvh）に合わせる。道具帯はキーボードのすぐ上。
+  37px は細いバー（36）と下の線（1）
+*/
+/* 頭の余白（ふだん 12px）と下の余白もやめる。上のバーは状態バーのすぐ下から、欄と道具帯は見える所にぴったり */
+:root[data-compact] body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: 0;
+}
+:root[data-compact] .screen {
+  padding-bottom: 0;
+}
+:root[data-compact] .appbar {
+  min-height: calc(36px + env(safe-area-inset-top));
+  margin-bottom: 4px;
+}
+:root[data-compact] .appbar-title small {
+  display: none;
+}
+:root[data-compact] .appbar-back {
+  height: 36px;
+}
+:root[data-compact] .appbar-action {
+  min-height: 30px;
+}
+:root[data-compact] #composedTools {
+  top: calc(36px + env(safe-area-inset-top));
+  padding: 2px 0;
+}
+:root[data-compact] .ms-editor {
+  height: calc(var(--vvh, 100dvh) - 37px - 4px - 52px - env(safe-area-inset-top));
+  min-height: 0;
+}
+:root[data-compact] .ms-side {
+  height: calc(var(--vvh, 100dvh) - 37px - 4px - env(safe-area-inset-top));
+}
+:root[data-compact] .draft-input {
+  height: calc(var(--vvh, 100dvh) - 37px - 4px - 52px - 8px - env(safe-area-inset-top));
+  min-height: 0;
+}

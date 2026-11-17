@@ -1,0 +1,14 @@
+/* 案C 墨と朱：やわらかい灰の地・影で浮かせた札（罫なし）・押し口と今のタブは朱 */
+:root {
+  --paper: #f4f4f2; --surface: #ffffff; --sunk: #efefec; --ink: #222222; --muted: #77746e;
+  --line: #e6e4df; --accent: #a8402b; --accent-soft: #f6e4de; --shu: #a8402b; --shu-soft: #f6e4de;
+}
+body { background: var(--sunk); }
+.appbar { background: var(--sunk); border-bottom-color: transparent; }
+.appbar-title { font-size: 17px; letter-spacing: .03em; }
+.tabbar { border-top: 0; box-shadow: 0 -4px 18px rgb(0 0 0 / .06); }
+.work-card, .menu-item { border: 0 !important; border-radius: 18px !important; box-shadow: 0 1px 2px rgb(0 0 0 / .05), 0 4px 14px rgb(0 0 0 / .05) !important; }
+.menu-item { color: var(--ink) !important; font-weight: 500 !important; }
+.work-title { font-family: var(--font-ms); }
+.ep-list { background: var(--surface); border-radius: 18px; box-shadow: 0 4px 14px rgb(0 0 0 / .05); overflow: hidden; }
+.ms-editor, .ec-pane { border-radius: 18px !important; box-shadow: 0 4px 14px rgb(0 0 0 / .05); }

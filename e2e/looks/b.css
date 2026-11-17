@@ -1,0 +1,20 @@
+/* 案B 白と藍・すっきり：白い地・大きな題・灰色の溝に角丸のまとまり（行は細い罫で区切る） */
+:root {
+  --paper: #ffffff; --surface: #ffffff; --sunk: #f2f3f7; --ink: #15192a; --muted: #6b7183;
+  --line: #e4e6ee; --accent: #2448a8; --accent-soft: #e8edfb;
+}
+body { background: var(--sunk); }
+.appbar { background: color-mix(in srgb, var(--sunk) 85%, transparent); backdrop-filter: blur(12px); border-bottom-color: transparent; }
+.appbar-title { font-size: 20px; font-weight: 800; letter-spacing: .01em; }
+.appbar-back + .appbar-title { font-size: 16px; }
+.tabbar { background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px); }
+.work-list { gap: 0 !important; background: var(--surface); border-radius: 14px; overflow: hidden; }
+.work-card { border: 0 !important; border-bottom: 1px solid var(--line) !important; border-radius: 0 !important; box-shadow: none !important; }
+.work-card:last-child { border-bottom: 0 !important; }
+.menu-items { gap: 0; background: var(--surface); border-radius: 14px; overflow: hidden; }
+.menu-item { border: 0 !important; border-bottom: 1px solid var(--line) !important; border-radius: 0 !important; background: transparent !important; color: var(--ink) !important; font-weight: 500 !important; position: relative; padding-right: 32px; }
+.menu-item::after { content: "›"; position: absolute; right: 14px; top: 50%; transform: translateY(-52%); color: var(--muted); font-size: 20px; font-weight: 300; }
+.menu-item:last-child { border-bottom: 0 !important; }
+.menu-section h2, .menu-group { font-size: 12px; letter-spacing: .04em; font-weight: 500; margin: 22px 14px 6px; }
+.ep-list { background: var(--surface); border-radius: 14px; overflow: hidden; }
+.fab { border-radius: 18px !important; }

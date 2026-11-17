@@ -1,0 +1,22 @@
+/* 案A 和紙と墨：生成りの地・墨の字・題は明朝・札をやめて細い罫の並び */
+:root {
+  --paper: #f6f1e7; --surface: #fffcf5; --sunk: #f3ede1; --ink: #2b2620; --muted: #7a7064;
+  --line: #e2d9c8; --accent: #34507f; --accent-soft: #e6e3d6; --shu: #b5442c; --shu-soft: #f6e3da;
+}
+body { background: var(--sunk); }
+.appbar { background: var(--sunk); border-bottom-color: transparent; }
+.appbar-title { font-family: var(--font-ms); font-size: 18px; font-weight: 600; letter-spacing: .04em; }
+.tabbar { background: var(--surface); border-top-color: var(--line); }
+.tab.current svg { background: transparent; }
+.tab.current { color: var(--ink); }
+.tab.current::after { content: ""; width: 18px; height: 2px; background: var(--shu); border-radius: 1px; }
+.work-list { gap: 0 !important; background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 0 -12px; }
+.work-card { border: 0 !important; border-bottom: 1px solid var(--line) !important; border-radius: 0 !important; box-shadow: none !important; background: transparent !important; }
+.work-card:last-child { border-bottom: 0 !important; }
+.work-title { font-family: var(--font-ms); font-weight: 600 !important; }
+.menu-items { gap: 0; background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 0 -12px; }
+.menu-item { border: 0 !important; border-bottom: 1px solid var(--line) !important; border-radius: 0 !important; background: transparent !important; color: var(--ink) !important; font-weight: 400 !important; padding: 14px 20px; }
+.menu-item:last-child { border-bottom: 0 !important; }
+.menu-section h2, .menu-group { letter-spacing: .2em; color: var(--muted); font-weight: 400; margin-left: 8px; }
+.fab { background: var(--ink) !important; color: var(--surface) !important; box-shadow: 0 6px 16px rgb(43 38 32 / .25) !important; }
+.ms-editor, .ec-pane { background: var(--surface) !important; }

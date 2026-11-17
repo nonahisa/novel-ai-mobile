@@ -86,4 +86,40 @@ test.describe("色の付いた名前を押したときの札", () => {
     await editor.click({ position: { x: 20, y: 20 } });
     await expect(page.locator("#termTag")).toBeHidden();
   });
+
+  test("札を押すと、その名前が出る話と行が並び、押すとその話のその字へ飛ぶ（保存してから移る）", async ({ page }) => {
+    const third = ["霧が出た。", "姉は灯台にいた。"].join("\n");
+    await openWithWorks(page, "#/display", { ...WITH_TERMS, "灯台守_確認用/本文/第3話 霧笛.txt": third });
+    await page.locator('[data-term-colors="on"]').click();
+    await page.evaluate(() => (location.hash = "#/works"));
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await page.locator(".ep-list .ep").first().click();
+    const editor = page.locator("textarea#msEditor");
+    await expect(page.locator(".ms-backdrop .term-character")).toHaveCount(1);
+    // 保存前の書きかけも探す
+    await editor.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(el.value.length, el.value.length));
+    await editor.focus();
+    await page.keyboard.type("姉");
+    const box = await page.evaluate(() => {
+      const r = document.querySelector(".ms-backdrop .term-character")!.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await page.mouse.click(box.x, box.y);
+    await page.locator("#termTag").click();
+    const hits = page.locator("#termSheetHits button");
+    await expect(hits).toHaveCount(3);
+    await expect(hits.nth(0)).toContainText("第1話 手紙・1行");
+    await expect(hits.nth(1)).toContainText("第1話 手紙・3行");
+    await expect(hits.nth(2)).toContainText("第3話 霧笛・2行");
+    await expect(hits.nth(2)).toContainText("姉は灯台にいた。");
+
+    await hits.nth(2).click();
+    await expect(page).toHaveURL(/%E7%AC%AC3%E8%A9%B1/);
+    await expect(page.locator("#termSheet")).toBeHidden();
+    const next = page.locator("textarea#msEditor");
+    await expect(next).toHaveValue(third);
+    await expect.poll(() => next.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(third.indexOf("姉"));
+    // 離れる前に、書きかけは保存してある
+    expect(await readFakeFile(page, "灯台守_確認用/本文/第1話 手紙.txt")).toContain(["直す", "姉"].join("\n"));
+  });
 });

@@ -1095,6 +1095,39 @@ button {
   line-height: 1.8;
   white-space: pre-wrap;
 }
+/* 名前が出る話と行。押すとその場所へ飛ぶ */
+.term-hits {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.term-hits button {
+  display: block;
+  width: 100%;
+  padding: 10px 4px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+.term-hit-where {
+  display: block;
+  font-size: 13px;
+  color: var(--sub);
+}
+.term-hit-line {
+  display: block;
+  font-family: "Hiragino Mincho ProN", "Noto Serif JP", "Yu Mincho", serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.term-hits-more {
+  padding: 8px 4px;
+  color: var(--sub);
+}
 /* 中・広い段は右から半分の幅の引き出し */
 @media (min-width: 600px) {
   .term-sheet {

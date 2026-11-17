@@ -439,6 +439,26 @@ test.describe("C 組んで書く：iPad の塊の選び（2026-11-17 Mac の iPa
     await expect(page.locator("#imeLog")).toContainText("塊の外へ置き直した");
   });
 
+  test("指を離した知らせも次の選びも来なくても、少し待てば離れたと見なして置き直す（2026-11-18 iPad mini シミュレーター：10.8秒後まで来なかった）", async ({ page }) => {
+    await openC(page);
+    const pane = page.locator("#draftComposed");
+    await pane.click();
+    // 指が触れているあいだに選びが塊の中へ動き、そのあと指の知らせも選びの知らせも来ない
+    await pane.evaluate((el) => {
+      el.dispatchEvent(new Event("touchstart", { bubbles: true }));
+      const text = el.querySelector(".chunk")!.querySelector("rb, ruby")?.firstChild ?? el.querySelector(".chunk")!.firstChild!;
+      const range = document.createRange();
+      range.setStart(text, 1);
+      range.collapse(true);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+    });
+    const started = Date.now();
+    await expect(page.locator("#imeLog")).toContainText("C 指：離れたと見なした", { timeout: 4000 });
+    await expect(page.locator("#imeLog")).toContainText("塊の外へ置き直した");
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
   test("あとから本文を入れても、組んだ塊の数を記録に出す", async ({ page }) => {
     await openC(page);
     await expect(page.locator("#imeLog")).toContainText(/C 組んだ（塊 [1-9]\d*つ）/);

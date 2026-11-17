@@ -339,6 +339,27 @@ export function mountComposedPane(
   let lastTouchAt = 0;
   const TOUCH_SILENT_MS = 1500;
   /**
+   * **知らせが何も来なくなっても、待てば離れたと見なす**（2026-11-18 Mac の iPad mini シミュレーター 0.1.82：
+   * 2秒で離したのに、離れたと見なしたのは次に選びが動いた 10.8秒後で、そのあいだ置き直しが止まっていた）。
+   * 指の知らせか選びの知らせが来るたびに、{@link TOUCH_SILENT_MS} 後の見張りを掛け直す
+   */
+  let silentTimer: number | undefined;
+  const watchSilence = () => {
+    window.clearTimeout(silentTimer);
+    if (!touching) return;
+    silentTimer = window.setTimeout(() => {
+      silentTimer = undefined;
+      if (!touching || composing) return;
+      releaseBySilence();
+      scheduleSnap();
+    }, TOUCH_SILENT_MS + 50);
+  };
+  const releaseBySilence = () => {
+    touching = false;
+    longGesture = true;
+    log(`C 指：離れたと見なした（指の知らせが ${Date.now() - lastTouchAt}ms 来ない）`);
+  };
+  /**
    * 指と選びの動きを記録に残す（2026-11-17。iPad の 0.1.70 で、長押しでなぞっても範囲ができなかった訳を、
    * Mac の試しの記録で見分けるため）。選びは変わったときだけ、1秒に5行まで
    */
@@ -361,8 +382,15 @@ export function mountComposedPane(
     lastSelLog = "";
     window.clearTimeout(snapTimer);
     log("C 指：触れた");
+    watchSilence();
   };
   const onTouchEnd = (e: TouchEvent) => {
+    window.clearTimeout(silentTimer);
+    if (!touching) {
+      // もう離れたと見なしたあとで、遅れて来た知らせ（記録だけ）
+      log(`C 指：離れた（遅れて来た。${Date.now() - touchStartedAt}ms）`);
+      return;
+    }
     touching = false;
     longGesture = Date.now() - touchStartedAt >= LONG_PRESS_MS;
     log(`C 指：${e.type === "touchcancel" ? "取り消された（端末が引き取った）" : "離れた"}（${Date.now() - touchStartedAt}ms）`);
@@ -373,14 +401,12 @@ export function mountComposedPane(
   };
   const onTouchMove = () => {
     lastTouchAt = Date.now();
+    watchSilence();
   };
   const onSelectionChange = () => {
     if (composing) return;
-    if (touching && Date.now() - lastTouchAt > TOUCH_SILENT_MS) {
-      touching = false;
-      longGesture = true;
-      log(`C 指：離れたと見なした（指の知らせが ${Date.now() - lastTouchAt}ms 来ない）`);
-    }
+    if (touching && Date.now() - lastTouchAt > TOUCH_SILENT_MS) releaseBySilence();
+    watchSilence();
     // ［ルビ］［傍点］を押したときに焦点が外れても使えるように、欄の中の最後の選択を覚える
     const seen = selectionOffsets();
     if (seen) lastSel = seen;
@@ -705,6 +731,7 @@ export function mountComposedPane(
       element.removeEventListener("touchcancel", onTouchEnd);
       document.removeEventListener("selectionchange", onSelectionChange);
       window.clearTimeout(snapTimer);
+      window.clearTimeout(silentTimer);
       stopWatching();
     },
   };

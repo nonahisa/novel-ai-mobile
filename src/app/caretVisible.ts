@@ -86,24 +86,57 @@ export function revealCaret(caret: Pick<Element, "getBoundingClientRect"> | null
   if (delta !== 0) window.scrollBy(0, delta);
 }
 
+/** キーボードが出入りしたあと、ブラウザが自分でページを送るのを待つ間（AQUOS では 80ms ほどあとに2回送った） */
+const FOLLOW_MS = 600;
+/** ブラウザの送りが止まったと見なす間 */
+const SCROLL_SETTLE_MS = 120;
+
 /**
  * キーボードが出入りしたとき（見える範囲の大きさが変わったとき）に `onChange` を呼ぶ。外す関数を返す。
- * 大きさが落ち着いてから（0.15秒動かなくなってから）呼ぶ（出る途中の一瞬の大きさで送らない）
+ * 大きさが落ち着いてから（0.15秒動かなくなってから）呼ぶ（出る途中の一瞬の大きさで送らない）。
+ *
+ * **そのあとブラウザが自分でページを送ったら、送りが止まってからもう一度呼ぶ**（2026-11-17 AQUOS の試し11：
+ * こちらが送った 80ms ほどあとに、ブラウザが「焦点の欄を見える所へ」ページを送り、縦書きの列の頭の字が道具の段の
+ * すぐ下に残った）。見るのは呼んでから {@link FOLLOW_MS} の間だけ（そのあとの送りは作者の指なので、追わない）
  */
 export function watchVisibleBand(onChange: () => void): () => void {
   const vv = window.visualViewport;
   if (!vv) return () => undefined;
   let timer: number | undefined;
+  let scrollTimer: number | undefined;
+  let followTimer: number | undefined;
+  let following = false;
+  const call = () => {
+    onChange();
+    following = true;
+    if (followTimer !== undefined) window.clearTimeout(followTimer);
+    followTimer = window.setTimeout(() => {
+      following = false;
+      followTimer = undefined;
+    }, FOLLOW_MS);
+  };
   const settled = () => {
     if (timer !== undefined) window.clearTimeout(timer);
     timer = window.setTimeout(() => {
       timer = undefined;
-      onChange();
+      call();
     }, 150);
   };
+  const scrolled = () => {
+    if (!following) return;
+    if (scrollTimer !== undefined) window.clearTimeout(scrollTimer);
+    scrollTimer = window.setTimeout(() => {
+      scrollTimer = undefined;
+      // 送り直しで起きた送りは追わない（1回で足りる。追うと自分の送りを追い続ける）
+      following = false;
+      onChange();
+    }, SCROLL_SETTLE_MS);
+  };
   vv.addEventListener("resize", settled);
+  window.addEventListener("scroll", scrolled, { passive: true });
   return () => {
     vv.removeEventListener("resize", settled);
-    if (timer !== undefined) window.clearTimeout(timer);
+    window.removeEventListener("scroll", scrolled);
+    for (const id of [timer, scrollTimer, followTimer]) if (id !== undefined) window.clearTimeout(id);
   };
 }

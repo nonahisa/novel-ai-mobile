@@ -466,10 +466,15 @@ export function mountEpisodeScreen(
   };
   host.addEventListener("compositionstart", () => (composing = true));
   host.addEventListener("compositionend", () => (composing = false));
-  // click ではなく pointerup：右の線の欄は押したときに字を描き直すので、押した字が入れ替わり click が届かない
-  host.addEventListener("pointerup", () => {
+  /*
+    押したあとのカーソルで札を出す。pointerup と click の両方で見る：
+    - 右の線の欄は押したときに字を描き直すので、押した字が入れ替わり click が欄に届かない（pointerup で見る）
+    - 左の線の欄（textarea）は、まだ焦点が無いときの1回目の押しで、pointerup のあとに焦点が来てカーソルが動く
+      （2026-11-17 AQUOS：pointerup 97ms・焦点とカーソル 101ms・click 106ms。pointerup だけでは前のカーソルで見て、
+      札が出なかった）。click はカーソルが動いたあとに来る
+  */
+  const checkTag = () => {
     if (composing || !termAt || !pane) return;
-    // カーソルが置かれてから見る（押した所へカーソルが動くのは指を離したあと）
     const target = pane;
     const before = target.value();
     setTimeout(() => {
@@ -483,7 +488,9 @@ export function mountEpisodeScreen(
       tag.dataset.kind = entry.kind;
       tag.hidden = false;
     }, 0);
-  });
+  };
+  host.addEventListener("pointerup", checkTag);
+  host.addEventListener("click", checkTag);
   tag.addEventListener("click", () => {
     if (!tagged) return;
     sheet.querySelector("#termSheetTitle")!.textContent = termTagLabel(tagged);

@@ -93,6 +93,47 @@ for (const build of ["EditContext", "受け口"] as const) {
       await expect(page.locator("#msEditor .sel")).toHaveCount(0);
     });
 
+    test("長押しで語を選び、つまみを引いて範囲をのばす。押すと範囲とつまみが消える", async ({ page }) => {
+      await openRight(page);
+      const center = (at: number) =>
+        page.locator("#msEditor").evaluate((el, i) => {
+          const r = el.querySelector(`[data-i="${i}"]`)!.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        }, at);
+      const press = await center(4);
+      await page.mouse.move(press.x, press.y);
+      await page.mouse.down();
+      await page.waitForTimeout(700);
+      await page.mouse.up();
+      // 長押しのあとの click でカーソルを置き直さない（範囲が残る）
+      await expect(page.locator("#msEditor .sel")).toHaveText(["手", "紙"]);
+      const handles = page.locator(".range-handle:not([hidden])");
+      await expect(handles).toHaveCount(2);
+
+      // 末のつまみを「届」の後ろ半分まで引く
+      const grip = await page.locator('.range-handle[data-end="end"]').boundingBox();
+      const to = await page.locator("#msEditor").evaluate((el) => {
+        const r = el.querySelector('[data-i="6"]')!.getBoundingClientRect();
+        return el.classList.contains("vertical") ? { x: r.x + r.width / 2, y: r.y + r.height * 0.8 } : { x: r.x + r.width * 0.8, y: r.y + r.height / 2 };
+      });
+      await page.mouse.move(grip!.x + grip!.width / 2, grip!.y + grip!.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(to.x, to.y, { steps: 6 });
+      await page.mouse.up();
+      await expect(page.locator("#msEditor .sel")).toHaveText(["手", "紙", "が", "届"]);
+
+      // 選んだ範囲にそのまま傍点
+      await tool(page, "傍点").click();
+      await expect.poll(() => paneText(page)).toBe("姉から{{手紙が届}}いた。\n// 付箋：ここは後で直す\n");
+      await expect(handles).toHaveCount(0);
+
+      // 短く押せば範囲は作らない
+      await caretBefore(page, 1);
+      await caretBefore(page, 2);
+      await expect(page.locator("#msEditor .sel")).toHaveCount(0);
+      await expect(handles).toHaveCount(0);
+    });
+
     test("範囲を選んで変換すると、変換中の字が範囲と置き換わる", async ({ page }) => {
       await openRight(page);
       await caretBefore(page, 3);

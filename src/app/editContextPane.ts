@@ -54,6 +54,8 @@ export interface EditContextPane {
   getSelection(): { start: number; end: number };
   /** 範囲を選ぶ（`anchor` は動かない側の端、`focus` は動く側の端。同じならカーソル） */
   setSelection(anchor: number, focus: number): void;
+  /** 変換中か（変換中は範囲の長押し・つまみを止める） */
+  isComposing(): boolean;
   /** 本文を替え、カーソルを `caret` に置く（道具帯・取り消し） */
   setTextAt(text: string, caret: number): void;
   setOrientation(orientation: Orientation): void;
@@ -207,6 +209,7 @@ export function mountEditContextPane(
     },
     getSelection: () => rangeOf(state),
     setSelection: (anchor, focus) => setRange(anchor, focus),
+    isComposing: () => state.composing,
     setTextAt(next: string, caret: number) {
       ec.updateText(0, state.text.length, next);
       const at = Math.max(0, Math.min(caret, next.length));

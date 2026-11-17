@@ -9,7 +9,12 @@
  * 細くするのは「横長で、見える高さが {@link COMPACT_MAX_HEIGHT} より低い」ときだけ。縦長のスマホ
  * （AQUOS の縦＋キーボードは 320×368）はいまのまま（そちらは試し11で確かめた並び）。
  */
-export const COMPACT_MAX_HEIGHT = 480;
+/**
+ * 480 → 600（2026-11-18 iPad Pro 13インチのシミュレーター：横＋キーボードで見える高さ 531。細くならず、試しの画面の
+ * 保存の段が半分キーボードの裏に入った）。キーボードの無い横の iPad（mini 744・11インチ 820）より低く、
+ * 横のスマホ（高さ 400 前後）より高い
+ */
+export const COMPACT_MAX_HEIGHT = 600;
 
 export function isCompact(width: number, height: number): boolean {
   return height < COMPACT_MAX_HEIGHT && width > height;

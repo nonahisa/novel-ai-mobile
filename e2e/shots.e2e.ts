@@ -11,7 +11,7 @@ import { openWithWorks } from "./support/fakeWorks";
  */
 
 /** `works` は作り物の作品（`support/fakeWorks.ts`）を置いて開く。`open` はその題の作品を押して話の一覧を開く */
-const SCREENS: { name: string; hash: string; prepare?: string; mode?: string; works?: boolean; open?: string }[] = [
+const SCREENS: { name: string; hash: string; prepare?: string; mode?: string; works?: boolean; open?: string; episode?: boolean }[] = [
   { name: "01-作品", hash: "#/works" },
   { name: "02-書く", hash: "#/write" },
   { name: "03-提案", hash: "#/proposals" },
@@ -23,6 +23,7 @@ const SCREENS: { name: string; hash: string; prepare?: string; mode?: string; wo
   { name: "09-縦書きの試し-C組んで書く", hash: "#/tategaki", prepare: "vertical", mode: "C" },
   { name: "10-作品一覧", hash: "#/works", works: true },
   { name: "11-話の一覧", hash: "#/works", works: true, open: "灯台守の手紙_確認用" },
+  { name: "12-原稿エディター", hash: "#/works", works: true, open: "灯台守の手紙_確認用", episode: true },
 ];
 
 for (const screen of SCREENS) {
@@ -34,6 +35,10 @@ for (const screen of SCREENS) {
     if (screen.open) {
       await page.locator(".work-card", { hasText: screen.open }).click();
       await expect(page.locator(".ep-list .ep").first()).toBeVisible();
+    }
+    if (screen.episode) {
+      await page.locator(".ep-list .ep").first().click();
+      await expect(page.locator("#msEditor")).toBeVisible();
     }
     if (screen.prepare) await page.locator(`[data-orient="${screen.prepare}"]`).click();
     if (screen.mode) {

@@ -6,12 +6,14 @@ import { isCompact, watchCompact } from "../src/app/compactMode";
  * 本文の枠が約130pt・1列約7字しか見えなかった。直しの案1「キーボードが出たら上下を細くする」）
  */
 describe("上下を細くするか", () => {
-  test("横長で、見える高さが 480 より低いときだけ（iPad mini 横＋キーボード 1133×317）", () => {
+  test("横長で、見える高さが 600 より低いときだけ（iPad mini 横＋キーボード 1133×317・iPad Pro 13インチ 横＋キーボード 1376×531）", () => {
     expect(isCompact(1133, 317)).toBe(true);
+    expect(isCompact(1376, 531)).toBe(true);
+    expect(isCompact(1180, 820)).toBe(false); // iPad Air 11インチの横（キーボード無し）
     expect(isCompact(1133, 744)).toBe(false); // 横でもキーボードが無い
     expect(isCompact(320, 368)).toBe(false); // AQUOS の縦＋キーボード（縦長はいまのまま）
     expect(isCompact(744, 1133)).toBe(false);
-    expect(isCompact(480, 480)).toBe(false);
+    expect(isCompact(600, 600)).toBe(false);
   });
 });
 

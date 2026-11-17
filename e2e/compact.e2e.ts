@@ -70,14 +70,19 @@ test.describe("キーボードが出て見える所が低いとき（iPad mini �
   });
 });
 
-test.describe("キーボードが出て見える所が低いとき（iPad Air 11インチ 横）", () => {
+for (const ipad of [
+  // 2026-11-17 Mac のシミュレーター：iPad Air 11インチ（1180×820pt・キーボード約422pt）
+  { name: "iPad Air 11インチ", width: 1180, full: 820, height: 398 },
+  // 2026-11-18 Mac のシミュレーター：iPad Pro 13インチ（1376×1032pt・キーボード約501pt）。見える高さ 531 で細くならず、保存の段が半分キーボードの裏に入った
+  { name: "iPad Pro 13インチ", width: 1376, full: 1032, height: 531 },
+]) test.describe(`キーボードが出て見える所が低いとき（${ipad.name} 横）`, () => {
   // 2026-11-17 Mac のシミュレーター（1180×820pt・キーボード約422pt）：試しの画面（C）で、題の下の説明の行が半分だけ見えて切れた
-  const AIR = { width: 1180, height: 398 };
+  const AIR = { width: ipad.width, height: ipad.height };
   test.use({ viewport: AIR });
 
   test("試しの画面（C）：欄を押してキーボードが出ると、欄は見える所に入りきり、道具の段はバーに張りつき、上の説明の行は半端に残らない", async ({ page }) => {
     // 0.1.81 の Mac：欄を手で送る e2e では通ったが、本物はカーソルの所までしか送らず、欄の下の約23pt がキーボードの裏に残った
-    await page.setViewportSize({ width: AIR.width, height: 820 });
+    await page.setViewportSize({ width: AIR.width, height: ipad.full });
     await page.goto("/#/tategaki");
     await expect(page.locator("#draftResult")).not.toBeEmpty();
     await page.locator('[data-mode="C"]').click();
@@ -85,9 +90,11 @@ test.describe("キーボードが出て見える所が低いとき（iPad Air 11
     await field.click({ position: { x: 900, y: 40 } });
     // キーボードが出る（見える高さが縮む）
     await page.setViewportSize(AIR);
+    // 細くなってから測る（細くなる前の欄の下が、たまたま見える所の下の端に近いことがある）
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.compact ?? "")).toBe("on");
     await expect
-      .poll(() => page.evaluate(() => Math.round(document.querySelector(".draft-input.composed")!.getBoundingClientRect().bottom)))
-      .toBeLessThanOrEqual(AIR.height + 1);
+      .poll(async () => Math.abs((await page.evaluate(() => document.querySelector(".draft-input.composed")!.getBoundingClientRect().bottom)) - AIR.height))
+      .toBeLessThanOrEqual(2);
     const r = await page.evaluate(() => {
       const box = (s: string) => document.querySelector(s)!.getBoundingClientRect();
       return { bar: box(".appbar").bottom, note: box("#modeNote").bottom, tools: box("#composedTools"), field: box(".draft-input.composed") };

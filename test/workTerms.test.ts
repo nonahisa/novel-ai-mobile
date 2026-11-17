@@ -4,7 +4,7 @@ import { emptyLocation } from "novel-ai-assistant/src/models/location";
 import { emptyAbility } from "novel-ai-assistant/src/models/ability";
 import { emptyOrganization } from "novel-ai-assistant/src/models/organization";
 import { MemoryFileStore } from "../src/platform/memoryFileStore";
-import { readWorkTerms } from "../src/platform/workTerms";
+import { readSeriesTerms, readWorkTerms } from "../src/platform/workTerms";
 
 const encode = (value: unknown) => new TextEncoder().encode(typeof value === "string" ? value : JSON.stringify(value));
 
@@ -66,5 +66,68 @@ describe("作品の設定資料から用語の色の語を作る（本体の Ter
     const before = JSON.stringify(await store.listEntries("灯台守_確認用/設定/characters"));
     await readWorkTerms(store, "灯台守_確認用/設定");
     expect(JSON.stringify(await store.listEntries("灯台守_確認用/設定/characters"))).toBe(before);
+  });
+});
+
+/**
+ * シリーズでつないだ作品の語（本体の設計書 6.95.3・`core/seriesSettings.ts` の `loadSeriesTerms`）。
+ * 作り物の作品 `灯台守_確認用`（本編）と `灯台守外伝_確認用`（つないだ相手）
+ */
+async function seriesFixture(parent = ""): Promise<MemoryFileStore> {
+  const store = new MemoryFileStore();
+  const at = (path: string) => (parent ? `${parent}/${path}` : path);
+  const put = (path: string, value: unknown) => store.putExternally(at(path), encode(value));
+  put("灯台守_確認用/.aiwriter/config.json", { workTitle: "灯台守", series: { name: "灯台守", related: ["灯台守外伝_確認用", "../外", "灯台守_確認用", "無い作品"] } });
+  put("灯台守_確認用/設定/characters/char_001.json", { ...emptyCharacter("char_001", "マルキオ・イークェス"), summary: "本編の紹介" });
+  put("灯台守外伝_確認用/.aiwriter/config.json", { workTitle: "灯台守外伝" });
+  put("灯台守外伝_確認用/設定/characters/char_001.json", { ...emptyCharacter("char_001", "セラ・ノーム"), aliases: ["坊ちゃん"], reading: "せら・のーむ", summary: "外伝の秘密" });
+  put("灯台守外伝_確認用/設定/characters/char_002.json", { ...emptyCharacter("char_002", "未来の王"), status: "未登場" });
+  put("灯台守外伝_確認用/設定/characters/char_003.json", { ...emptyCharacter("char_003", "影の参謀"), spoilerLevel: "author_only" });
+  put("灯台守外伝_確認用/設定/characters/char_004.json", { ...emptyCharacter("char_004", "通りすがりの漁師"), isMob: true });
+  put("灯台守外伝_確認用/設定/characters/char_005.json", "{ 壊れた JSON");
+  put("灯台守外伝_確認用/設定/locations/loc_001.json", { ...emptyLocation("loc_001", "南の港"), aliases: [] });
+  put("外/設定/characters/char_001.json", { ...emptyCharacter("char_001", "外の人") });
+  return store;
+}
+
+describe("シリーズでつないだ作品の語も色を付ける（本体の loadSeriesTerms と同じ）", () => {
+  it("相手の公開・登場済みの名前と別名だけを借り、紹介は相手の中身でなく出どころにする", async () => {
+    const terms = await readSeriesTerms(await seriesFixture(), "灯台守_確認用");
+    expect(terms.map((t) => t.text)).toEqual(["セラ・ノーム", "坊ちゃん", "南の港"]);
+    expect(terms[1]).toMatchObject({ kind: "character", id: "series:character:セラ・ノーム", canonicalName: "セラ・ノーム", summary: "灯台守外伝にも出てきます" });
+    expect(JSON.stringify(terms)).not.toContain("外伝の秘密");
+  });
+
+  it("未登場・公開でない・モブ・壊れた1件は借りない。名前は広げない（本体と同じ）", async () => {
+    const texts = (await readSeriesTerms(await seriesFixture(), "灯台守_確認用")).map((t) => t.text);
+    for (const hidden of ["未来の王", "影の参謀", "通りすがりの漁師", "セラ"]) expect(texts).not.toContain(hidden);
+  });
+
+  it("書庫の中の作品でも、隣の作品を読む。.. や自分自身・無い作品は読まない", async () => {
+    const terms = await readSeriesTerms(await seriesFixture("書庫"), "書庫/灯台守_確認用");
+    expect(terms.map((t) => t.text)).toEqual(["セラ・ノーム", "坊ちゃん", "南の港"]);
+    expect(terms.some((t) => t.text === "外の人" || t.text === "マルキオ・イークェス")).toBe(false);
+  });
+
+  it("series が無い・壊れている・設定が無ければ0件（止めない）", async () => {
+    const store = await seriesFixture();
+    expect(await readSeriesTerms(store, "灯台守外伝_確認用")).toEqual([]);
+    expect(await readSeriesTerms(new MemoryFileStore(), "無い作品")).toEqual([]);
+    store.putExternally("壊れ/.aiwriter/config.json", encode("{ 壊れた"));
+    expect(await readSeriesTerms(store, "壊れ")).toEqual([]);
+  });
+
+  it("相手の題が無ければフォルダー名を出どころにする", async () => {
+    const store = await seriesFixture();
+    store.putExternally("灯台守外伝_確認用/.aiwriter/config.json", encode({}));
+    const terms = await readSeriesTerms(store, "灯台守_確認用");
+    expect(terms[0].summary).toBe("灯台守外伝_確認用にも出てきます");
+  });
+
+  it("相手の資料へは書かない", async () => {
+    const store = await seriesFixture();
+    const before = JSON.stringify(await store.listEntries("灯台守外伝_確認用/設定/characters"));
+    await readSeriesTerms(store, "灯台守_確認用");
+    expect(JSON.stringify(await store.listEntries("灯台守外伝_確認用/設定/characters"))).toBe(before);
   });
 });

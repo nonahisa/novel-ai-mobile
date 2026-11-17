@@ -4,12 +4,13 @@ import {
   BUILT_ACTIONS,
   HIDDEN_ON_MOBILE,
   TABS,
+  TRIAL_ITEMS,
   buildActionList,
   hiddenActions,
   searchActions,
   type ScreenId,
 } from "../src/app/menuPlan";
-import { NOT_BUILT_MESSAGE, renderActionRows, renderTab, renderTabBar } from "../src/app/menuScreen";
+import { renderActionRows, renderTab, renderTabBar } from "../src/app/menuScreen";
 import { parseRoute } from "../src/app/shell";
 
 /**
@@ -38,7 +39,15 @@ describe("下のタブ（4.3）", () => {
   test("作ってある項目は、知っている画面だけを開く", () => {
     const built = TABS.flatMap((t) => t.sections.flatMap((s) => s.items)).filter((i) => i.built);
     for (const item of built) expect(SCREENS).toContain(item.built);
-    expect(built.map((i) => i.label)).toEqual(["GitHub から取り寄せる", "縦書き・横書きの試し", "すべての機能", "AI", "GitHub と同期", "表示", "動作確認ページ", "バージョン確認", "ライセンス"]);
+    expect(built.map((i) => i.label)).toEqual(["すべての機能", "AI", "GitHub と同期", "表示", "バージョン確認", "ライセンス"]);
+  });
+
+  test("試しの画面はタブに置かず、すべての機能のいちばん下にだけ置く（2026-11-18 作者「テスト用のものでなくてもいい」）", () => {
+    expect(TRIAL_ITEMS.map((i) => [i.label, i.built])).toEqual([
+      ["縦書き・横書きの試し", "tategaki"],
+      ["動作確認ページ", "check"],
+    ]);
+    for (const item of TRIAL_ITEMS) expect(SCREENS).toContain(item.built);
   });
 
   test("本体の操作を名指しする項目は、本体の詳細メニューにある名前", () => {
@@ -48,14 +57,14 @@ describe("下のタブ（4.3）", () => {
     for (const item of named) expect(labels, item.action).toContain(item.action);
   });
 
-  test("灰色の項目は押すと「まだ作っていません」と出し、作ってある項目は画面を開く", () => {
-    const html = renderTab(TABS.find((t) => t.id === "write")!);
-    expect(html).toContain('data-screen="tategaki"');
-    const planned = [...html.matchAll(/<button class="menu-item planned" aria-disabled="true" data-planned="([^"]+)"/g)];
-    expect(planned.length).toBeGreaterThan(5);
-    for (const [, tell] of planned) expect(tell.startsWith(NOT_BUILT_MESSAGE)).toBe(true);
-    // 押せる形のまま（disabled にすると、なぜ灰色かを確かめられない）
-    expect(html).not.toMatch(/\sdisabled[\s>]/);
+  test("タブには作ってある項目だけを出す。中が空になったまとまりは見出しごと出さない（2026-11-18）", () => {
+    const write = renderTab(TABS.find((t) => t.id === "write")!);
+    expect(write).not.toContain("menu-item");
+    expect(write).not.toContain("<h2>");
+    const other = renderTab(TABS.find((t) => t.id === "other")!);
+    expect(other).not.toContain("data-planned");
+    expect(other).not.toContain("menu-badge");
+    expect([...other.matchAll(/<h2>([^<]+)<\/h2>/g)].map((m) => m[1])).toEqual(["探して呼ぶ", "設定", "ヘルプ"]);
   });
 
   test("いまのタブに印が付く", () => {

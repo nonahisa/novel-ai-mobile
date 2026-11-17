@@ -1,0 +1,290 @@
+/**
+ * **見た目の案**（設定 → 表示 → 見た目。`src/app/look.ts`）。2026-11-18 作者「選べるようにしてください」。
+ * 標準（`style.css` のまま）のほかに3つ。`<html data-look="…">` で切り替える。どれも色・字・余白・札の形だけを替え、
+ * 並びと動きは替えない。暗い表示も案ごとに持つ（端末の暗い表示に合わせる）
+ */
+
+/* ---------- 和紙と墨：生成りの地・墨の字・題は明朝・札をやめて細い罫の並び ---------- */
+:root[data-look="washi"] {
+  --paper: #f6f1e7;
+  --surface: #fffcf5;
+  --sunk: #f3ede1;
+  --ink: #2b2620;
+  --muted: #7a7064;
+  --line: #e2d9c8;
+  --accent: #34507f;
+  --accent-soft: #e6e3d6;
+  --shu: #b5442c;
+  --shu-soft: #f6e3da;
+  --select: #d9d3bf;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-look="washi"] {
+    --paper: #1b1915;
+    --surface: #23201b;
+    --sunk: #191713;
+    --ink: #ebe4d6;
+    --muted: #a59a88;
+    --line: #3a352c;
+    --accent: #a9bde3;
+    --accent-soft: #2e2c25;
+    --shu: #ec8d74;
+    --shu-soft: #3b261f;
+    --select: #4a4537;
+  }
+}
+:root[data-look="washi"] .appbar {
+  background: var(--sunk);
+  border-bottom-color: transparent;
+}
+:root[data-look="washi"] .appbar-title {
+  font-family: var(--font-ms);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+:root[data-look="washi"] .tab.current {
+  color: var(--ink);
+}
+:root[data-look="washi"] .tab.current svg {
+  background: transparent;
+}
+:root[data-look="washi"] .tab.current::after {
+  content: "";
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--shu);
+}
+:root[data-look="washi"] .work-list,
+:root[data-look="washi"] .menu-items {
+  gap: 0;
+  margin-left: -12px;
+  margin-right: -12px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+:root[data-look="washi"] .work-card,
+:root[data-look="washi"] .menu-item {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  padding-left: 20px;
+  padding-right: 20px;
+}
+:root[data-look="washi"] .menu-item {
+  font-weight: 400;
+}
+:root[data-look="washi"] .work-card:last-child,
+:root[data-look="washi"] .menu-item:last-child {
+  border-bottom: 0;
+}
+:root[data-look="washi"] .menu-section h2,
+:root[data-look="washi"] .menu-group {
+  letter-spacing: 0.2em;
+  font-weight: 400;
+  margin-left: 8px;
+}
+:root[data-look="washi"] .fab {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+/* ---------- 白と藍：白と灰の地・大きな題・角丸のまとまりに行を入れる・項目の右に › ---------- */
+:root[data-look="hakuai"] {
+  --paper: #ffffff;
+  --surface: #ffffff;
+  --sunk: #f2f3f7;
+  --ink: #15192a;
+  --muted: #6b7183;
+  --line: #e4e6ee;
+  --accent: #2448a8;
+  --accent-soft: #e8edfb;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-look="hakuai"] {
+    --paper: #000000;
+    --surface: #1c1c22;
+    --sunk: #0c0c10;
+    --ink: #eceef5;
+    --muted: #9599a8;
+    --line: #2c2d36;
+    --accent: #8fa9f0;
+    --accent-soft: #222a42;
+  }
+}
+:root[data-look="hakuai"] .appbar {
+  background: color-mix(in srgb, var(--sunk) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-bottom-color: transparent;
+}
+:root[data-look="hakuai"] .appbar-title {
+  font-size: 20px;
+  font-weight: 800;
+}
+:root[data-look="hakuai"] .appbar-back + .appbar-title {
+  font-size: 16px;
+}
+:root[data-look="hakuai"] .tabbar {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+:root[data-look="hakuai"] .work-list,
+:root[data-look="hakuai"] .menu-items {
+  gap: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface);
+}
+:root[data-look="hakuai"] .work-card,
+:root[data-look="hakuai"] .menu-item {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+}
+:root[data-look="hakuai"] .menu-item {
+  position: relative;
+  padding-right: 32px;
+  font-weight: 500;
+}
+:root[data-look="hakuai"] .menu-item::after {
+  content: "›";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-52%);
+  color: var(--muted);
+  font-size: 20px;
+  font-weight: 300;
+}
+:root[data-look="hakuai"] .work-card:last-child,
+:root[data-look="hakuai"] .menu-item:last-child {
+  border-bottom: 0;
+}
+:root[data-look="hakuai"] .menu-section h2,
+:root[data-look="hakuai"] .menu-group {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin: 22px 14px 6px;
+}
+:root[data-look="hakuai"] .ep-list {
+  border-radius: 14px;
+  overflow: hidden;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* ---------- 墨と朱：やわらかい灰の地・影で浮かせた罫の無い札・押し口と今のタブは朱 ---------- */
+:root[data-look="sumishu"] {
+  --paper: #f4f4f2;
+  --surface: #ffffff;
+  --sunk: #efefec;
+  --ink: #222222;
+  --muted: #77746e;
+  --line: #e6e4df;
+  --accent: #a8402b;
+  --accent-soft: #f6e4de;
+  --shu: #a8402b;
+  --shu-soft: #f6e4de;
+  --select: #f0d2c9;
+  --lift: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 14px rgb(0 0 0 / 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-look="sumishu"] {
+    --paper: #151515;
+    --surface: #1f1f1f;
+    --sunk: #141414;
+    --ink: #ececea;
+    --muted: #a19d96;
+    --line: #2f2e2c;
+    --accent: #ef8a72;
+    --accent-soft: #3a2620;
+    --shu: #ef8a72;
+    --shu-soft: #3a2620;
+    --select: #5a3328;
+    --lift: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 14px rgb(0 0 0 / 0.35);
+  }
+}
+:root[data-look="sumishu"] .appbar {
+  background: var(--sunk);
+  border-bottom-color: transparent;
+}
+:root[data-look="sumishu"] .appbar-title {
+  font-size: 17px;
+  letter-spacing: 0.03em;
+}
+:root[data-look="sumishu"] .tabbar {
+  border-top: 0;
+  box-shadow: 0 -4px 18px rgb(0 0 0 / 0.06);
+}
+:root[data-look="sumishu"] .work-card,
+:root[data-look="sumishu"] .menu-item {
+  border: 0;
+  border-radius: 18px;
+  box-shadow: var(--lift);
+  color: var(--ink);
+}
+:root[data-look="sumishu"] .menu-item {
+  font-weight: 500;
+}
+:root[data-look="sumishu"] .ep-list {
+  border-radius: 18px;
+  overflow: hidden;
+  margin-left: 0;
+  margin-right: 0;
+  box-shadow: var(--lift);
+}
+:root[data-look="sumishu"] .ms-editor,
+:root[data-look="sumishu"] .ec-pane {
+  border-radius: 18px;
+  box-shadow: var(--lift);
+}
+
+/* 見た目の選び（表示の画面）：4つの見本の色を押し口に載せる */
+.look-choice {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.look-choice button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 400;
+  text-align: left;
+}
+.look-choice button[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  font-weight: 700;
+}
+.look-swatch {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.look-swatch i:nth-child(1) {
+  background: var(--sw-paper);
+}
+.look-swatch i:nth-child(2) {
+  background: var(--sw-accent);
+}

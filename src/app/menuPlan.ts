@@ -48,13 +48,6 @@ export const TABS: readonly PlannedTab[] = [
     label: "作品",
     sections: [
       {
-        title: "作品を足す",
-        items: [
-          { label: "GitHub から取り寄せる", action: "GitHubから追加", built: "import" },
-          { label: "新しく作る", action: "本文起点" },
-        ],
-      },
-      {
         title: "作品の長押し",
         items: [
           { label: "題を変える", action: "作品名変更" },
@@ -81,15 +74,6 @@ export const TABS: readonly PlannedTab[] = [
     id: "write",
     label: "書く",
     sections: [
-      {
-        title: "試し",
-        items: [
-          {
-            label: "縦書き・横書きの試し",
-            built: "tategaki",
-          },
-        ],
-      },
       {
         title: "原稿",
         items: [{ label: "話を開いて書く" }],
@@ -165,13 +149,21 @@ export const TABS: readonly PlannedTab[] = [
         title: "ヘルプ",
         items: [
           { label: "使い方", action: "使い方" },
-          { label: "動作確認ページ", built: "check" },
           { label: "バージョン確認", built: "check", action: "バージョン確認" },
           { label: "ライセンス", built: "licenses" },
         ],
       },
     ],
   },
+];
+
+/**
+ * **試しの画面**（2026-11-18 作者「画面配置もテスト用のものでなくてもいいかもしれません」）。ふだんの道（タブ）からは外し、
+ * 「すべての機能」のいちばん下にだけ置く。自動のテストと実機の試しは、ここか `#/tategaki`・`#/check` で開く
+ */
+export const TRIAL_ITEMS: readonly PlannedItem[] = [
+  { label: "縦書き・横書きの試し", built: "tategaki" },
+  { label: "動作確認ページ", built: "check" },
 ];
 
 /* ---------- すべての機能（4.4.1 の3段目） ---------- */

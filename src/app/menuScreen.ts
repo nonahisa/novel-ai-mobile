@@ -15,7 +15,7 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-function itemButton(item: PlannedItem): string {
+export function itemButton(item: PlannedItem): string {
   const note = item.note ? `<span class="menu-note">${escapeHtml(item.note)}</span>` : "";
   if (item.built) {
     return `<button class="menu-item built" data-screen="${item.built}">${escapeHtml(item.label)}${note}</button>`;
@@ -55,7 +55,11 @@ export function renderAppBar(title: string, options: { back?: boolean; sub?: str
  * 説明を避け、レイアウトに説明させてください」。設計書 4.6）。`lead` は題の下・まとまりの上に置く HTML（［作品］の作品一覧）
  */
 export function renderTab(tab: PlannedTab, version?: string, lead = ""): string {
+  // まだ作っていない項目はタブに出さない（2026-11-18 作者「画面配置もテスト用のものでなくてもいいかもしれません」）。
+  // 中が空になったまとまりは見出しごと出さない。作っていない機能は「すべての機能」で灰色のまま見られる
   const sections = tab.sections
+    .map((section) => ({ ...section, items: section.items.filter((item) => item.built) }))
+    .filter((section) => section.items.length > 0)
     .map(
       (section) => `
       <section class="menu-section">

@@ -20,8 +20,8 @@ import {
   termColorCss,
   type TermInput,
 } from "./termHighlight";
-import { TABS, buildActionList, hiddenActions, searchActions, type PlannedTab } from "./menuPlan";
-import { NOT_BUILT_MESSAGE, escapeHtml, renderActionRows, renderAppBar, renderTab, renderTabBar } from "./menuScreen";
+import { TABS, TRIAL_ITEMS, buildActionList, hiddenActions, searchActions, type PlannedTab } from "./menuPlan";
+import { NOT_BUILT_MESSAGE, escapeHtml, itemButton, renderActionRows, renderAppBar, renderTab, renderTabBar } from "./menuScreen";
 import {
   DRAFT_PATH,
   SAMPLE_TEXT,
@@ -73,7 +73,8 @@ import {
   sendWork,
 } from "../platform/workSyncRun";
 import { nativePostForm } from "../platform/githubDeviceFlow";
-import { readLastEpisode, rememberLastEpisode, renderLastEpisodeCard, type LastEpisode } from "./lastEpisode";
+import { applyLook, parseLook, readLook, renderLookSection, writeLook } from "./look";
+import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLead, type LastEpisode } from "./lastEpisode";
 
 /**
  * アプリの外枠（下のタブ4つと、画面の切り替え）。設計書 4.3 の狭い段。
@@ -228,6 +229,17 @@ function lastEpisodeInWorks(): LastEpisode | undefined {
   }
 }
 
+/** 最近開いた話。作品の外・隠したフォルダーを指すものは捨てる */
+function recentEpisodesInWorks(): LastEpisode[] {
+  return readRecentEpisodes(globalThis.localStorage).filter((entry) => {
+    try {
+      return parseRoute(episodeHash(entry.root, entry.path)).kind === "episode";
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFileStore()): void {
   root.innerHTML = `
     <div class="shell">
@@ -370,7 +382,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
           route.tab.id === "works"
             ? `<div id="workListSlot" aria-busy="true"></div>`
             : route.tab.id === "write"
-              ? renderLastEpisodeCard(lastEpisodeInWorks())
+              ? renderWriteLead(lastEpisodeInWorks(), recentEpisodesInWorks())
               : undefined
         );
         if (route.tab.id === "works") {
@@ -991,9 +1003,18 @@ async function loadInstalledFont(): Promise<void> {
 
 /** 表示の画面。明朝の大きさを示し、押したときだけ取り寄せる。照らして合ったものだけ書いて使う */
 function mountDisplayScreen(screen: HTMLElement, stillHere: () => boolean): void {
-  screen.innerHTML = `${renderAppBar("表示", { back: true })}<div id="lineSlot">${renderLineSection(readCompositionLine(), readLeftLineTermColors())}</div>${renderDisplayScreen({ kind: "checking" })}`;
+  screen.innerHTML = `${renderAppBar("表示", { back: true })}<div id="lookSlot">${renderLookSection(readLook(globalThis.localStorage))}</div><div id="lineSlot">${renderLineSection(readCompositionLine(), readLeftLineTermColors())}</div>${renderDisplayScreen({ kind: "checking" })}`;
   const slot = screen.querySelector<HTMLElement>("#fontSlot")!;
   const lineSlot = screen.querySelector<HTMLElement>("#lineSlot")!;
+  const lookSlot = screen.querySelector<HTMLElement>("#lookSlot")!;
+  lookSlot.addEventListener("click", (event) => {
+    const choice = (event.target as HTMLElement).closest<HTMLElement>("[data-look-choice]");
+    if (!choice) return;
+    const look = parseLook(choice.dataset.lookChoice);
+    writeLook(globalThis.localStorage, look);
+    applyLook(document.documentElement, look);
+    lookSlot.innerHTML = renderLookSection(look);
+  });
   lineSlot.addEventListener("click", (event) => {
     const colors = (event.target as HTMLElement).closest<HTMLElement>("[data-term-colors]");
     if (colors) writeLeftLineTermColors(colors.dataset.termColors === "on");
@@ -1067,6 +1088,7 @@ function mountAllActions(screen: HTMLElement): void {
     <input class="menu-search" id="actionSearch" type="search" placeholder="探す" aria-label="機能を探す" />
     <p class="menu-how" id="actionCount"></p>
     <div id="actionRows"></div>
+    <section class="menu-section trial-items"><h2>試し</h2><div class="menu-items">${TRIAL_ITEMS.map(itemButton).join("")}</div></section>
     <details class="menu-hidden">
       <summary>モバイル版では出さない機能（${hidden.length}件）</summary>
       <ul>${hidden.map((h) => `<li>${escapeHtml(h.label)}：${escapeHtml(h.reason)}</li>`).join("")}</ul>

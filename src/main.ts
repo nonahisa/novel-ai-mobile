@@ -1,10 +1,12 @@
 import "./style.css";
+import "./looks.css";
 import { App } from "@capacitor/app";
 import { mountShell } from "./app/shell";
 import { handleHardwareBack } from "./app/hardwareBack";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
 import { watchCompact } from "./app/compactMode";
+import { applyLook, readLook } from "./app/look";
 
 /**
  * モバイル版の入口。
@@ -31,6 +33,8 @@ document.addEventListener("backbutton", () => {
 
 /* キーボードが出て見える所が低いときは、上下を細くする（`src/app/compactMode.ts`。2026-11-17 作者の答え） */
 watchCompact(window, document.documentElement);
+// 見た目の案（設定 → 表示 → 見た目。端末ごとに覚える）
+applyLook(document.documentElement, readLook(globalThis.localStorage));
 /*
   iPad だけ、キーボードの上の「完了」などの帯を消す（同じ答え。横向きで約40pt 広がる）。iPhone は消さない：
   iPhone のキーボードには閉じるキーが無く、帯の「完了」でしか閉じられない。iPad の名乗りは「Macintosh」なので、

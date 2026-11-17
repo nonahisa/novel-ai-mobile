@@ -56,10 +56,62 @@ export function readLastEpisode(storage: Pick<Storage, "getItem"> | undefined): 
   }
 }
 
-export function rememberLastEpisode(storage: Pick<Storage, "setItem"> | undefined, entry: LastEpisode): void {
+export function rememberLastEpisode(storage: Pick<Storage, "setItem" | "getItem"> | undefined, entry: LastEpisode): void {
   try {
     storage?.setItem(LAST_EPISODE_KEY, encodeLastEpisode(entry));
+    const recent = pushRecentEpisode(readRecentEpisodes(storage), entry);
+    storage?.setItem(RECENT_EPISODES_KEY, JSON.stringify(recent));
   } catch {
     /* 覚えられなくても書くのは止めない */
   }
+}
+
+/* ---------- 最近開いた話（2026-11-18 作者「最後に開いた話と、最近開いた話を5つほど」） ---------- */
+
+export const RECENT_EPISODES_KEY = "novelai.recentEpisodes";
+/** 最後に開いた話のほかに並べる数 */
+export const RECENT_LIMIT = 5;
+
+/** 読めない・形の違うものは捨てる。新しい順 */
+export function parseRecentEpisodes(raw: string | null | undefined): LastEpisode[] {
+  if (!raw) return [];
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!Array.isArray(value)) return [];
+    return value.map((item) => parseLastEpisode(JSON.stringify(item))).filter((item): item is LastEpisode => item !== undefined);
+  } catch {
+    return [];
+  }
+}
+
+/** 開いた話を頭に足す（同じ話は前の所から外す）。最後に開いた話＋{@link RECENT_LIMIT} だけ残す */
+export function pushRecentEpisode(list: readonly LastEpisode[], entry: LastEpisode): LastEpisode[] {
+  const rest = list.filter((item) => !(item.root === entry.root && item.path === entry.path));
+  return [{ root: entry.root, path: entry.path }, ...rest].slice(0, RECENT_LIMIT + 1);
+}
+
+export function readRecentEpisodes(storage: Pick<Storage, "getItem"> | undefined): LastEpisode[] {
+  try {
+    return parseRecentEpisodes(storage?.getItem(RECENT_EPISODES_KEY));
+  } catch {
+    return [];
+  }
+}
+
+function episodeName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1).replace(/\.txt$/i, "");
+}
+
+/** ［書く］の頭：最後に開いた話の札と、その下に最近開いた話の行（最後に開いた話は除く） */
+export function renderWriteLead(last: LastEpisode | undefined, recent: readonly LastEpisode[]): string {
+  const others = recent.filter((item) => !(last && item.root === last.root && item.path === last.path)).slice(0, RECENT_LIMIT);
+  const rows = others
+    .map(
+      (item) =>
+        `<button class="ep" data-episode="${escapeHtml(item.path)}" data-root="${escapeHtml(item.root)}">` +
+        `<span class="name">${escapeHtml(episodeName(item.path))}</span><span class="chars">${escapeHtml(item.root)}</span></button>`
+    )
+    .join("");
+  const list = rows ? `<section class="menu-section recent-episodes"><h2>最近の話</h2><div class="ep-list">${rows}</div></section>` : "";
+  return renderLastEpisodeCard(last) + list;
 }

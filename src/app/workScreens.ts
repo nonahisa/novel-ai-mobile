@@ -1,4 +1,4 @@
-import { NOT_BUILT_MESSAGE, escapeHtml } from "./menuScreen";
+import { escapeHtml } from "./menuScreen";
 import { episodeListRows, missingNumbersLine, mobileWording, workCard, type EpisodeListRow, type WorkCard } from "./workListView";
 import { toStorePath } from "../platform/paths";
 import type { ScannedWork, WorkListItem } from "../platform/workScan";
@@ -34,8 +34,7 @@ export function renderEpisodeList(work: ScannedWork): string {
     (missing ? `<p class="flag warn long work-warn">${escapeHtml(missing)}</p>` : "");
   const rows = episodeListRows(work);
   if (rows.length === 0) return `${warn}<div class="ep-list"><div class="work-empty" aria-hidden="true"></div></div>`;
-  const next = `<button class="newep planned" aria-disabled="true" data-planned="${NOT_BUILT_MESSAGE}">続きを書く<span class="menu-badge">未</span></button>`;
-  return `${warn}<div class="ep-list">${next}${rows.map((row) => rowHtml(row, work.root)).join("")}</div>`;
+  return `${warn}<div class="ep-list">${rows.map((row) => rowHtml(row, work.root)).join("")}</div>`;
 }
 
 /** 編集者が校閲中の話の印（本体の鍵。誰かは出さない） */

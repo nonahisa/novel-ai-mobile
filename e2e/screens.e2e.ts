@@ -174,8 +174,18 @@ test.describe("一覧の画面", () => {
     });
   }
 
-  test("項目は見本の札（角 14・罫）。灰色の項目を押すと「まだ作っていません」と出る", async ({ page }) => {
-    await open(page, "#/works");
+  test("タブには作ってある項目だけ。まだ作っていない項目（未）と試しの入口は出さない（2026-11-18 作者「テスト用のものでなくてもいい」）", async ({ page }) => {
+    for (const hash of ["#/works", "#/write", "#/proposals", "#/other"]) {
+      await open(page, hash);
+      await expect(page.locator(".appbar")).toBeVisible();
+      await expect(page.locator(".menu-item.planned")).toHaveCount(0);
+      await expect(page.locator(".menu-badge")).toHaveCount(0);
+      await expect(page.locator('[data-screen="tategaki"], [data-screen="check"]:not(:has-text("バージョン確認"))')).toHaveCount(0);
+    }
+  });
+
+  test("項目は見本の札（角 14・罫）。すべての機能の灰色の項目を押すと「まだ作っていません」と出る", async ({ page }) => {
+    await open(page, "#/all");
     const item = page.locator(".menu-item.planned").first();
     await expect(item).toHaveCSS("border-top-left-radius", "14px");
     // aria-disabled の項目も押せる形（押すと知らせる）。Playwright は押せないものと見るので force で押す
@@ -184,9 +194,9 @@ test.describe("一覧の画面", () => {
     await expect(page.locator("#toast")).toContainText("まだ作っていません");
   });
 
-  test("作ってある項目は画面を開く", async ({ page }) => {
-    await open(page, "#/write");
-    await page.locator('.menu-item.built[data-screen="tategaki"]').click();
+  test("試しの画面は、すべての機能のいちばん下から開く", async ({ page }) => {
+    await open(page, "#/all");
+    await page.locator('.trial-items .menu-item.built[data-screen="tategaki"]').click();
     await expect(page).toHaveURL(/#\/tategaki$/);
   });
 

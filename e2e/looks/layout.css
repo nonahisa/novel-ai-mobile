@@ -1,8 +1,0 @@
-/* ふだんの並べ方の見込み（写真だけ。作るときは shell.ts・menuPlan.ts で並べ直す）：まだ作っていない項目と、試しの入口・重なる入口を出さない */
-.menu-item.planned { display: none !important; }
-.menu-section:not(:has(.menu-item.built)) { display: none !important; }
-.menu-section:has([data-screen="tategaki"]),
-.menu-section:has([data-screen="check"]) { display: none !important; }
-.menu-section:has([data-screen="import"]) { display: none !important; }
-.appbar-title small:empty { display: none; }
-.newep.planned { display: none !important; }

@@ -65,7 +65,10 @@ test.describe("GitHub から取り寄せる", () => {
 
   test("［作品］から開く。サインインしていなければ、サインインの画面へ", async ({ page }) => {
     await openWithWorks(page, "#/works");
-    await page.getByRole("button", { name: /GitHub から取り寄せる/ }).click();
+    // ［作品］の下の「作品を足す」はやめ、右下の［＋］だけにした（2026-11-18）
+    await expect(page.locator(".menu-item", { hasText: "GitHub から取り寄せる" })).toHaveCount(0);
+    await page.locator("#addWork").click();
+    await page.locator("[data-choice=import]").click();
     await expect(page).toHaveURL(/#\/import$/);
     await page.locator("#importSlot [data-screen=github]").click();
     await expect(page).toHaveURL(/#\/github$/);

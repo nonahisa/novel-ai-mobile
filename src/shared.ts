@@ -66,6 +66,8 @@ export {
   type TermMatch,
 } from "novel-ai-assistant/src/core/termIndex";
 export { TERM_COLORS, type TermColorPair } from "novel-ai-assistant/src/core/termColors";
+// シリーズでつないだ作品の語（本体の設計書 6.95.3）：関門と config の読み方は本体と同じものを使う
+export { isPlainFolderName, isShareableRecord, parseSeriesConfig, seriesSourceTitle } from "novel-ai-assistant/src/core/seriesLink";
 /*
   作品一覧（A）と話の一覧（B）：作品の走査（本体の `core/scanner.ts`）は vscode に頼るので、
   走査が使う vscode に触らない部品を同じ順に通す（`platform/workScan.ts`）。写さない

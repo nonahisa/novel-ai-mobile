@@ -14,7 +14,7 @@ import { mountImeSinkPane } from "./imeSinkPane";
 import { chooseMergeRegions, finishMerge, planExternalMerge, regionChoices } from "./externalMerge";
 import { readTextFile, writeTextFilePreservingFormat } from "../platform/textFile";
 import { readWorkLayout } from "../platform/workScan";
-import { readWorkTerms } from "../platform/workTerms";
+import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
 import { termFinderFrom } from "./termHighlight";
 import type { TermFinder } from "./editContextPane";
 
@@ -409,7 +409,9 @@ export function mountEpisodeScreen(
     termFinder ??= (async () => {
       try {
         const layout = await readWorkLayout(store, root);
-        return termFinderFrom((await readWorkTerms(store, layout.settings)).entries);
+        // シリーズでつないだ作品の語は自分の語の後ろに積む（同じ所では先に入った自分の資料が勝つ。本体と同じ）
+        const own = (await readWorkTerms(store, layout.settings)).entries;
+        return termFinderFrom([...own, ...(await readSeriesTerms(store, root))]);
       } catch {
         return undefined;
       }

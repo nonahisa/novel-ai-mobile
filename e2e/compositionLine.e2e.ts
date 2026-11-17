@@ -61,4 +61,25 @@ test.describe("変換中の線", () => {
     await expect(editor.locator(".term-character")).toHaveCount(1);
     expect(await readFakeFile(page, "灯台守_確認用/設定/characters/char_001.json")).toBe(sister);
   });
+
+  test("シリーズでつないだ隣の作品の、公開・登場済みの人物にも色が付く（未登場は付かない）。相手へは書かない", async ({ page }) => {
+    const letter = character("char_001", "手紙");
+    const sister = character("char_002", "姉", { status: "未登場" });
+    await openWithWorks(page, "#/display", {
+      ...FAKE_WORKS,
+      "灯台守_確認用/.aiwriter/config.json": JSON.stringify({ workTitle: "灯台守の手紙_確認用", series: { name: "灯台守", related: ["灯台守外伝_確認用"] } }),
+      "灯台守外伝_確認用/.aiwriter/config.json": JSON.stringify({ workTitle: "灯台守外伝_確認用" }),
+      "灯台守外伝_確認用/設定/characters/char_001.json": letter,
+      "灯台守外伝_確認用/設定/characters/char_002.json": sister,
+    });
+    await page.locator('[data-line="right"]').click();
+    await page.evaluate(() => (location.hash = "#/works"));
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await page.locator("#episodeSlot .ep").first().click();
+    const editor = page.locator("#msEditor");
+    await expect(editor).toContainText("姉から手紙が届いた。");
+    // 右の線の欄は1字ずつ描くので、色の付いた字をつないで見る（「姉」は未登場なので付かない）
+    await expect(editor.locator(".term-character")).toHaveText(["手", "紙"]);
+    expect(await readFakeFile(page, "灯台守外伝_確認用/設定/characters/char_001.json")).toBe(letter);
+  });
 });

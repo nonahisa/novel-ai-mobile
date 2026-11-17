@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   SINK_SENTINEL,
   commitSinkValue,
+  dropRangeForComposition,
   initialSinkState,
   pageEditFor,
   readSinkValue,
@@ -17,10 +18,11 @@ import {
 
 describe("変換中の字を描く", () => {
   test("カーソルの位置に挟み、全体に1本の線（区切りは1つ）", () => {
-    const s = { ...initialSinkState("朝の駅"), selection: 2, composing: true, compText: "きょう" };
+    const s = { ...initialSinkState("朝の駅"), selection: 2, anchor: 2, composing: true, compText: "きょう" };
     expect(sinkDisplayState(s)).toEqual({
       text: "朝のきょう駅",
       selection: 5,
+      anchor: 5,
       composing: true,
       formats: [{ start: 2, end: 5, style: "solid", thickness: "thin" }],
     });
@@ -38,12 +40,12 @@ describe("変換中の字を描く", () => {
 
 describe("確定して本文へ移す", () => {
   test("カーソルの位置へ入れ、カーソルを進め、変換中を終える", () => {
-    const s = { ...initialSinkState("朝の駅"), selection: 2, composing: true, compText: "きょう" };
-    expect(commitSinkValue(s, "今日")).toEqual({ text: "朝の今日駅", selection: 4, composing: false, compText: "" });
+    const s = { ...initialSinkState("朝の駅"), selection: 2, anchor: 2, composing: true, compText: "きょう" };
+    expect(commitSinkValue(s, "今日")).toEqual({ text: "朝の今日駅", selection: 4, anchor: 4, composing: false, compText: "" });
   });
   test("受け口が空なら本文は変えず、変換中だけを終える（変換を取り消したとき）", () => {
     const s = { ...initialSinkState("あ"), composing: true, compText: "い" };
-    expect(commitSinkValue(s, "")).toEqual({ text: "あ", selection: 1, composing: false, compText: "" });
+    expect(commitSinkValue(s, "")).toEqual({ text: "あ", selection: 1, anchor: 1, composing: false, compText: "" });
   });
 });
 
@@ -75,5 +77,22 @@ describe("消す・改行はページが受け持つ", () => {
     expect(pageEditFor("insertLineBreak", SINK_SENTINEL, true)).toBeUndefined();
     expect(pageEditFor("deleteContentForward", `${SINK_SENTINEL}き`, false)).toBeUndefined();
     expect(pageEditFor("insertText", SINK_SENTINEL, false)).toBeUndefined();
+  });
+});
+
+describe("選んだ範囲（2026-11-18 作者の答え D「右の欄で範囲を選べるようにする」）", () => {
+  test("範囲を選んで確定すると、範囲と置き換わる", () => {
+    const s = { ...initialSinkState("朝の駅へ"), selection: 3, anchor: 1, composing: true, compText: "" };
+    expect(commitSinkValue(s, "夜")).toMatchObject({ text: "朝夜へ", selection: 2, anchor: 2 });
+  });
+  test("変換が始まったら範囲を本文から外し、範囲の頭にカーソル。範囲が無ければ何もしない", () => {
+    const s = { ...initialSinkState("朝の駅へ"), selection: 1, anchor: 3 };
+    expect(dropRangeForComposition(s)).toMatchObject({ text: "朝へ", selection: 1, anchor: 1 });
+    const none = initialSinkState("朝");
+    expect(dropRangeForComposition(none)).toBe(none);
+  });
+  test("変換中は範囲の印を描かない", () => {
+    const s = { ...initialSinkState("朝の駅"), selection: 1, anchor: 1, composing: true, compText: "あ" };
+    expect(sinkDisplayState(s)).toMatchObject({ selection: 2, anchor: 2 });
   });
 });

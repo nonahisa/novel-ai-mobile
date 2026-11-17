@@ -3,7 +3,10 @@ import { caretFromPoint, readCharBoxes } from "./tapCaret";
 import type { TermSpan } from "./termHighlight";
 import {
   applyTextUpdate,
+  collapseTo,
   editAtCaret,
+  rangeOf,
+  selectRange,
   initialPaneState,
   renderPaneHtml,
   type CompositionFormat,
@@ -47,8 +50,12 @@ export type TermFinder = (text: string) => TermSpan[];
 export interface EditContextPane {
   getText(): string;
   setText(text: string): void;
-  /** カーソルの位置（範囲の選び方はまだ無いので、始まりと終わりは同じ。原稿エディターの右傍線で使う。引継ぎ書 76章） */
+  /** 選んでいる範囲（前から後ろへ）。範囲が無ければ始まりと終わりはカーソルの位置（原稿エディターの道具帯で使う） */
   getSelection(): { start: number; end: number };
+  /** 範囲を選ぶ（`anchor` は動かない側の端、`focus` は動く側の端。同じならカーソル） */
+  setSelection(anchor: number, focus: number): void;
+  /** 変換中か（変換中は範囲の長押し・つまみを止める） */
+  isComposing(): boolean;
   /** 本文を替え、カーソルを `caret` に置く（道具帯・取り消し） */
   setTextAt(text: string, caret: number): void;
   setOrientation(orientation: Orientation): void;
@@ -70,6 +77,11 @@ export function mountEditContextPane(
   let state: PaneState = initialPaneState(text);
   let findTerms: TermFinder = () => [];
   const ec = new Ctor({ text, selectionStart: state.selection, selectionEnd: state.selection });
+  /** 選んでいる範囲を EditContext へ伝える（IME は範囲と置き換えて打つ） */
+  const tellSelection = () => {
+    const { start, end } = rangeOf(state);
+    ec.updateSelection(start, end);
+  };
   (element as unknown as { editContext: EditContextLike | null }).editContext = ec;
   element.tabIndex = 0;
   element.setAttribute("role", "textbox");
@@ -148,12 +160,17 @@ export function mountEditContextPane(
     if (!done) return;
     state = done.state;
     ec.updateText(done.start, done.end, done.inserted);
-    ec.updateSelection(state.selection, state.selection);
+    tellSelection();
     changed();
   };
   const moveCaret = (to: number) => {
-    state = { ...state, selection: Math.min(Math.max(to, 0), state.text.length) };
-    ec.updateSelection(state.selection, state.selection);
+    state = collapseTo(state, to);
+    tellSelection();
+    render();
+  };
+  const setRange = (anchor: number, focus: number) => {
+    state = selectRange(state, anchor, focus);
+    tellSelection();
     render();
   };
   const onKeyDown = (e: KeyboardEvent) => {
@@ -162,9 +179,13 @@ export function mountEditContextPane(
     if (e.key === "Backspace") edit("backspace");
     else if (e.key === "Delete") edit("delete");
     else if (e.key === "Enter") edit("newline");
-    else if (e.key === (vertical ? "ArrowUp" : "ArrowLeft")) moveCaret(state.selection - 1);
-    else if (e.key === (vertical ? "ArrowDown" : "ArrowRight")) moveCaret(state.selection + 1);
-    else return;
+    else if (e.key === (vertical ? "ArrowUp" : "ArrowLeft") || e.key === (vertical ? "ArrowDown" : "ArrowRight")) {
+      const step = e.key === (vertical ? "ArrowUp" : "ArrowLeft") ? -1 : 1;
+      // Shift を押しながらなら範囲をのばす。押さずに範囲があれば、範囲のその側の端へ
+      if (e.shiftKey) setRange(state.anchor, state.selection + step);
+      else if (state.anchor !== state.selection) moveCaret(step < 0 ? rangeOf(state).start : rangeOf(state).end);
+      else moveCaret(state.selection + step);
+    } else return;
     e.preventDefault();
   };
   const onPointerDown = (e: PointerEvent) => {
@@ -183,15 +204,17 @@ export function mountEditContextPane(
     setText(next: string) {
       ec.updateText(0, state.text.length, next);
       state = initialPaneState(next);
-      ec.updateSelection(state.selection, state.selection);
+      tellSelection();
       render();
     },
-    getSelection: () => ({ start: state.selection, end: state.selection }),
+    getSelection: () => rangeOf(state),
+    setSelection: (anchor, focus) => setRange(anchor, focus),
+    isComposing: () => state.composing,
     setTextAt(next: string, caret: number) {
       ec.updateText(0, state.text.length, next);
       const at = Math.max(0, Math.min(caret, next.length));
-      state = { ...initialPaneState(next), selection: at };
-      ec.updateSelection(at, at);
+      state = collapseTo(initialPaneState(next), at);
+      tellSelection();
       render();
     },
     setOrientation(next) {

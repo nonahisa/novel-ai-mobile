@@ -1,4 +1,4 @@
-import { renderPaneHtml, type PaneState } from "./editContextModel";
+import { collapseTo, rangeOf, renderPaneHtml, type PaneState } from "./editContextModel";
 import type { TermSpan } from "./termHighlight";
 
 /**
@@ -21,27 +21,30 @@ import type { TermSpan } from "./termHighlight";
 export interface SinkState {
   /** 確定した本文 */
   text: string;
-  /** カーソルの位置（UTF-16 の単位） */
+  /** カーソルの位置（UTF-16 の単位）。範囲を選んでいるときは、動く側の端 */
   selection: number;
+  /** 範囲の動かない側の端（範囲が無ければ `selection` と同じ。`editContextModel.ts` の `PaneState` と同じ） */
+  anchor: number;
   composing: boolean;
   /** 変換中の字（受け口の中で IME が組み立てている字） */
   compText: string;
 }
 
 export function initialSinkState(text: string): SinkState {
-  return { text, selection: text.length, composing: false, compText: "" };
+  return { text, selection: text.length, anchor: text.length, composing: false, compText: "" };
 }
 
 /** 描くための仮の本文（変換中の字を挟み、その範囲に線を1本） */
 export function sinkDisplayState(state: SinkState): PaneState {
   if (!state.composing || state.compText === "") {
-    return { text: state.text, selection: state.selection, composing: false, formats: [] };
+    return { text: state.text, selection: state.selection, anchor: state.composing ? state.selection : state.anchor, composing: false, formats: [] };
   }
   const at = state.selection;
   const end = at + state.compText.length;
   return {
     text: state.text.slice(0, at) + state.compText + state.text.slice(at),
     selection: end,
+    anchor: end,
     composing: true,
     formats: [{ start: at, end, style: "solid", thickness: "thin" }],
   };
@@ -51,11 +54,23 @@ export function renderSinkHtml(state: SinkState, terms: readonly TermSpan[] = []
   return renderPaneHtml(sinkDisplayState(state), terms);
 }
 
-/** 受け口の中身（確定した字）を本文のカーソルの位置へ移す */
+/** 受け口の中身（確定した字）を本文のカーソルの位置へ移す。範囲を選んでいれば、範囲と置き換える */
 export function commitSinkValue(state: SinkState, value: string): SinkState {
   if (value === "") return { ...state, composing: false, compText: "" };
-  const text = state.text.slice(0, state.selection) + value + state.text.slice(state.selection);
-  return { text, selection: state.selection + value.length, composing: false, compText: "" };
+  const { start, end } = rangeOf(state);
+  const text = state.text.slice(0, start) + value + state.text.slice(end);
+  const at = start + value.length;
+  return { text, selection: at, anchor: at, composing: false, compText: "" };
+}
+
+/**
+ * 変換が始まったとき、選んでいる範囲を本文から外す（変換中の字は範囲と置き換わる）。範囲が無ければそのまま。
+ * 受け口の中身には触らない（iOS は変換中に受け口を書き換えると、変換中の字を確定してしまう）
+ */
+export function dropRangeForComposition(state: SinkState): SinkState {
+  const { start, end } = rangeOf(state);
+  if (start === end) return state;
+  return collapseTo({ ...state, text: state.text.slice(0, start) + state.text.slice(end) }, start);
 }
 
 /**

@@ -19,6 +19,9 @@ import { findTermOccurrences } from "./termOccurrences";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
 import { termAtFrom, termFinderFrom, termOnCharFrom, termTagLabel } from "./termHighlight";
 import { charFromPoint, readCharBoxes } from "./tapCaret";
+import { mountRangeGestures } from "./rangeGestures";
+import { createTrialLog } from "./trialLogFile";
+import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import type { TermEntry } from "../shared";
 import type { TermFinder } from "./editContextPane";
 
@@ -333,6 +336,34 @@ function mountRightLinePane(
     pressed = charFromPoint(readCharBoxes(element), e.clientX, e.clientY) ?? null;
   };
   element.addEventListener("pointerdown", onPressStart, true);
+  /*
+    長押しとつまみで範囲を選ぶ（2026-11-18 作者の答え D）。記録はファイルにも書く（試しの画面と同じ置き場
+    `trial-log/`。iOS は Documents。Mac のセッションが取り出す。原稿には書かない）
+  */
+  const logFile = createTrialLog(new Date(), {
+    write: async (logPath, data) => {
+      await Filesystem.writeFile({
+        path: logPath,
+        data,
+        directory: Capacitor.getPlatform() === "ios" ? Directory.Documents : Directory.Data,
+        encoding: Encoding.UTF8,
+        recursive: true,
+      });
+    },
+    setTimer: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimer: (handle) => window.clearTimeout(handle as number),
+  });
+  const log = (line: string) => logFile.add(`${new Date().toLocaleTimeString("ja-JP", { hour12: false })} ${line}`);
+  log(`原稿エディター 右の線（${support.ok ? "EditContext" : "受け口"}の作り）`);
+  const stopGestures = mountRangeGestures({
+    element,
+    host,
+    text: () => pane.getText(),
+    selection: () => pane.getSelection(),
+    select: (anchor, focus) => pane.setSelection(anchor, focus),
+    composing: () => pane.isComposing(),
+    log,
+  });
   return {
     pressedChar: () => pressed,
     setText: (text) => pane.setText(text),
@@ -354,6 +385,8 @@ function mountRightLinePane(
     setTerms: (find) => pane.setTerms(find),
     destroy() {
       element.removeEventListener("pointerdown", onPressStart, true);
+      stopGestures();
+      void logFile.flush();
       pane.destroy();
       element.remove();
     },

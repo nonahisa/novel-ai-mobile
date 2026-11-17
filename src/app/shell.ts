@@ -35,6 +35,7 @@ import {
   type TrialPrefs,
 } from "./tategakiDraft";
 import { askChoice, askText, chooseFrom, tell } from "./dialog";
+import { mountOrphanDrafts } from "./orphanDrafts";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
 import { listWorks, scanWorkFolder, type ScanOptions } from "../platform/workScan";
 import { lastCommitTime } from "../platform/git";
@@ -94,6 +95,7 @@ import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLe
  * | `#/display` | 表示（書体の取り寄せ） |
  * | `#/licenses` | ライセンス |
  * | `#/ai` | 設定 → AI（クラウドの AI の鍵） |
+ * | `#/drafts` | 設定 → 書きかけの控え（どの話にも合わない控えを見て消す） |
  * | `#/check` | 動作確認ページ（開発用） |
  *
  * 原稿エディター・縦書きの試し・動作確認ページを開いている間は、下のタブを隠す（4.3「原稿エディターを
@@ -114,7 +116,8 @@ type Route =
   | { kind: "import" }
   | { kind: "display" }
   | { kind: "licenses" }
-  | { kind: "ai" };
+  | { kind: "ai" }
+  | { kind: "drafts" };
 
 /** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
 function isWorkRoot(root: string): boolean {
@@ -164,6 +167,7 @@ export function parseRoute(hash: string): Route {
   if (name === "display") return { kind: "display" };
   if (name === "licenses") return { kind: "licenses" };
   if (name === "ai") return { kind: "ai" };
+  if (name === "drafts") return { kind: "drafts" };
   if (name.startsWith("conflict/")) {
     const pieces = name.slice("conflict/".length).split("/");
     try {
@@ -199,7 +203,7 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", ai: "#/ai" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", ai: "#/ai", drafts: "#/drafts" } as const;
 
 /**
  * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。
@@ -385,7 +389,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "ai" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "ai" || route.kind === "drafts" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
@@ -487,6 +491,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       }
       case "tategaki":
         leaveGuard = mountTategaki(screen, store);
+        return;
+      case "drafts":
+        lastTabHash = "#/other";
+        mountOrphanDrafts(screen, store, stillHere, toast);
         return;
       case "ai":
         lastTabHash = "#/other";

@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { caretScrollDelta, revealDelta } from "../src/app/caretVisible";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { caretScrollDelta, revealDelta, watchVisibleBand } from "../src/app/caretVisible";
 
 /**
  * キーボードが出ても、カーソルのある所を見える位置へ送る量（2026-11-07 Mac の iOS シミュレーター：
@@ -47,5 +47,71 @@ describe("欄の頭をなるべく見せたまま送る（2026-11-08 AQUOS wish3
   });
   test("欄の頭を渡さなければ、前と同じ", () => {
     expect(revealDelta({ top: 400, bottom: 420 }, band, margins)).toBe(caretScrollDelta({ top: 400, bottom: 420 }, band, margins));
+  });
+});
+
+/**
+ * 2026-11-17 AQUOS の試し11（0.1.78）：キーボードが出て 150ms 後にこちらが送ったあと、ブラウザが自分で
+ * 「焦点の欄を見える所へ」ページを送り（151 → 210）、縦書きの列の頭の字が道具の段のすぐ下に残った。
+ * こちらはブラウザの送りのあとに送り直していなかった
+ */
+describe("キーボードが出入りしたときの見張り", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+  function fakeWindow() {
+    const vv = new EventTarget();
+    const win = new EventTarget() as EventTarget & Record<string, unknown>;
+    win.visualViewport = vv;
+    win.setTimeout = (fn: () => void, ms: number) => setTimeout(fn, ms);
+    win.clearTimeout = (id: ReturnType<typeof setTimeout>) => clearTimeout(id);
+    vi.stubGlobal("window", win);
+    return { vv, win };
+  }
+
+  test("大きさが落ち着いてから1回呼び、そのあとブラウザが自分でページを送ったら、送りが止まってからもう1回呼ぶ", () => {
+    vi.useFakeTimers();
+    const { vv, win } = fakeWindow();
+    const calls: number[] = [];
+    watchVisibleBand(() => calls.push(Date.now()));
+    vv.dispatchEvent(new Event("resize"));
+    vi.advanceTimersByTime(150);
+    expect(calls).toHaveLength(1);
+    // ブラウザの送り（2回）
+    vi.advanceTimersByTime(30);
+    win.dispatchEvent(new Event("scroll"));
+    vi.advanceTimersByTime(80);
+    win.dispatchEvent(new Event("scroll"));
+    vi.advanceTimersByTime(119);
+    expect(calls).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(calls).toHaveLength(2);
+  });
+
+  test("キーボードが出てしばらくたってからの送り（作者が指で送った）では呼ばない", () => {
+    vi.useFakeTimers();
+    const { vv, win } = fakeWindow();
+    let calls = 0;
+    watchVisibleBand(() => calls++);
+    vv.dispatchEvent(new Event("resize"));
+    vi.advanceTimersByTime(150 + 1000);
+    win.dispatchEvent(new Event("scroll"));
+    vi.advanceTimersByTime(500);
+    expect(calls).toBe(1);
+  });
+
+  test("外したら、送りでも大きさでも呼ばない", () => {
+    vi.useFakeTimers();
+    const { vv, win } = fakeWindow();
+    let calls = 0;
+    const stop = watchVisibleBand(() => calls++);
+    vv.dispatchEvent(new Event("resize"));
+    vi.advanceTimersByTime(150);
+    stop();
+    win.dispatchEvent(new Event("scroll"));
+    vv.dispatchEvent(new Event("resize"));
+    vi.advanceTimersByTime(1000);
+    expect(calls).toBe(1);
   });
 });

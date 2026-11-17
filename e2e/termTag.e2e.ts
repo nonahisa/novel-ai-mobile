@@ -123,3 +123,61 @@ test.describe("色の付いた名前を押したときの札", () => {
     expect(await readFakeFile(page, "灯台守_確認用/本文/第1話 手紙.txt")).toContain(["直す", "姉"].join("\n"));
   });
 });
+
+/**
+ * **右の線の欄の「見えない受け口」の作り**（iOS の WKWebView と AQUOS の WebView はこちら。EditContext が無い）。
+ * 2026-11-18 作者の案 D「iPad で確かめてから、右の欄で範囲を選べるようにする」の下ごしらえ：パソコンの Chromium でも
+ * EditContext を隠して、受け口の作りで色・札・紹介・飛ぶ・変換中の扱いを見張る（AQUOS 0.1.79 で同じ6つが通った）
+ */
+test.describe("右の線の欄（見えない受け口の作り）", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      delete (window as unknown as { EditContext?: unknown }).EditContext;
+    });
+  });
+
+  test("名前を押すと札、札を押すと紹介と行、行を押すとその話へ。打ち込みは受け口で受ける", async ({ page }) => {
+    const third = ["霧が出た。", "姉は灯台にいた。"].join(String.fromCharCode(10));
+    await openWithWorks(page, "#/display", { ...WITH_TERMS, "灯台守_確認用/本文/第3話 霧笛.txt": third });
+    await page.locator('[data-line="right"]').click();
+    await page.evaluate(() => (location.hash = "#/works"));
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await page.locator(".ep-list .ep").first().click();
+    const editor = page.locator("#msEditor");
+    await expect(editor).toBeVisible();
+    // 受け口の作りで開いている（EditContext の作りではない）
+    expect(await page.evaluate(() => "EditContext" in window)).toBe(false);
+    await expect(editor.locator(".term-character")).toHaveCount(1);
+
+    await editor.locator(".term-character").click();
+    const tag = page.locator("#termTag");
+    await expect(tag).toHaveText("姉（人物） ›");
+    await tag.click();
+    const hits = page.locator("#termSheetHits button");
+    await expect(hits).toHaveCount(2);
+    await hits.nth(1).click();
+    await expect(page).toHaveURL(/%E7%AC%AC3%E8%A9%B1/);
+    await expect(page.locator("#termSheet")).toBeHidden();
+    await expect(page.locator("#msEditor .term-character")).toHaveCount(1);
+  });
+
+  test("名前のすぐ後ろで打つと札は消え、名前の色は残る。そのあと名前を押すとまた札", async ({ page }) => {
+    await openWithWorks(page, "#/display", WITH_TERMS);
+    await page.locator('[data-line="right"]').click();
+    await page.evaluate(() => (location.hash = "#/works"));
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await page.locator(".ep-list .ep").first().click();
+    const editor = page.locator("#msEditor");
+    await editor.locator(".term-character").click();
+    await expect(page.locator("#termTag")).toBeVisible();
+    await page.keyboard.type("a");
+    await expect(page.locator("#termTag")).toBeHidden();
+    await expect(editor).toContainText("a");
+    await expect(editor.locator(".term-character")).toHaveText("姉");
+    await editor.locator(".term-character").click();
+    await expect(page.locator("#termTag")).toHaveText("姉（人物） ›");
+  });
+
+  test.fixme("範囲を選べる（長押し・つまみ）。選んだ字にルビ・傍点を振れる（案 D。iPad で1〜6が通ってから作る）", async () => {});
+});
+

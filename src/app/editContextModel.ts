@@ -35,8 +35,13 @@ export interface CompositionFormat {
 
 export interface PaneState {
   text: string;
-  /** カーソルの位置（字の数。UTF-16 の単位。EditContext と同じ数え方） */
+  /** カーソルの位置（字の数。UTF-16 の単位。EditContext と同じ数え方）。範囲を選んでいるときは、動く側の端 */
   selection: number;
+  /**
+   * 範囲の動かない側の端（範囲を選んでいないときは `selection` と同じ）。2026-11-18 作者の答え D
+   * 「右の欄で範囲を選べるようにする」。選んだ範囲は `rangeOf` で読む
+   */
+  anchor: number;
   composing: boolean;
   formats: CompositionFormat[];
 }
@@ -44,7 +49,27 @@ export interface PaneState {
 export type Orientation = "vertical" | "horizontal";
 
 export function initialPaneState(text: string): PaneState {
-  return { text, selection: text.length, composing: false, formats: [] };
+  return { text, selection: text.length, anchor: text.length, composing: false, formats: [] };
+}
+
+/** 選んでいる範囲（前から後ろへ）。範囲が無ければ start と end はカーソルの位置 */
+export function rangeOf(state: Pick<PaneState, "selection" | "anchor">): { start: number; end: number } {
+  return { start: Math.min(state.anchor, state.selection), end: Math.max(state.anchor, state.selection) };
+}
+
+export function hasRange(state: Pick<PaneState, "selection" | "anchor">): boolean {
+  return state.anchor !== state.selection;
+}
+
+/** カーソルを置く（範囲は外す） */
+export function collapseTo<S extends { text: string; selection: number; anchor: number }>(state: S, at: number): S {
+  const to = clamp(at, 0, state.text.length);
+  return { ...state, selection: to, anchor: to };
+}
+
+/** 範囲を選ぶ（`anchor` は動かない側、`focus` は動く側の端） */
+export function selectRange<S extends { text: string; selection: number; anchor: number }>(state: S, anchor: number, focus: number): S {
+  return { ...state, anchor: clamp(anchor, 0, state.text.length), selection: clamp(focus, 0, state.text.length) };
 }
 
 /** IME の `textupdate`（[start, end) を `inserted` に置き換え、カーソルを selection へ） */
@@ -55,11 +80,17 @@ export function applyTextUpdate(
   const start = clamp(update.start, 0, state.text.length);
   const end = clamp(update.end, start, state.text.length);
   const text = state.text.slice(0, start) + update.text + state.text.slice(end);
-  return { ...state, text, selection: clamp(update.selection, 0, text.length) };
+  const at = clamp(update.selection, 0, text.length);
+  return { ...state, text, selection: at, anchor: at };
 }
 
 /** ページが受け持つ書き換え（改行・削除）。EditContext へも同じ書き換えを伝える必要がある */
 export function editAtCaret(state: PaneState, kind: "newline" | "backspace" | "delete"): { state: PaneState; start: number; end: number; inserted: string } | undefined {
+  // 範囲を選んでいれば、範囲を消す（改行なら範囲を改行に置き換える）
+  if (hasRange(state)) {
+    const { start, end } = rangeOf(state);
+    return replace(state, start, end, kind === "newline" ? "\n" : "");
+  }
   const at = state.selection;
   if (kind === "newline") return replace(state, at, at, "\n");
   if (kind === "backspace") return at > 0 ? replace(state, at - previousLength(state.text, at), at, "") : undefined;
@@ -68,7 +99,8 @@ export function editAtCaret(state: PaneState, kind: "newline" | "backspace" | "d
 
 function replace(state: PaneState, start: number, end: number, inserted: string) {
   const text = state.text.slice(0, start) + inserted + state.text.slice(end);
-  return { state: { ...state, text, selection: start + inserted.length }, start, end, inserted };
+  const at = start + inserted.length;
+  return { state: { ...state, text, selection: at, anchor: at }, start, end, inserted };
 }
 
 /** サロゲートペア（𠮷 など）を半分に割らない */
@@ -113,6 +145,8 @@ export function renderPaneHtml(state: PaneState, terms: readonly TermSpan[] = []
   let i = 0;
   // 用語は前から順に並んでいて重ならない（`findTermSpans`）。字を進めながら、いま当たっている用語を追う
   let t = 0;
+  // 選んだ範囲の字に印（変換中は範囲を持たない）
+  const range = state.composing ? { start: 0, end: 0 } : rangeOf(state);
   while (i <= state.text.length) {
     if (i === state.selection) html += '<span class="caret" aria-hidden="true">&#8203;</span>';
     if (i === state.text.length) break;
@@ -123,7 +157,8 @@ export function renderPaneHtml(state: PaneState, terms: readonly TermSpan[] = []
     } else {
       while (t < terms.length && terms[t].end <= i) t++;
       const term = t < terms.length && terms[t].start <= i ? `term-${terms[t].kind}` : "";
-      const cls = [lineClassAt(state, i), term].filter(Boolean).join(" ");
+      const sel = i >= range.start && i < range.end ? "sel" : "";
+      const cls = [lineClassAt(state, i), term, sel].filter(Boolean).join(" ");
       html += `<span data-i="${i}" data-n="${n}"${cls ? ` class="${cls}"` : ""}>${escapeChar(ch)}</span>`;
     }
     i += n;

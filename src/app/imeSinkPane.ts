@@ -1,10 +1,11 @@
 import { revealCaret, watchVisibleBand } from "./caretVisible";
 import { caretFromPoint, readCharBoxes } from "./tapCaret";
-import { editAtCaret, type Orientation } from "./editContextModel";
+import { collapseTo, editAtCaret, rangeOf, selectRange, type Orientation } from "./editContextModel";
 import type { EditContextPane, TermFinder } from "./editContextPane";
 import {
   SINK_SENTINEL,
   commitSinkValue,
+  dropRangeForComposition,
   initialSinkState,
   pageEditFor,
   readSinkValue,
@@ -110,8 +111,8 @@ export function mountImeSinkPane(
     const { backspaces, inserted } = readSinkValue(sink.value, consumed);
     resetSink();
     for (let n = 0; n < backspaces; n++) {
-      const done = editAtCaret({ text: state.text, selection: state.selection, composing: false, formats: [] }, "backspace");
-      if (done) state = { ...state, text: done.state.text, selection: done.state.selection };
+      const done = editAtCaret({ text: state.text, selection: state.selection, anchor: state.anchor, composing: false, formats: [] }, "backspace");
+      if (done) state = { ...state, text: done.state.text, selection: done.state.selection, anchor: done.state.anchor };
       log("後ろへ消す（受け口の字が減った）");
     }
     state = commitSinkValue(state, inserted);
@@ -120,8 +121,14 @@ export function mountImeSinkPane(
   };
 
   sink.addEventListener("compositionstart", () => {
-    state = { ...state, composing: true, compText: "" };
+    // 範囲を選んでいれば、変換中の字は範囲と置き換わる（範囲を本文から外す。受け口には触らない）
+    const before = state.text;
+    state = { ...dropRangeForComposition(state), composing: true, compText: "" };
     log("変換の始まり（受け口）");
+    if (state.text !== before) {
+      log("選んだ範囲を外して変換する");
+      changed();
+    }
   });
   sink.addEventListener("compositionupdate", (e) => {
     state = { ...state, compText: e.data ?? "" };
@@ -146,21 +153,29 @@ export function mountImeSinkPane(
     if (!kind) return;
     e.preventDefault();
     resetSink();
-    const done = editAtCaret({ text: state.text, selection: state.selection, composing: false, formats: [] }, kind);
+    const done = editAtCaret({ text: state.text, selection: state.selection, anchor: state.anchor, composing: false, formats: [] }, kind);
     if (!done) return;
-    state = { ...state, text: done.state.text, selection: done.state.selection };
+    state = { ...state, text: done.state.text, selection: done.state.selection, anchor: done.state.anchor };
     changed();
   });
   const moveCaret = (to: number) => {
-    state = { ...state, selection: Math.min(Math.max(to, 0), state.text.length) };
+    state = collapseTo(state, to);
+    render();
+  };
+  /** 範囲を選ぶ（`anchor` は動かない側の端） */
+  const setRange = (anchor: number, focus: number) => {
+    state = selectRange(state, anchor, focus);
     render();
   };
   sink.addEventListener("keydown", (e) => {
     if (e.isComposing || e.keyCode === 229 || sink.value !== SINK_SENTINEL) return;
     const vertical = element.classList.contains("vertical");
-    if (e.key === (vertical ? "ArrowUp" : "ArrowLeft")) moveCaret(state.selection - 1);
-    else if (e.key === (vertical ? "ArrowDown" : "ArrowRight")) moveCaret(state.selection + 1);
-    else return;
+    const step = e.key === (vertical ? "ArrowUp" : "ArrowLeft") ? -1 : e.key === (vertical ? "ArrowDown" : "ArrowRight") ? 1 : 0;
+    if (step === 0) return;
+    // Shift を押しながらなら範囲をのばす（ハードのキーボード）。押さずに範囲があれば、範囲のその側の端へ
+    if (e.shiftKey) setRange(state.anchor, state.selection + step);
+    else if (state.anchor !== state.selection) moveCaret(step < 0 ? rangeOf(state).start : rangeOf(state).end);
+    else moveCaret(state.selection + step);
     e.preventDefault();
   });
   /** 字を押して焦点を移している最中（焦点の知らせの中では、カーソルを送らない） */
@@ -234,10 +249,11 @@ export function mountImeSinkPane(
       state = initialSinkState(next);
       render();
     },
-    getSelection: () => ({ start: state.selection, end: state.selection }),
+    getSelection: () => rangeOf(state),
+    setSelection: (anchor, focus) => setRange(anchor, focus),
     setTextAt(next: string, caret: number) {
       resetSink();
-      state = { ...initialSinkState(next), selection: Math.max(0, Math.min(caret, next.length)) };
+      state = collapseTo(initialSinkState(next), caret);
       render();
     },
     setOrientation(next) {

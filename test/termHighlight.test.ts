@@ -75,7 +75,7 @@ describe("B：用語の字の span に種類のクラスを付ける", () => {
   });
 
   test("見えない受け口では、変換中の字を挟んだ本文で探した位置がそのまま当たる", () => {
-    const sink: SinkState = { text: "港へ", selection: 0, composing: true, compText: "灯は" };
+    const sink: SinkState = { text: "港へ", selection: 0, anchor: 0, composing: true, compText: "灯は" };
     const shown = sinkDisplayState(sink).text;
     expect(shown).toBe("灯は港へ");
     const spans = findTermSpans(buildTermIndex({ ...empty, character: "灯", location: "港" }), shown);

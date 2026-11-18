@@ -55,7 +55,7 @@ export function renderLineSection(line: "left" | "right", leftColors = false): s
   const color = (on: boolean, label: string) => `<button data-term-colors="${on ? "on" : "off"}" aria-pressed="${leftColors === on}">${label}</button>`;
   return (
     `<section class="menu-section"><h2>変換中の線</h2><div class="seg line-choice">${button("left", "左")}${button("right", "右（テスト中）")}</div>` +
-    (line === "right" ? `<p class="flag warn long">テスト中：範囲を選べないので、ルビと傍点は選んだ字に振れません</p>` : "") +
+    (line === "right" ? `<p class="flag warn long">テスト中：コピー・切り取り・貼り付けはまだできません</p>` : "") +
     `</section>` +
     // 右の線の欄はもともと用語に色が付く。左の線の欄に色を付けるかだけを選ぶ（2026-11-17 作者の答え。引継ぎ書 87章）
     (line === "left"

@@ -276,7 +276,7 @@ function mountTermBackdrop(host: HTMLElement, area: HTMLTextAreaElement, orienta
  *
  * - left：ブラウザの入力欄（textarea）。変換中の線はブラウザが描く（縦書きでは行の左）
  * - right：字と変換中の線をこの画面が描く（13章の B。EditContext、無い端末〈iOS〉は見えない受け口）。線は行の右。
- *   **テスト中**：範囲を選べない（道具帯のルビ・傍点は選んだ字に振れない）、ブラウザの選び・貼り付けの手が弱い
+ *   **テスト中**：コピー・切り取り・貼り付けが無い。範囲は長押しとつまみで選ぶ（0.1.89〜0.1.90。`rangeGestures.ts`）
  */
 export const COMPOSITION_LINE_KEY = "novelai.compositionLine";
 export type CompositionLine = "left" | "right";

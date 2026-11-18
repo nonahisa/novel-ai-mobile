@@ -11,7 +11,7 @@ test("名前は novelai.compositionLine、値は left／right、既定は left�
   expect(renderLineSection("left")).toContain(`data-line="left" aria-pressed="true"`);
   expect(renderLineSection("left")).not.toContain("テスト中：");
   expect(renderLineSection("right")).toContain("右（テスト中）");
-  expect(renderLineSection("right")).toContain("テスト中：範囲を選べないので");
+  expect(renderLineSection("right")).toContain("テスト中：コピー・切り取り・貼り付けはまだできません");
 });
 
 /** 左の線の欄の用語の色（テスト中。引継ぎ書 87章）。左のときだけ選べ、既定は付けない */

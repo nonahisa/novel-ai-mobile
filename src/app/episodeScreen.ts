@@ -19,6 +19,8 @@ import { findTermOccurrences } from "./termOccurrences";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
 import { termAtFrom, termFinderFrom, termOnCharFrom, termTagLabel } from "./termHighlight";
 import { charFromPoint, readCharBoxes } from "./tapCaret";
+import { readProposals, renderProposals, withoutProposal, writeProposals } from "./typoProposals";
+import { applyFindingToText } from "../shared";
 import { mountRangeGestures } from "./rangeGestures";
 import { createTrialLog } from "./trialLogFile";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
@@ -403,6 +405,22 @@ export interface EpisodeLeaveGuard {
 
 /** 中・広い段の左の話の一覧を開いておくか（端末に覚える。既定は開く） */
 export const SIDE_KEY = "novelai.episodeSide";
+/** 右の板（提案）を開いているか（中・広い段。設計書 4.3）。はじめは畳んである */
+export const BOARD_KEY = "novelai.episodeBoard";
+function readBoardOpen(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(BOARD_KEY) === "open";
+  } catch {
+    return false;
+  }
+}
+function writeBoardOpen(open: boolean): void {
+  try {
+    globalThis.localStorage?.setItem(BOARD_KEY, open ? "open" : "closed");
+  } catch {
+    /* 覚えられなくても、いまの画面は替わる */
+  }
+}
 function readSideOpen(): boolean {
   try {
     return globalThis.localStorage?.getItem(SIDE_KEY) !== "closed";
@@ -439,7 +457,8 @@ export function mountEpisodeScreen(
   // 幅が 600dp 以上（中・広い段）なら、左に話の一覧（`#msSide`。中身は呼ぶ側が入れる）。段は CSS だけで切り替え、
   // 原稿の欄は作り直さない（回転や分割画面で、書きかけ・カーソル・変換中の字を保つ。設計書 4.3・4.5）
   const sideOpen = readSideOpen();
-  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}</div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><ol class="term-hits" id="termSheetHits"></ol></div>`;
+  const boardOpen = readBoardOpen();
+  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}" data-board="${boardOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><aside class="ms-board" id="msBoard" aria-label="提案"><h2 class="ms-side-title">提案</h2><div id="msBoardBody"></div></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}</div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><ol class="term-hits" id="termSheetHits"></ol></div>`;
   // 上のバーの右に押し口を入れる。［一覧］は中・広い段だけ（CSS で出す）
   const sideToggle = document.createElement("button");
   sideToggle.className = "appbar-action ms-side-toggle";
@@ -453,6 +472,20 @@ export function mountEpisodeScreen(
     writeSideOpen(open);
   });
   screen.querySelector<HTMLElement>(".appbar")!.appendChild(sideToggle);
+  // ［提案］：右の板（広い段）・右からの引き出し（中の段）。設計書 4.3。左の一覧とは別々に畳む
+  const boardToggle = document.createElement("button");
+  boardToggle.className = "appbar-action ms-side-toggle";
+  boardToggle.id = "boardToggle";
+  boardToggle.textContent = "提案";
+  boardToggle.setAttribute("aria-pressed", String(boardOpen));
+  boardToggle.addEventListener("click", () => {
+    const open = boardToggle.getAttribute("aria-pressed") !== "true";
+    boardToggle.setAttribute("aria-pressed", String(open));
+    screen.querySelector<HTMLElement>("#msLayout")!.dataset.board = open ? "open" : "closed";
+    writeBoardOpen(open);
+    if (open) paintBoard();
+  });
+  screen.querySelector<HTMLElement>(".appbar")!.appendChild(boardToggle);
   const toggle = document.createElement("button");
   toggle.className = "appbar-action";
   toggle.id = "orientToggle";
@@ -637,6 +670,49 @@ export function mountEpisodeScreen(
   };
   // 押しても欄の焦点と選んだ範囲を外さない（選んだ字に振るため）
   strip.addEventListener("pointerdown", (event) => event.preventDefault());
+  /*
+    右の板の［提案］（設計書 4.3「横の板は［提案］［資料］［メモ］のタブで切り替える。指摘の場所へ、横の板から飛べる」）。
+    いまは［提案］だけ（資料は札と紹介、メモはまだ無い）。この話の指摘だけを並べる。
+    **［採る］は欄の本文を書き換える**（ファイルへ直に書かない。直に書くと、開いている書きかけと食い違い、
+    自動保存が「外で変わった」で止まる）。欄の書き換えは取り消しに積まれ、自動保存が書く。
+    行を押すとその行の頭へカーソルを置く
+  */
+  const boardBody = screen.querySelector<HTMLElement>("#msBoardBody")!;
+  const paintBoard = () => {
+    boardBody.innerHTML = renderProposals(readProposals(globalThis.localStorage).filter((item) => item.path === path));
+  };
+  paintBoard();
+  boardBody.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    const all = readProposals(globalThis.localStorage);
+    const dismiss = target.closest<HTMLElement>("[data-dismiss]")?.dataset.dismiss;
+    if (dismiss) {
+      writeProposals(globalThis.localStorage, withoutProposal(all, dismiss));
+      return paintBoard();
+    }
+    const accept = target.closest<HTMLElement>("[data-accept]")?.dataset.accept;
+    const proposal = all.find((item) => item.id === (accept ?? target.closest<HTMLElement>("[data-proposal]")?.dataset.proposal));
+    if (!proposal || !pane) return;
+    const text = pane.value();
+    if (!accept) {
+      // 行の頭へ（行が無ければ何もしない）
+      const lines = text.split("\n");
+      if (proposal.line < 1 || proposal.line > lines.length) return;
+      const offset = lines.slice(0, proposal.line - 1).reduce((sum, line) => sum + line.length + 1, 0);
+      pane.placeCaret(offset);
+      return;
+    }
+    if (!proposal.suggestion) return;
+    const applied = applyFindingToText(text, proposal);
+    writeProposals(globalThis.localStorage, withoutProposal(all, proposal.id));
+    if (applied.kind !== "applied") {
+      options.toast("本文が変わっていて、直す所が見つかりません。この指摘は外しました");
+      return paintBoard();
+    }
+    const caret = applied.at + proposal.suggestion.length;
+    pane.apply({ text: applied.text, selStart: caret, selEnd: caret });
+    paintBoard();
+  });
   strip.addEventListener("click", (event) => {
     const id = (event.target as HTMLElement).closest<HTMLElement>("[data-tool]")?.dataset.tool as ToolId | undefined;
     if (id && pane) void runTool(id, pane);

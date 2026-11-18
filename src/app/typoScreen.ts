@@ -9,6 +9,7 @@ import { checkEpisodeTypos, typoCheckChunks, type ModelCall, type TypoCheckInput
 import { checkEpisodeProofread, readKeepWords } from "../platform/proofreadCheck";
 import type { KeepWord } from "../shared";
 import { typoCallerFor } from "../platform/typoCallers";
+import { chooseAiForRun } from "./aiChoose";
 import { readWorkLayout, scanWorkFolder } from "../platform/workScan";
 import { toStorePath } from "../platform/paths";
 import { backgroundWork, whileWorking, type BackgroundWork } from "../platform/backgroundWork";
@@ -45,14 +46,26 @@ export interface TypoRunDeps {
 }
 
 /** 4行の見積もり（DOM の無い試験で中身を確かめる） */
-export function renderTypoEstimate(view: { episode: string; chars: number; ai: string | undefined; priceLine: string | undefined; problem?: string }): string {
+export function renderTypoEstimate(view: {
+  episode: string;
+  chars: number;
+  ai: string | undefined;
+  priceLine: string | undefined;
+  problem?: string;
+  /** AI の行を押して、その回だけ別の AI に替えられるか（設計書 7章 F） */
+  aiSwitch?: boolean;
+}): string {
   const rows = [
     ["話", view.episode],
     ["字数", `約${view.chars.toLocaleString("ja-JP")}字`],
     ["AI", view.ai ?? "まだ選んでいません"],
     ["料金", view.priceLine ?? "—"],
   ]
-    .map(([label, value]) => `<div class="estimate-row"><dt>${escapeHtml(label!)}</dt><dd>${escapeHtml(value!)}</dd></div>`)
+    .map(([label, value]) =>
+      label === "AI" && view.aiSwitch
+        ? `<div class="estimate-row"><dt>AI</dt><dd><button type="button" class="estimate-switch" id="typoAi">${escapeHtml(value!)}</button></dd></div>`
+        : `<div class="estimate-row"><dt>${escapeHtml(label!)}</dt><dd>${escapeHtml(value!)}</dd></div>`
+    )
     .join("");
   const action = view.problem
     ? `<p class="flag shu long" id="typoProblem">${escapeHtml(view.problem)}</p>` + (view.ai ? "" : `<div class="menu-items"><button class="menu-item built" data-screen="ai">AI の設定</button></div>`)
@@ -169,8 +182,9 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
     const usable = new Set<CloudProviderId>();
     for (const provider of CLOUD_PROVIDERS) if ((await deps.vault.get(provider.secret)) !== undefined) usable.add(provider.id);
     const { assignments, defaultChoice } = readAiChoices(settings);
-    const choice = decideFeatureAI(deps.check, assignments, defaultChoice, (id) => usable.has(id)).choice;
-    const provider = choice ? CLOUD_PROVIDERS.find((candidate) => candidate.id === choice.provider) : undefined;
+    // その回だけ替えられる（見積もりの AI の行を押す。設定は変えない）
+    let choice = decideFeatureAI(deps.check, assignments, defaultChoice, (id) => usable.has(id)).choice;
+    let provider = choice ? CLOUD_PROVIDERS.find((candidate) => candidate.id === choice!.provider) : undefined;
     let selected: string[] = [deps.path];
 
     const runAll = async (
@@ -290,12 +304,24 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
           chars,
           ai: choice ? describeChoice(choice) : undefined,
           priceLine,
+          aiSwitch: usable.size > 0,
           ...(problem ? { problem } : {}),
         }) + (rows.length > 1 ? `<div class="menu-items"><button class="menu-item built" id="typoPick">話を選ぶ</button></div>` : "");
       slot.querySelector<HTMLButtonElement>("#typoPick")?.addEventListener("click", showPicker);
+      slot.querySelector<HTMLButtonElement>("#typoAi")?.addEventListener("click", () => {
+        void chooseAiForRun(deps.vault, deps.toast).then((next) => {
+          if (!next || !deps.stillHere()) return;
+          choice = next;
+          provider = CLOUD_PROVIDERS.find((candidate) => candidate.id === next.provider);
+          void showEstimate(notice);
+        });
+      });
       const run = slot.querySelector<HTMLButtonElement>("#typoRun");
       if (!run || !choice || !provider || problem) return;
-      run.addEventListener("click", () => void runAll(run, loaded.map((item) => item.input), calls, chars, choice, provider));
+      // いまの選びで走らせる（押す前に AI の行で替えても、描き直してから押すので食い違わない）
+      const chosen = choice;
+      const chosenProvider = provider;
+      run.addEventListener("click", () => void runAll(run, loaded.map((item) => item.input), calls, chars, chosen, chosenProvider));
     };
 
     const showPicker = () => {

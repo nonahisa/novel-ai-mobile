@@ -458,7 +458,7 @@ export function mountEpisodeScreen(
   // 原稿の欄は作り直さない（回転や分割画面で、書きかけ・カーソル・変換中の字を保つ。設計書 4.3・4.5）
   const sideOpen = readSideOpen();
   const boardOpen = readBoardOpen();
-  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}" data-board="${boardOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><aside class="ms-board" id="msBoard" aria-label="提案"><h2 class="ms-side-title">提案</h2><div id="msBoardBody"></div></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}</div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><ol class="term-hits" id="termSheetHits"></ol></div>`;
+  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}" data-board="${boardOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><aside class="ms-board" id="msBoard" aria-label="横の板"><div class="seg board-tabs" role="tablist"><button type="button" data-board-tab="proposals" aria-pressed="true">提案</button><button type="button" data-board-tab="term" aria-pressed="false">資料</button></div><div id="msBoardBody"></div><div id="msBoardTerm" hidden></div></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}</div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><ol class="term-hits" id="termSheetHits"></ol></div>`;
   // 上のバーの右に押し口を入れる。［一覧］は中・広い段だけ（CSS で出す）
   const sideToggle = document.createElement("button");
   sideToggle.className = "appbar-action ms-side-toggle";
@@ -590,6 +590,10 @@ export function mountEpisodeScreen(
   host.addEventListener("click", checkTag);
   tag.addEventListener("click", () => {
     if (!tagged) return;
+    // 広い段で横の板を開いていれば、板の［資料］に出す（設計書 4.3・5.7「広い段：横の板の［資料］がその項目に切り替わる」）。
+    // ほかは右からの引き出し（いままでどおり）。紹介と行の並べ方・飛び方は同じ部品
+    placeSheet(boardIsWide());
+    if (boardIsWide()) showBoardTab("term");
     sheet.querySelector("#termSheetTitle")!.textContent = termTagLabel(tagged);
     const summary = sheet.querySelector<HTMLElement>("#termSheetSummary")!;
     summary.textContent = tagged.summary ?? "";
@@ -678,6 +682,27 @@ export function mountEpisodeScreen(
     行を押すとその行の頭へカーソルを置く
   */
   const boardBody = screen.querySelector<HTMLElement>("#msBoardBody")!;
+  const boardTerm = screen.querySelector<HTMLElement>("#msBoardTerm")!;
+  const sheetHome = sheet.parentElement!;
+  /** 広い段（840dp 以上）で横の板を開いているか */
+  const boardIsWide = () =>
+    screen.querySelector<HTMLElement>("#msLayout")!.dataset.board === "open" && globalThis.matchMedia?.("(min-width: 840px)").matches === true;
+  /** 紹介を板の［資料］へ入れるか、もとの引き出しへ戻す */
+  const placeSheet = (inBoard: boolean) => {
+    const parent = inBoard ? boardTerm : sheetHome;
+    if (sheet.parentElement !== parent) parent.appendChild(sheet);
+    sheet.classList.toggle("in-board", inBoard);
+  };
+  const showBoardTab = (tab: "proposals" | "term") => {
+    for (const button of screen.querySelectorAll<HTMLElement>("[data-board-tab]")) button.setAttribute("aria-pressed", String(button.dataset.boardTab === tab));
+    boardBody.hidden = tab !== "proposals";
+    boardTerm.hidden = tab !== "term";
+    if (tab === "proposals") paintBoard();
+  };
+  screen.querySelector<HTMLElement>(".board-tabs")!.addEventListener("click", (event) => {
+    const tab = (event.target as HTMLElement).closest<HTMLElement>("[data-board-tab]")?.dataset.boardTab;
+    if (tab === "proposals" || tab === "term") showBoardTab(tab);
+  });
   const paintBoard = () => {
     boardBody.innerHTML = renderProposals(readProposals(globalThis.localStorage).filter((item) => item.path === path));
   };

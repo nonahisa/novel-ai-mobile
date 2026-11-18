@@ -1897,3 +1897,16 @@ a.gh-open {
 :root[data-body-font="mincho"] {
   --font-body: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
 }
+.pick-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+.pick-range select {
+  flex: 1 1 40%;
+  min-width: 0;
+  min-height: 44px;
+  font: inherit;
+}

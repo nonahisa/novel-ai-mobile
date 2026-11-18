@@ -223,6 +223,21 @@ test.describe("誤字脱字", () => {
     await expect(page.locator(".proposal")).toHaveCount(1);
   });
 
+  test("範囲で選ぶ（2026-11-18 作者の答え）：頭と末を選んで［この範囲を選ぶ］。競合の話は入らない", async ({ page }) => {
+    await setUpClaude(page);
+    await openFirstEpisode(page);
+    await page.locator('#tabbar [data-tab="proposals"]').click();
+    await page.locator("[data-typo-path]").click();
+    await page.locator("#typoPick").click();
+    await page.locator("#pickFrom").selectOption({ label: "第2話 灯台の階段は百二十段あり、のぼるたびに数え直してしまう" });
+    await page.locator("#pickTo").selectOption({ label: "第4話 港" });
+    await page.locator("#pickRangeApply").click();
+    await expect(page.locator(".pick-list input:checked")).toHaveCount(2);
+    await expect(page.locator(".pick-list .pick-row", { hasText: "第1話 手紙" }).locator("input")).not.toBeChecked();
+    await page.locator("#pickDone").click();
+    await expect(page.locator(".estimate")).toContainText("2話（第2話");
+  });
+
   test("確認の窓でやめたら送らない。見送ると本文は変えずに一覧から消える", async ({ page }) => {
     let calls = 0;
     await page.route("https://api.anthropic.com/v1/messages", (route) => {

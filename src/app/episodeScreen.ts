@@ -320,7 +320,9 @@ export function writeCompositionLine(value: CompositionLine): void {
 function mountRightLinePane(
   host: HTMLElement,
   orientation: WritingOrientation,
-  onChange: (text: string, kind: "type" | "other") => void
+  onChange: (text: string, kind: "type" | "other") => void,
+  /** 範囲の近くの帯の押し口（［ルビ］［傍点］［資料を見る］。設計書 4.4.1） */
+  onBand?: (id: "ruby" | "emphasis" | "term") => void
 ): WritingPane {
   const element = document.createElement("div");
   element.className = `ms-editor ms-editor-right ${orientation}`;
@@ -366,6 +368,19 @@ function mountRightLinePane(
     select: (anchor, focus) => pane.setSelection(anchor, focus),
     composing: () => pane.isComposing(),
     log,
+    ...(onBand
+      ? {
+          band: [
+            { id: "ruby", label: "ルビ" },
+            { id: "emphasis", label: "傍点" },
+            { id: "term", label: "資料を見る" },
+          ],
+          onBand: (id: string) => {
+            log(`範囲：帯の［${id}］`);
+            if (id === "ruby" || id === "emphasis" || id === "term") onBand(id);
+          },
+        }
+      : {}),
   });
   return {
     pressedChar: () => pressed,
@@ -766,6 +781,19 @@ export function mountEpisodeScreen(
     const id = (event.target as HTMLElement).closest<HTMLElement>("[data-tool]")?.dataset.tool as ToolId | undefined;
     if (id && pane) void runTool(id, pane);
   });
+  /*
+    範囲の近くの帯（右の線の欄。設計書 4.4.1）。［ルビ］［傍点］は道具帯と同じ。［資料を見る］は、選んだ範囲の頭の字を含む
+    名前の紹介を出す（名前の札を押したのと同じ。名前でなければ知らせる）
+  */
+  const onSelectionBand = (id: "ruby" | "emphasis" | "term") => {
+    if (!pane) return;
+    if (id === "ruby" || id === "emphasis") return void runTool(id, pane);
+    const { start } = pane.selection();
+    const entry = termOnChar?.(pane.value(), start);
+    if (!entry) return options.toast("選んだ字は、資料の名前ではありません");
+    tagged = entry;
+    tag.click();
+  };
   const runTool = async (id: ToolId, target: WritingPane): Promise<void> => {
     const text = target.value();
     const { start, end } = target.selection();
@@ -846,7 +874,7 @@ export function mountEpisodeScreen(
         return;
       }
       session = result.session;
-      pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, orientation, onEdit) : mountWritingPane(host, orientation, onEdit, readLeftLineTermColors());
+      pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, orientation, onEdit, (id) => onSelectionBand(id)) : mountWritingPane(host, orientation, onEdit, readLeftLineTermColors());
       shown = session.text();
       pane.setText(shown);
       if (options.initialCaret !== undefined && options.initialCaret <= shown.length) pane.placeCaret(options.initialCaret);

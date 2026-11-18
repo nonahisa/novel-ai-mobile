@@ -87,6 +87,21 @@ test.describe("色の付いた名前を押したときの札", () => {
     await expect(page.locator("#termTag")).toBeHidden();
   });
 
+  test("右の線の欄で名前を長押しして、範囲の近くの帯の［資料を見る］で紹介が出る（設計書 4.4.1）", async ({ page }) => {
+    await openEpisode(page, "right");
+    const name = await page.locator("#msEditor .term-character").evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await page.mouse.move(name.x, name.y);
+    await page.mouse.down();
+    await page.waitForTimeout(700);
+    await page.mouse.up();
+    await page.locator('.sel-band [data-band="term"]').click();
+    await expect(page.locator("#termSheet")).toBeVisible();
+    await expect(page.locator("#termSheet")).toContainText("灯台に住む姉");
+  });
+
   test("札を押すと、その名前が出る話と行が並び、押すとその話のその字へ飛ぶ（保存してから移る）", async ({ page }) => {
     const third = ["霧が出た。", "姉は灯台にいた。"].join("\n");
     await openWithWorks(page, "#/display", { ...WITH_TERMS, "灯台守_確認用/本文/第3話 霧笛.txt": third });

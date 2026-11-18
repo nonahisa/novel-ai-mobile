@@ -31,6 +31,12 @@ export interface RangeTarget {
   select(anchor: number, focus: number): void;
   composing(): boolean;
   log(line: string): void;
+  /**
+   * 範囲の近くに出す帯の押し口（設計書 4.4.1「長押しの品書き：原稿で字を選ぶと、選んだ範囲の近くに帯を出す」）。
+   * 無ければ帯を出さない。押すと `onBand(id)`。帯の押し口を押しても範囲は外さない
+   */
+  band?: readonly { id: string; label: string }[];
+  onBand?(id: string): void;
 }
 
 /** 押した字を含む語（無ければその1字）。DOM に触らない（試験のため） */
@@ -94,6 +100,26 @@ export function mountRangeGestures(target: RangeTarget): () => void {
     start: layer.querySelector<HTMLElement>('[data-end="start"]')!,
     end: layer.querySelector<HTMLElement>('[data-end="end"]')!,
   };
+  // 範囲の近くの帯（［ルビ］［傍点］［資料を見る］）
+  const band = document.createElement("div");
+  band.className = "sel-band";
+  band.setAttribute("role", "toolbar");
+  band.setAttribute("aria-label", "選んだ字");
+  band.hidden = true;
+  for (const item of target.band ?? []) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.band = item.id;
+    button.textContent = item.label;
+    band.appendChild(button);
+  }
+  if ((target.band ?? []).length > 0) layer.appendChild(band);
+  // 押しても欄の焦点と範囲を外さない（道具帯と同じ）
+  band.addEventListener("pointerdown", (event) => event.preventDefault());
+  band.addEventListener("click", (event) => {
+    const id = (event.target as HTMLElement).closest<HTMLElement>("[data-band]")?.dataset.band;
+    if (id) target.onBand?.(id);
+  });
 
   /** つまみを範囲の両端へ（範囲が無い・変換中・欄の見える所の外なら隠す） */
   const place = () => {
@@ -102,6 +128,7 @@ export function mountRangeGestures(target: RangeTarget): () => void {
     if (!show) {
       handles.start.hidden = true;
       handles.end.hidden = true;
+      band.hidden = true;
       return;
     }
     const points = handlePoints(readCharBoxes(element), start, end, vertical());
@@ -119,6 +146,16 @@ export function mountRangeGestures(target: RangeTarget): () => void {
       handle.style.top = `${point.y - box.top + host.scrollTop}px`;
       handle.dataset.dir = vertical() ? "vertical" : "horizontal";
       handle.style.setProperty("--line", `${point.line}px`);
+    }
+    // 帯は末のつまみの先（縦書きは末の字の下、横書きは行の下）。欄の中に収める
+    const tail = points.end;
+    band.hidden = !tail || (target.band ?? []).length === 0;
+    if (tail && !band.hidden) {
+      const width = band.offsetWidth || 180;
+      const left = Math.min(Math.max(tail.x - box.left - width / 2, 4), Math.max(4, box.width - width - 4));
+      const top = Math.min(tail.y - box.top + 28, Math.max(4, box.height - 52));
+      band.style.left = `${left + host.scrollLeft}px`;
+      band.style.top = `${top + host.scrollTop}px`;
     }
   };
   let placing = 0;

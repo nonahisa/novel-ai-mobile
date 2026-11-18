@@ -5,7 +5,8 @@ import type { DeviceSettings } from "../platform/deviceSettings";
 import type { FileStore } from "../platform/fileStore";
 import type { SecretVault } from "../platform/secretVault";
 import { readTextFile } from "../platform/textFile";
-import { checkEpisodeTypos, claudeCaller, typoCheckChunks, type TypoCheckInput, type TypoCheckResult } from "../platform/typoCheck";
+import { checkEpisodeTypos, typoCheckChunks, type TypoCheckInput, type TypoCheckResult } from "../platform/typoCheck";
+import { typoCallerFor } from "../platform/typoCallers";
 import { readWorkLayout } from "../platform/workScan";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
 import { escapeHtml, renderAppBar } from "./menuScreen";
@@ -90,9 +91,7 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
       ? "競合が残っている話には AI を当てません"
       : !choice || !provider
         ? "誤字脱字に使う AI がまだありません"
-        : provider.id !== "claude"
-          ? `${provider.displayName}で誤字脱字を見るのは、まだ作っていません（いまは Claude だけ）`
-          : undefined;
+        : undefined;
     const priceLine = choice && provider ? paidUsageNotice(provider.displayName, choice.model, { sends: "", calls }).lines[2]?.replace(/^料金[:：]\s*/, "") : undefined;
     if (!deps.stillHere()) return;
     slot.removeAttribute("aria-busy");
@@ -119,7 +118,7 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
         if (!key) return deps.toast("APIキーが見つかりません");
         run.disabled = true;
         const progress = slot.querySelector<HTMLElement>("#typoProgress")!;
-        const caller = claudeCaller(key, choice.model);
+        const caller = typoCallerFor(provider.id, key, choice.model);
         let done = 0;
         progress.textContent = `AI に見せています（0/${calls}）`;
         const result = await checkEpisodeTypos(

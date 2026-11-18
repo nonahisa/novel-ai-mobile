@@ -238,6 +238,53 @@ test.describe("誤字脱字", () => {
     await expect(page.locator(".estimate")).toContainText("2話（第2話");
   });
 
+  test("iOS で裏に回したら（2026-11-18 作者の答え 案A）：いまの1回で止め、戻ったら残りの話だけ見積もりからやり直せる", async ({ page }) => {
+    await page.addInitScript(() => ((globalThis as { __novelaiTestPauseWhenHidden?: boolean }).__novelaiTestPauseWhenHidden = true));
+    const bodies: string[] = [];
+    let hideOnce = true;
+    await page.route("https://api.anthropic.com/v1/messages", async (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ headers: CORS });
+      bodies.push(JSON.stringify(route.request().postDataJSON()));
+      if (hideOnce) {
+        hideOnce = false;
+        // 1回目を頼んでいるあいだに、裏に回す
+        await page.evaluate(() => {
+          Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+      }
+      const issues = bodies.at(-1)!.includes("姉から手紙がが届いた")
+        ? [{ line: 1, original: "姉から手紙がが届いた。", target: "がが", suggestion: "が", reason: "衍字", confidence: "high" }]
+        : [];
+      return route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ issues }) }], stop_reason: "end_turn" }) });
+    });
+    await setUpClaude(page);
+    await openFirstEpisode(page);
+    await page.locator('#tabbar [data-tab="proposals"]').click();
+    await page.locator("[data-typo-path]").click();
+    await page.locator("#typoPick").click();
+    await page.locator("#pickAll").check();
+    await page.locator("#pickDone").click();
+    await page.locator("#typoRun").click();
+    await page.locator('[data-answer="yes"]').click();
+    await expect(page.locator("#typoPaused")).toContainText("裏に回したので「第2話");
+    await expect(page.locator("#typoPaused")).toContainText("続きを走らせますか");
+    expect(bodies).toHaveLength(1);
+    await expect(page.locator(".estimate")).toContainText("2話（第2話");
+    // 戻ってから、残りを走らせる
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await page.locator("#typoRun").click();
+    await page.locator('[data-answer="yes"]').click();
+    await expect(page.locator("#typoProgress")).toHaveText("指摘 0件");
+    expect(bodies).toHaveLength(3);
+    // 1話目の指摘は残っている
+    await page.locator('[data-tab="proposals"]').last().click();
+    await expect(page.locator(".proposal")).toHaveCount(1);
+  });
+
   test("確認の窓でやめたら送らない。見送ると本文は変えずに一覧から消える", async ({ page }) => {
     let calls = 0;
     await page.route("https://api.anthropic.com/v1/messages", (route) => {

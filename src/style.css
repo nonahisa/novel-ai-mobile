@@ -1835,3 +1835,55 @@ a.gh-open {
 .pick-name {
   flex: 1;
 }
+/*
+  右の板［提案］（設計書 4.3）。狭い段では出さない（提案はタブの［提案］で見る）。中の段は右から半分の幅で重ねる引き出し、
+  広い段は右に 320dp の列。左の一覧とは別々に畳む
+*/
+.ms-board {
+  display: none;
+}
+@media (min-width: 600px) {
+  .ms-layout[data-board="open"] .ms-board {
+    display: block;
+    position: fixed;
+    top: calc(52px + env(safe-area-inset-top));
+    right: 0;
+    bottom: 0;
+    width: 50%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 12px 24px;
+    background: var(--surface);
+    border-left: 1px solid var(--line);
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.18);
+    z-index: 5;
+  }
+}
+@media (min-width: 840px) {
+  .ms-layout[data-board="open"] {
+    grid-template-columns: 260px minmax(0, 1fr) 320px;
+  }
+  .ms-layout[data-side="closed"][data-board="open"] {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .ms-layout[data-board="open"] .ms-board {
+    position: static;
+    width: auto;
+    height: calc(100dvh - 52px - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    box-shadow: none;
+    grid-column: -2;
+    grid-row: 1;
+  }
+  /* 並びを名指しする（板だけ列を決めると、ほかが空いた列へ先に詰められ、原稿が左の細い列に入った） */
+  .ms-layout[data-board="open"] .ms-side {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .ms-layout[data-board="open"] .ms-main {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .ms-layout[data-side="closed"][data-board="open"] .ms-main {
+    grid-column: 1;
+  }
+}

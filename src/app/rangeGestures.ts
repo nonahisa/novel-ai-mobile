@@ -212,7 +212,9 @@ export function mountRangeGestures(target: RangeTarget): () => void {
     swallowPending = false;
     if (target.composing() || e.button > 0) return;
     pressAt = { x: e.clientX, y: e.clientY };
-    pressStartedAt = Date.now();
+    // 押した時刻は事象の時刻で読む（届いた時ではない）。画面を開いた直後は描くのに忙しく、押したことが遅れて届く
+    // （2026-11-19 Mac の iPad mini 0.1.112：開き直したあとの最初の長押しで範囲ができなかった）
+    pressStartedAt = e.timeStamp;
     const boxes = readCharBoxes(element);
     const index = charFromPoint(boxes, e.clientX, e.clientY);
     log(`範囲：押した（${e.pointerType}・${index === undefined ? "字の無い所" : `${index}字目`}）`);
@@ -228,12 +230,13 @@ export function mountRangeGestures(target: RangeTarget): () => void {
   };
   const onPointerEnd = (e: PointerEvent) => {
     // 長押しの時間を押さえていたのに時計がまだ（込み合って遅れた）なら、ここで選ぶ（2026-11-18 Mac：8回に1回、選べなかった）
-    if (e.type === "pointerup" && pressTimer !== undefined && Date.now() - pressStartedAt >= LONG_PRESS_MS) {
+    const held = Math.round(e.timeStamp - pressStartedAt);
+    if (e.type === "pointerup" && pressTimer !== undefined && held >= LONG_PRESS_MS) {
       window.clearTimeout(pressTimer);
       pressTimer = undefined;
       selectPressed();
     } else {
-      cancelPress(e.type === "pointercancel" ? "取り消された（端末が引き取った）" : "離した");
+      cancelPress(e.type === "pointercancel" ? "取り消された（端末が引き取った）" : `離した・${held}ms`);
     }
     // 長押しで選んだなら、指を離したこの時に焦点を当てる（iOS は人の操作のうちでないとキーボードを出さない）
     if (e.type === "pointerup" && swallowClick) {

@@ -168,6 +168,26 @@ for (const build of ["EditContext", "受け口"] as const) {
       await expect(handles).toHaveCount(0);
     });
 
+    test("押したことが遅れて届いても（画面を開き直した直後）、押していた長さで長押しを決める", async ({ page }) => {
+      await openRight(page);
+      // 2026-11-19 Mac の iPad mini 0.1.112：前の画面から開き直したあとの最初の長押しで、範囲ができなかった（「離した」）。
+      // 開いた直後は描くのに忙しく、押したことが遅れて届く。押した時刻を、届いた時でなく押した時（事象の時刻）で読む
+      await page.locator("#msEditor").evaluate(async (el) => {
+        const span = el.querySelector('[data-i="4"]')!;
+        const r = span.getBoundingClientRect();
+        const init = { bubbles: true, cancelable: true, composed: true, pointerId: 7, pointerType: "touch", isPrimary: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 };
+        const down = new PointerEvent("pointerdown", init);
+        const busyUntil = performance.now() + 350;
+        while (performance.now() < busyUntil) {
+          /* 描くのに忙しい */
+        }
+        span.dispatchEvent(down);
+        await new Promise((done) => setTimeout(done, 150));
+        span.dispatchEvent(new PointerEvent("pointerup", init));
+      });
+      await expect(page.locator("#msEditor .sel")).toHaveText(["手", "紙"]);
+    });
+
     test("範囲の近くに帯（設計書 4.4.1）：［ルビ］［傍点］［資料を見る］。［傍点］で選んだ字に付き、範囲が外れると帯も消える", async ({ page }) => {
       await openRight(page);
       const at = await page.locator("#msEditor").evaluate((el) => {

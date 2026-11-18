@@ -35,6 +35,7 @@ import {
   type TrialPrefs,
 } from "./tategakiDraft";
 import { askChoice, askText, chooseFrom, tell } from "./dialog";
+import { applyBodyFont, parseBodyFont, readBodyFont, renderBodyFontSection, writeBodyFont } from "./bodyFont";
 import { watchLongPress } from "./longPress";
 import { mountOrphanDrafts } from "./orphanDrafts";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
@@ -1110,9 +1111,18 @@ async function loadInstalledFont(): Promise<void> {
 
 /** 表示の画面。明朝の大きさを示し、押したときだけ取り寄せる。照らして合ったものだけ書いて使う */
 function mountDisplayScreen(screen: HTMLElement, stillHere: () => boolean): void {
-  screen.innerHTML = `${renderAppBar("表示", { back: true })}<div id="lookSlot">${renderLookSection(readLook(globalThis.localStorage))}</div><div id="lineSlot">${renderLineSection(readCompositionLine(), readLeftLineTermColors())}</div>${renderDisplayScreen({ kind: "checking" })}`;
+  screen.innerHTML = `${renderAppBar("表示", { back: true })}<div id="lookSlot">${renderLookSection(readLook(globalThis.localStorage))}</div><div id="bodyFontSlot">${renderBodyFontSection(readBodyFont(globalThis.localStorage))}</div><div id="lineSlot">${renderLineSection(readCompositionLine(), readLeftLineTermColors())}</div>${renderDisplayScreen({ kind: "checking" })}`;
   const slot = screen.querySelector<HTMLElement>("#fontSlot")!;
   const lineSlot = screen.querySelector<HTMLElement>("#lineSlot")!;
+  const bodyFontSlot = screen.querySelector<HTMLElement>("#bodyFontSlot")!;
+  bodyFontSlot.addEventListener("click", (event) => {
+    const chosen = (event.target as HTMLElement).closest<HTMLElement>("[data-body-font]")?.dataset.bodyFont;
+    if (!chosen) return;
+    const font = parseBodyFont(chosen);
+    writeBodyFont(globalThis.localStorage, font);
+    applyBodyFont(document.documentElement, font);
+    bodyFontSlot.innerHTML = renderBodyFontSection(font);
+  });
   const lookSlot = screen.querySelector<HTMLElement>("#lookSlot")!;
   lookSlot.addEventListener("click", (event) => {
     const choice = (event.target as HTMLElement).closest<HTMLElement>("[data-look-choice]");

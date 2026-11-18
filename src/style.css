@@ -28,6 +28,10 @@
   --select: #c9d6f2;
   --font-ui: "BIZ UDPGothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
   --font-ms: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  /* 原稿の本文（`bodyFont.ts`）。既定はゴシック（なろう寄り）。明朝は［表示］で選ぶ（取り寄せた Noto Serif JP を先に） */
+  --font-body: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Noto Sans CJK JP", "Meiryo", sans-serif;
+  --body-size: 16px;
+  --body-leading: 1.8;
   /* 古い名前（ほかの所がまだ使う） */
   --bg: var(--surface);
   --fg: var(--ink);
@@ -970,9 +974,10 @@ button {
   border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
-  font-family: "Hiragino Mincho ProN", "Noto Serif JP", "Yu Mincho", serif;
-  font-size: 18px;
-  line-height: 1.9;
+  /* 本文の書体（設定 → 表示 → 本文の書体。`src/app/bodyFont.ts`）。既定はゴシック・16px・行間1.8（2026-11-18 作者の答え） */
+  font-family: var(--font-body);
+  font-size: var(--body-size);
+  line-height: var(--body-leading);
   resize: none;
   outline: none;
 }
@@ -1886,4 +1891,9 @@ a.gh-open {
   .ms-layout[data-side="closed"][data-board="open"] .ms-main {
     grid-column: 1;
   }
+}
+
+/* 本文を明朝にしたとき（設定 → 表示 → 本文の書体） */
+:root[data-body-font="mincho"] {
+  --font-body: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
 }

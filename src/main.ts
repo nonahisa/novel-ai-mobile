@@ -7,6 +7,7 @@ import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
 import { watchCompact } from "./app/compactMode";
 import { applyLook, readLook } from "./app/look";
+import { applyBodyFont, readBodyFont } from "./app/bodyFont";
 
 /**
  * モバイル版の入口。
@@ -35,6 +36,7 @@ document.addEventListener("backbutton", () => {
 watchCompact(window, document.documentElement);
 // 見た目の案（設定 → 表示 → 見た目。端末ごとに覚える）
 applyLook(document.documentElement, readLook(globalThis.localStorage));
+applyBodyFont(document.documentElement, readBodyFont(globalThis.localStorage));
 /*
   iPad だけ、キーボードの上の「完了」などの帯を消す（同じ答え。横向きで約40pt 広がる）。iPhone は消さない：
   iPhone のキーボードには閉じるキーが無く、帯の「完了」でしか閉じられない。iPad の名乗りは「Macintosh」なので、

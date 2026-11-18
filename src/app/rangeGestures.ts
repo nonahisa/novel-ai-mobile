@@ -37,6 +37,12 @@ export interface RangeTarget {
    */
   band?: readonly { id: string; label: string }[];
   onBand?(id: string): void;
+  /**
+   * 欄に焦点を当てる（キーボードを出す）。長押しで選んだあと、指を離したときに呼ぶ（2026-11-18 Mac の iPad mini 0.1.110：
+   * キーボードの出ていない所で長押しした範囲には、キーボードが出ず打てなかった。iOS は人の操作のうちに焦点を当てないと
+   * キーボードを出さず、長押しの時計の中は人の操作に数えない。指を離したとき〈pointerup〉なら数える）
+   */
+  focus?(): void;
 }
 
 /** 押した字を含む語（無ければその1字）。DOM に触らない（試験のため） */
@@ -175,7 +181,22 @@ export function mountRangeGestures(target: RangeTarget): () => void {
   // ---------- 長押し ----------
   let pressTimer: number | undefined;
   let pressAt: { x: number; y: number } | undefined;
+  let pressStartedAt = 0;
   let swallowClick = false;
+  /** 長押しで選んで指を離した時刻まで。そのすぐあとの click だけを飲み込む（離すのがつまみの上だと click は来ず、あとの帯の押しまで飲み込んでいた） */
+  let swallowUntil = 0;
+  /** 押した所の語を選ぶ（長押しの時計か、時計が遅れたときは指を離したときに） */
+  const selectPressed = () => {
+    if (target.composing() || !pressAt) return;
+    // 押したあとで欄が送られていても、いまの字の場所で読む
+    const at = charFromPoint(readCharBoxes(element), pressAt.x, pressAt.y);
+    if (at === undefined) return log("範囲：長押しした所に字が無い");
+    const word = wordAround(target.text(), at);
+    if (word.start === word.end) return;
+    target.select(word.start, word.end);
+    swallowClick = true;
+    log(`範囲：長押しで選んだ ${word.start}〜${word.end}字目`);
+  };
   const cancelPress = (why: string) => {
     if (pressTimer === undefined) return;
     window.clearTimeout(pressTimer);
@@ -186,59 +207,85 @@ export function mountRangeGestures(target: RangeTarget): () => void {
     swallowClick = false;
     if (target.composing() || e.button > 0) return;
     pressAt = { x: e.clientX, y: e.clientY };
+    pressStartedAt = Date.now();
     const boxes = readCharBoxes(element);
     const index = charFromPoint(boxes, e.clientX, e.clientY);
     log(`範囲：押した（${e.pointerType}・${index === undefined ? "字の無い所" : `${index}字目`}）`);
     window.clearTimeout(pressTimer);
     pressTimer = window.setTimeout(() => {
       pressTimer = undefined;
-      if (target.composing() || !pressAt) return;
-      // 押したあとで欄が送られていても、いまの字の場所で読む
-      const at = charFromPoint(readCharBoxes(element), pressAt.x, pressAt.y);
-      if (at === undefined) return log("範囲：長押しした所に字が無い");
-      const word = wordAround(target.text(), at);
-      if (word.start === word.end) return;
-      target.select(word.start, word.end);
-      swallowClick = true;
-      log(`範囲：長押しで選んだ ${word.start}〜${word.end}字目`);
+      selectPressed();
     }, LONG_PRESS_MS);
   };
   const onPointerMove = (e: PointerEvent) => {
     if (pressTimer === undefined || !pressAt) return;
     if (Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > MOVE_TOLERANCE_PX) cancelPress("動いた");
   };
-  const onPointerEnd = (e: PointerEvent) => cancelPress(e.type === "pointercancel" ? "取り消された（端末が引き取った）" : "離した");
+  const onPointerEnd = (e: PointerEvent) => {
+    // 長押しの時間を押さえていたのに時計がまだ（込み合って遅れた）なら、ここで選ぶ（2026-11-18 Mac：8回に1回、選べなかった）
+    if (e.type === "pointerup" && pressTimer !== undefined && Date.now() - pressStartedAt >= LONG_PRESS_MS) {
+      window.clearTimeout(pressTimer);
+      pressTimer = undefined;
+      selectPressed();
+    } else {
+      cancelPress(e.type === "pointercancel" ? "取り消された（端末が引き取った）" : "離した");
+    }
+    // 長押しで選んだなら、指を離したこの時に焦点を当てる（iOS は人の操作のうちでないとキーボードを出さない）
+    if (e.type === "pointerup" && swallowClick) {
+      target.focus?.();
+      swallowClick = false;
+      swallowUntil = Date.now() + 500;
+    }
+  };
   /** 長押しで選んだあとの click は、欄に届けない（届くとカーソルを置き直し、範囲が外れる） */
   const onClickCapture = (e: MouseEvent) => {
-    if (!swallowClick) return;
-    swallowClick = false;
+    // 飲み込むのは欄の字の上の click だけ（帯・つまみの押しは通す）
+    if (Date.now() > swallowUntil || !element.contains(e.target as Node)) return;
+    swallowUntil = 0;
     e.stopImmediatePropagation();
     e.preventDefault();
+    // click も人の操作。指を離したときの焦点が外れていたら、ここでもう一度当てる（受け口の作りでは pointerup の焦点が残らなかった）
+    target.focus?.();
   };
   // Android は長押しで端末のメニュー（contextmenu）を出す。字はこの画面が描くので出さない
   const onContextMenu = (e: Event) => e.preventDefault();
   element.addEventListener("pointerdown", onPointerDown, true);
   element.addEventListener("pointermove", onPointerMove, true);
-  element.addEventListener("pointerup", onPointerEnd, true);
-  element.addEventListener("pointercancel", onPointerEnd, true);
-  element.addEventListener("click", onClickCapture, true);
+  // 離す・click は文書で受ける：長押しで選ぶと、指（マウス）の下に末のつまみが出て、離すのがつまみの上になることがある
+  // （つまみは欄の外の層。欄で受けると、離したことも click も届かず、焦点を当てられなかった）
+  document.addEventListener("pointerup", onPointerEnd, true);
+  document.addEventListener("pointercancel", onPointerEnd, true);
+  document.addEventListener("click", onClickCapture, true);
   element.addEventListener("contextmenu", onContextMenu);
 
   // ---------- つまみ ----------
-  let drag: { side: "start" | "end"; fixed: number; boxes: CharBox[]; last: number } | undefined;
+  /** 引いているつまみ。`dx`・`dy` は指から範囲の端（列の真ん中）までのずれ（丸は列の外にあるので、指の所で読むと隣の列へ飛んだ） */
+  let drag: { side: "start" | "end"; fixed: number; boxes: CharBox[]; last: number; dx: number; dy: number } | undefined;
   const onHandleDown = (e: PointerEvent) => {
     const side = (e.currentTarget as HTMLElement).dataset.end as "start" | "end";
     e.preventDefault();
     e.stopPropagation();
     const { start, end } = target.selection();
-    drag = { side, fixed: side === "start" ? end : start, boxes: readCharBoxes(element), last: side === "start" ? start : end };
+    const boxes = readCharBoxes(element);
+    // 掴んだときの指と範囲の端のずれを覚え、引くあいだは端の所で読む（2026-11-18 Mac：丸の真上を引くと2列目へ飛んだ）
+    const point = handlePoints(boxes, start, end, vertical())[side];
+    let dx = 0;
+    let dy = 0;
+    if (point) {
+      const edge = vertical()
+        ? { x: side === "start" ? point.x - KNOB_GAP_PX - point.line / 2 : point.x + KNOB_GAP_PX + point.line / 2, y: point.y }
+        : { x: point.x, y: side === "start" ? point.y + KNOB_GAP_PX + point.line / 2 : point.y - KNOB_GAP_PX - point.line / 2 };
+      dx = edge.x - e.clientX;
+      dy = edge.y - e.clientY;
+    }
+    drag = { side, fixed: side === "start" ? end : start, boxes, last: side === "start" ? start : end, dx, dy };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     log(`範囲：つまみを掴んだ（${side === "start" ? "頭" : "末"}・${start}〜${end}字目）`);
   };
   const onHandleMove = (e: PointerEvent) => {
     if (!drag) return;
     e.preventDefault();
-    const to = caretFromPoint(drag.boxes, e.clientX, e.clientY, vertical());
+    const to = caretFromPoint(drag.boxes, e.clientX + drag.dx, e.clientY + drag.dy, vertical());
     if (to === undefined || to === drag.last || to === drag.fixed) return;
     drag.last = to;
     target.select(drag.fixed, to);
@@ -269,9 +316,9 @@ export function mountRangeGestures(target: RangeTarget): () => void {
     window.removeEventListener("resize", placeSoon);
     element.removeEventListener("pointerdown", onPointerDown, true);
     element.removeEventListener("pointermove", onPointerMove, true);
-    element.removeEventListener("pointerup", onPointerEnd, true);
-    element.removeEventListener("pointercancel", onPointerEnd, true);
-    element.removeEventListener("click", onClickCapture, true);
+    document.removeEventListener("pointerup", onPointerEnd, true);
+    document.removeEventListener("pointercancel", onPointerEnd, true);
+    document.removeEventListener("click", onClickCapture, true);
     element.removeEventListener("contextmenu", onContextMenu);
     layer.remove();
     host.classList.remove("range-host");

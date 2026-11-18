@@ -25,8 +25,9 @@ public class AiWorkPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func start(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.endTask()
-            self.task = UIApplication.shared.beginBackgroundTask(withName: "ai-work") { [weak self] in
-                self?.endTask()
+            // 口はアプリのあいだずっと生きているので、強く持ってよい（弱く持つと Swift 6 で警告。2026-11-18 Mac の組み立て）
+            self.task = UIApplication.shared.beginBackgroundTask(withName: "ai-work") {
+                self.endTask()
             }
             call.resolve()
         }

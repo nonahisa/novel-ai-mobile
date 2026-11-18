@@ -367,6 +367,7 @@ function mountRightLinePane(
     selection: () => pane.getSelection(),
     select: (anchor, focus) => pane.setSelection(anchor, focus),
     composing: () => pane.isComposing(),
+    focus: () => pane.focus(),
     log,
     ...(onBand
       ? {

@@ -183,8 +183,12 @@ export function mountRangeGestures(target: RangeTarget): () => void {
   let pressAt: { x: number; y: number } | undefined;
   let pressStartedAt = 0;
   let swallowClick = false;
-  /** 長押しで選んで指を離した時刻まで。そのすぐあとの click だけを飲み込む（離すのがつまみの上だと click は来ず、あとの帯の押しまで飲み込んでいた） */
-  let swallowUntil = 0;
+  /**
+   * 長押しの click を待っている（欄の字の上の click を1つだけ飲み込む）。時間では切らない：iOS は、つまみを引き終えた
+   * あとに、長押しの click を押した字へ遅れて出すことがあった（2026-11-18 Mac 0.1.111：つまみを離すと範囲が消えた）。
+   * 次に欄を押したら忘れる。帯・つまみの押しは欄の外なので飲み込まない
+   */
+  let swallowPending = false;
   /** 押した所の語を選ぶ（長押しの時計か、時計が遅れたときは指を離したときに） */
   const selectPressed = () => {
     if (target.composing() || !pressAt) return;
@@ -205,9 +209,12 @@ export function mountRangeGestures(target: RangeTarget): () => void {
   };
   const onPointerDown = (e: PointerEvent) => {
     swallowClick = false;
+    swallowPending = false;
     if (target.composing() || e.button > 0) return;
     pressAt = { x: e.clientX, y: e.clientY };
-    pressStartedAt = Date.now();
+    // 押した時刻は事象の時刻で読む（届いた時ではない）。画面を開いた直後は描くのに忙しく、押したことが遅れて届く
+    // （2026-11-19 Mac の iPad mini 0.1.112：開き直したあとの最初の長押しで範囲ができなかった）
+    pressStartedAt = e.timeStamp;
     const boxes = readCharBoxes(element);
     const index = charFromPoint(boxes, e.clientX, e.clientY);
     log(`範囲：押した（${e.pointerType}・${index === undefined ? "字の無い所" : `${index}字目`}）`);
@@ -223,25 +230,26 @@ export function mountRangeGestures(target: RangeTarget): () => void {
   };
   const onPointerEnd = (e: PointerEvent) => {
     // 長押しの時間を押さえていたのに時計がまだ（込み合って遅れた）なら、ここで選ぶ（2026-11-18 Mac：8回に1回、選べなかった）
-    if (e.type === "pointerup" && pressTimer !== undefined && Date.now() - pressStartedAt >= LONG_PRESS_MS) {
+    const held = Math.round(e.timeStamp - pressStartedAt);
+    if (e.type === "pointerup" && pressTimer !== undefined && held >= LONG_PRESS_MS) {
       window.clearTimeout(pressTimer);
       pressTimer = undefined;
       selectPressed();
     } else {
-      cancelPress(e.type === "pointercancel" ? "取り消された（端末が引き取った）" : "離した");
+      cancelPress(e.type === "pointercancel" ? "取り消された（端末が引き取った）" : `離した・${held}ms`);
     }
     // 長押しで選んだなら、指を離したこの時に焦点を当てる（iOS は人の操作のうちでないとキーボードを出さない）
     if (e.type === "pointerup" && swallowClick) {
       target.focus?.();
       swallowClick = false;
-      swallowUntil = Date.now() + 500;
+      swallowPending = true;
     }
   };
   /** 長押しで選んだあとの click は、欄に届けない（届くとカーソルを置き直し、範囲が外れる） */
   const onClickCapture = (e: MouseEvent) => {
     // 飲み込むのは欄の字の上の click だけ（帯・つまみの押しは通す）
-    if (Date.now() > swallowUntil || !element.contains(e.target as Node)) return;
-    swallowUntil = 0;
+    if (!swallowPending || !element.contains(e.target as Node)) return;
+    swallowPending = false;
     e.stopImmediatePropagation();
     e.preventDefault();
     // click も人の操作。指を離したときの焦点が外れていたら、ここでもう一度当てる（受け口の作りでは pointerup の焦点が残らなかった）

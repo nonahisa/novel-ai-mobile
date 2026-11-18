@@ -9,6 +9,8 @@ import { chooseTransport } from "../platform/fetchTimeouts";
 import { LedgerWriteGate } from "../platform/sharedVersionGate";
 import { DeviceSettings, capacitorPreferencesBackend } from "../platform/deviceSettings";
 import { confirmPaidUsage } from "./paidConfirm";
+import { askChoice } from "./dialog";
+import { pickTestWorkFolders } from "./testWorks";
 
 /** 動作確認ページを描く（開発用。下のタブの［ほか］→ ヘルプから開く） */
 export function mountCheckPage(app: HTMLElement): void {
@@ -116,6 +118,13 @@ app.innerHTML = `
     <p class="note">AI は呼びません。口が登録されているかを、始める・止めるの返事で見ます（Android は通知が出て消える。iOS は猶予をもらって返す）。</p>
     <button id="aiWorkTry">口を試す</button>
     <pre id="aiWorkResult" class="result">まだ試していません</pre>
+  </section>
+
+  <section class="card">
+    <h2>10. 作り物の作品を片づける</h2>
+    <p class="note">名前が「_確認用」で終わる作品のフォルダーだけを消します。ほかの作品には触りません。</p>
+    <button id="clearTestWorks">作り物を探す</button>
+    <pre id="clearTestWorksResult" class="result">まだ試していません</pre>
   </section>
 `;
 
@@ -406,6 +415,38 @@ document.querySelector<HTMLButtonElement>("#aiWorkTry")!.addEventListener("click
       lines.push(`❌ ${name}：${error instanceof Error ? error.message : String(error)}`);
     }
     show();
+  }
+});
+
+/* ---------- 10. 作り物の作品を片づける（`testWorks.ts`。2026-11-19 iPad 実機に作り物が残った） ---------- */
+
+const clearResult = document.querySelector<HTMLPreElement>("#clearTestWorksResult")!;
+document.querySelector<HTMLButtonElement>("#clearTestWorks")!.addEventListener("click", async () => {
+  const backend = new CapacitorGitFsBackend();
+  try {
+    const found = pickTestWorkFolders(await backend.readdir("/").catch(() => []));
+    if (found.length === 0) {
+      clearResult.textContent = "作り物の作品はありません";
+      return;
+    }
+    clearResult.textContent = ["見つかった作り物：", ...found].join("\n");
+    const go = await askChoice([`作り物の作品 ${found.length} つを消します。`, ...found, "消したものは戻せません。"].join("\n"), "消す", "やめる");
+    if (!go) {
+      clearResult.textContent += "\n\nやめました";
+      return;
+    }
+    const lines: string[] = [];
+    for (const name of found) {
+      try {
+        await removeTree(backend, `/${name}`);
+        lines.push(`✅ ${name}`);
+      } catch (error) {
+        lines.push(`❌ ${name}：${error instanceof Error ? error.message : String(error)}`);
+      }
+      clearResult.textContent = lines.join("\n");
+    }
+  } catch (error) {
+    clearResult.textContent = `❌ 失敗しました\n${error instanceof Error ? error.message : String(error)}`;
   }
 });
 }

@@ -1807,3 +1807,31 @@ a.gh-open {
   font-family: var(--font-ui);
   font-size: 0.85rem;
 }
+/* 何話かまとめて選ぶ（`src/app/typoScreen.ts` の `renderEpisodePicker`） */
+.pick-head {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+.pick-list {
+  display: grid;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 4px;
+}
+.pick-row input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
+}
+.pick-row.disabled {
+  color: var(--muted);
+}
+.pick-name {
+  flex: 1;
+}

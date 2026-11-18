@@ -109,7 +109,8 @@ type Route =
   | { kind: "sync"; root: string }
   | { kind: "conflict"; root: string; path: string }
   | { kind: "episode"; root: string; path: string }
-  | { kind: "typo"; root: string; path: string }
+  /** AI で1話を見る（誤字脱字・推敲）。見積もり → 有料の確認 → 指摘は［提案］へ */
+  | { kind: "typo"; check: "typo" | "proofread"; root: string; path: string }
   | { kind: "all" }
   | { kind: "tategaki" }
   | { kind: "check" }
@@ -147,13 +148,14 @@ export function parseRoute(hash: string): Route {
     }
     return { kind: "tab", tab: TABS[0] };
   }
-  if (name.startsWith("typo/")) {
-    const pieces = name.slice("typo/".length).split("/");
+  if (name.startsWith("typo/") || name.startsWith("proofread/")) {
+    const check = name.startsWith("typo/") ? "typo" : "proofread";
+    const pieces = name.slice(`${check}/`.length).split("/");
     try {
       if (pieces.length === 2) {
         const root = decodeURIComponent(pieces[0]!);
         const relative = decodeURIComponent(pieces[1]!);
-        if (isWorkRoot(root) && isEpisodeInWork(relative)) return { kind: "typo", root, path: `${root}/${relative}` };
+        if (isWorkRoot(root) && isEpisodeInWork(relative)) return { kind: "typo", check, root, path: `${root}/${relative}` };
       }
     } catch {
       /* 読めない名前は作品一覧へ */
@@ -245,6 +247,10 @@ export function typoHash(root: string, path: string): string {
   return episodeHash(root, path).replace("#/episode/", "#/typo/");
 }
 
+export function proofreadHash(root: string, path: string): string {
+  return episodeHash(root, path).replace("#/episode/", "#/proofread/");
+}
+
 /** 覚えていた最後の話。作品の外・隠したフォルダーを指していたら捨てる */
 function lastEpisodeInWorks(): LastEpisode | undefined {
   const entry = readLastEpisode(globalThis.localStorage);
@@ -311,8 +317,12 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   watchLongPress(root, "[data-episode][data-root]", (item) => {
     const workRoot = item.dataset.root!;
     const episode = item.dataset.episode!;
-    void chooseFrom([{ id: "typo", label: "誤字脱字" }]).then((picked) => {
+    void chooseFrom([
+      { id: "typo", label: "誤字脱字" },
+      { id: "proofread", label: "推敲" },
+    ]).then((picked) => {
       if (picked === "typo") location.hash = typoHash(workRoot, episode);
+      if (picked === "proofread") location.hash = proofreadHash(workRoot, episode);
     });
   });
 
@@ -491,6 +501,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "typo": {
         lastTabHash = "#/proposals";
         const stop = mountTypoRun(screen, {
+          check: route.check,
           store,
           root: route.root,
           path: route.path,
@@ -1157,12 +1168,18 @@ function wireProposals(screen: HTMLElement, store: FileStore, toast: (text: stri
       location.hash = typoHash(entry.dataset.typoRoot, entry.dataset.typoPath);
       return;
     }
+    const proofread = target.closest<HTMLElement>("[data-proofread-path]");
+    if (proofread?.dataset.proofreadPath && proofread.dataset.proofreadRoot) {
+      location.hash = proofreadHash(proofread.dataset.proofreadRoot, proofread.dataset.proofreadPath);
+      return;
+    }
     const dismiss = target.closest<HTMLElement>("[data-dismiss]")?.dataset.dismiss;
     if (dismiss) return repaint(withoutProposal(readProposals(globalThis.localStorage), dismiss));
     const accept = target.closest<HTMLElement>("[data-accept]")?.dataset.accept;
     if (!accept || busy) return;
     const proposal = readProposals(globalThis.localStorage).find((item) => item.id === accept);
-    if (!proposal) return;
+    // 修正案の無い指摘（推敲の語尾単調など）は当てない（当てると原文が消える）
+    if (!proposal || !proposal.suggestion) return;
     busy = true;
     const recorder = touchedRecorder(store);
     void applyProposal(store, proposal, recorder)

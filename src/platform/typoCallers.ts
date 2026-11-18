@@ -52,7 +52,7 @@ export function chatText(response: ChatResponse): string {
 
 /** ChatGPT（OpenAI）。推論系のモデルは temperature を、古いモデルは max_completion_tokens を断るので、断られたら外す・言い換える */
 export function openAICaller(key: string, model: string, fetcher: Fetcher = fetchJson): ModelCall {
-  return async ({ system, user, schema, signal }) => {
+  return async ({ system, user, schema, temperature, signal }) => {
     const headers = { Authorization: `Bearer ${key}` };
     const body: Record<string, unknown> = {
       model,
@@ -60,7 +60,7 @@ export function openAICaller(key: string, model: string, fetcher: Fetcher = fetc
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      temperature: TYPO_CHECK_TEMPERATURE,
+      temperature: temperature ?? TYPO_CHECK_TEMPERATURE,
       max_completion_tokens: MAX_OUTPUT_TOKENS,
       response_format: { type: "json_schema", json_schema: { name: "novelai_result", strict: true, schema: toOpenAIJsonSchema(schema as never) } },
     };
@@ -90,7 +90,7 @@ export function openAICaller(key: string, model: string, fetcher: Fetcher = fetc
  * 400 なら言い回しを問わず外して試す。JSON の形の強制・温度は、断られたら外す（本体と同じ）
  */
 export function sakuraCaller(key: string, model: string, fetcher: Fetcher = fetchJson): ModelCall {
-  return async ({ system, user, schema, signal }) => {
+  return async ({ system, user, schema, temperature, signal }) => {
     const headers = { Authorization: `Bearer ${key}` };
     const body: Record<string, unknown> = {
       model,
@@ -98,7 +98,7 @@ export function sakuraCaller(key: string, model: string, fetcher: Fetcher = fetc
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      temperature: TYPO_CHECK_TEMPERATURE,
+      temperature: temperature ?? TYPO_CHECK_TEMPERATURE,
       max_tokens: MAX_OUTPUT_TOKENS,
       stream: false,
       response_format: { type: "json_schema", json_schema: { name: "novelai_result", strict: true, schema: toOpenAIJsonSchema(schema as never) } },
@@ -161,7 +161,7 @@ export function geminiText(response: GeminiResponse): string {
  * 思考を止める指定 → スキーマ（JSON で返す指定は残す）
  */
 export function geminiCaller(key: string, model: string, fetcher: Fetcher = fetchJson): ModelCall {
-  return async ({ system, user, schema, signal }) => {
+  return async ({ system, user, schema, temperature, signal }) => {
     const headers = { "x-goog-api-key": key };
     const plans = [
       { thinking: true, schema: true },
@@ -169,7 +169,7 @@ export function geminiCaller(key: string, model: string, fetcher: Fetcher = fetc
       { thinking: false, schema: false },
     ];
     const body = (plan: { thinking: boolean; schema: boolean }) => {
-      const generationConfig: Record<string, unknown> = { temperature: TYPO_CHECK_TEMPERATURE, maxOutputTokens: MAX_OUTPUT_TOKENS, responseMimeType: "application/json" };
+      const generationConfig: Record<string, unknown> = { temperature: temperature ?? TYPO_CHECK_TEMPERATURE, maxOutputTokens: MAX_OUTPUT_TOKENS, responseMimeType: "application/json" };
       if (plan.schema) generationConfig.responseSchema = toGeminiSchema(schema as never);
       if (plan.thinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
       return { systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text: user }] }], generationConfig };

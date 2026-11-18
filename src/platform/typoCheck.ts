@@ -12,6 +12,7 @@ import {
   withLineNumbers,
   type Chunk,
   type JsonRequest,
+  type KeepWord,
   type MemoMarkers,
 } from "../shared";
 
@@ -52,7 +53,14 @@ export interface TypoCheckResult {
 }
 
 /** AI へ1回頼む口（AI ごとに作る。答えの文を返す） */
-export type ModelCall = (request: { system: string; user: string; schema: unknown; signal?: AbortSignal }) => Promise<string>;
+export type ModelCall = (request: {
+  system: string;
+  user: string;
+  schema: unknown;
+  /** 揺らし（機能ごとに本体と同じ値。渡さなければ誤字脱字の値）。Claude には送らない（新しいモデルは断る） */
+  temperature?: number;
+  signal?: AbortSignal;
+}) => Promise<string>;
 
 /** 区切りの大きさ（本体の既定と同じ） */
 export const TYPO_CHUNK_CHARS = 8000;
@@ -65,6 +73,8 @@ export interface TypoCheckInput {
   memoMarkers: MemoMarkers;
   /** 指摘しない名前（作品の用語。本体と同じく 200 まで） */
   properNouns: readonly string[];
+  /** 作者が「直さない」と決めた語（`設定/keep_words.json`。`proofreadCheck.ts` の `readKeepWords`） */
+  keepWords?: readonly KeepWord[];
 }
 
 /** 区切り。見積もり（何回呼ぶか）にも使う */
@@ -98,7 +108,7 @@ export async function checkEpisodeTypos(input: TypoCheckInput, call: ModelCall, 
       result.failures.push({ chunk: index + 1, reason: "AI の答えが読めませんでした" });
       continue;
     }
-    const checked = validateTypoIssues(parsed, chunk, names, [], { archaicWork: archaic });
+    const checked = validateTypoIssues(parsed, chunk, names, [...(input.keepWords ?? [])], { archaicWork: archaic });
     result.rejected += checked.rejected.length;
     for (const issue of checked.accepted) {
       const at = locateChunkLine(chunk, issue.line);

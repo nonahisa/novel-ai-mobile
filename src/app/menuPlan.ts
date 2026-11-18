@@ -224,6 +224,7 @@ export const BUILT_ACTIONS: Readonly<Record<string, ScreenId>> = {
   AI設定: "ai",
   // 走らせる話を選ぶのは話の長押しか［提案］の頭（最後に開いた話）。すべての機能からは［提案］を開く
   誤字脱字検知: "proposals",
+  推敲: "proposals",
 };
 
 function hiddenReason(label: string, group: string, section?: string): string | undefined {

@@ -11,6 +11,7 @@ import type { KeepWord } from "../shared";
 import { typoCallerFor } from "../platform/typoCallers";
 import { readWorkLayout, scanWorkFolder } from "../platform/workScan";
 import { toStorePath } from "../platform/paths";
+import { backgroundWork, whileWorking, type BackgroundWork } from "../platform/backgroundWork";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
 import { escapeHtml, renderAppBar } from "./menuScreen";
 import { confirmPaidUsage } from "./paidConfirm";
@@ -32,6 +33,8 @@ export interface TypoRunDeps {
   vault: SecretVault;
   toast: (text: string) => void;
   stillHere: () => boolean;
+  /** 裏に回っても続けるための口（試験で差し替える。既定は端末に合ったもの） */
+  background?: BackgroundWork;
 }
 
 /** 4行の見積もり（DOM の無い試験で中身を確かめる） */
@@ -170,35 +173,39 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
       const caller = typoCallerFor(chosenProvider.id, key, chosen.model);
       let done = 0;
       progress.textContent = `AI に見せています（0/${calls}）`;
-      const counted: ModelCall = async (request) => {
-        try {
-          return await caller(request);
-        } finally {
-          done++;
-          if (deps.stillHere()) progress.textContent = `AI に見せています（${done}/${calls}）`;
-        }
-      };
       const total: TypoCheckResult = { findings: [], failures: [], calls: 0, rejected: 0 };
-      for (const input of list) {
-        if (abort.signal.aborted) break;
-        const result: TypoCheckResult =
-          deps.check === "typo"
-            ? await checkEpisodeTypos(input, counted, abort.signal)
-            : await checkEpisodeProofread({ path: input.path, text: input.text, memoMarkers: input.memoMarkers, keepWords }, counted, abort.signal);
-        // 話ごとに、すぐ［提案］へ書く（途中で止めても、見られた話の指摘は残る。払った分を捨てない）。
-        // 前の指摘はこの話の同じ種類だけ入れ替える。途中で画面を離れたら、前の指摘は消さずに足すだけ
-        const before = readProposals(globalThis.localStorage);
-        writeProposals(
-          globalThis.localStorage,
-          abort.signal.aborted
-            ? addProposals(before, deps.root, result.findings, deps.check)
-            : replaceEpisodeProposals(before, deps.root, input.path, result.findings, deps.check)
-        );
-        total.findings.push(...result.findings);
-        total.failures.push(...result.failures);
-        total.calls += result.calls;
-        total.rejected += result.rejected;
-      }
+      // 走らせているあいだは、アプリを裏に回しても続ける（Android の前面サービスと通知。設計書 7章）
+      await whileWorking(deps.background ?? backgroundWork(), `${label}（${list.length}話）`, calls, async (step) => {
+        const counted: ModelCall = async (request) => {
+          try {
+            return await caller(request);
+          } finally {
+            done++;
+            step(done);
+            if (deps.stillHere()) progress.textContent = `AI に見せています（${done}/${calls}）`;
+          }
+        };
+        for (const input of list) {
+          if (abort.signal.aborted) break;
+          const result: TypoCheckResult =
+            deps.check === "typo"
+              ? await checkEpisodeTypos(input, counted, abort.signal)
+              : await checkEpisodeProofread({ path: input.path, text: input.text, memoMarkers: input.memoMarkers, keepWords }, counted, abort.signal);
+          // 話ごとに、すぐ［提案］へ書く（途中で止めても、見られた話の指摘は残る。払った分を捨てない）。
+          // 前の指摘はこの話の同じ種類だけ入れ替える。途中で画面を離れたら、前の指摘は消さずに足すだけ
+          const before = readProposals(globalThis.localStorage);
+          writeProposals(
+            globalThis.localStorage,
+            abort.signal.aborted
+              ? addProposals(before, deps.root, result.findings, deps.check)
+              : replaceEpisodeProposals(before, deps.root, input.path, result.findings, deps.check)
+          );
+          total.findings.push(...result.findings);
+          total.failures.push(...result.failures);
+          total.calls += result.calls;
+          total.rejected += result.rejected;
+        }
+      });
       if (abort.signal.aborted || !deps.stillHere()) return;
       progress.textContent = typoResultText(total);
       slot.querySelector<HTMLElement>("#typoAfter")!.innerHTML = `<div class="menu-items"><button class="menu-item built" data-tab="proposals">提案を見る</button></div>`;

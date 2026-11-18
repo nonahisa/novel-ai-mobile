@@ -13,6 +13,7 @@ import type { ModelCall } from "../platform/typoCheck";
 import { readWorkLayout, scanWorkFolder } from "../platform/workScan";
 import { readWorkTerms } from "../platform/workTerms";
 import { escapeHtml, renderAppBar } from "./menuScreen";
+import { backgroundWork, whileWorking, type BackgroundWork } from "../platform/backgroundWork";
 import { confirmPaidUsage } from "./paidConfirm";
 import { renderTypoEstimate } from "./typoScreen";
 import { findSynopsis } from "../shared";
@@ -33,6 +34,8 @@ export interface SynopsisRunDeps {
   vault: SecretVault;
   toast: (text: string) => void;
   stillHere: () => boolean;
+  /** 裏に回っても続けるための口（試験で差し替える） */
+  background?: BackgroundWork;
 }
 
 /** いまの台帳の、この話のあらすじ（作者が書いたものには印） */
@@ -138,7 +141,15 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
             if (deps.stillHere()) progress.textContent = `AI に見せています（${done}/${calls}）`;
           }
         };
-        const result = await runSynopses(parts, { fileName }, loaded.set, choice.model, characterNames, counted, abort.signal);
+        const result = await whileWorking(deps.background ?? backgroundWork(), "あらすじ", calls, (step) =>
+          runSynopses(parts, { fileName }, loaded.set, choice.model, characterNames, async (request) => {
+            try {
+              return await counted(request);
+            } finally {
+              step(done);
+            }
+          }, abort.signal)
+        );
         // 途中で止めても、作れたぶんは書く（呼んだ分を捨てない。本体と同じ）
         if (result.made.length > 0) {
           const saved = await saveSynopses(deps.store, settingsDir, result.set, loaded);

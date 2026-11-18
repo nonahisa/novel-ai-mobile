@@ -1993,3 +1993,16 @@ a.gh-open {
 .sel-band button:active {
   background: var(--accent-soft);
 }
+/*
+  長押しする一覧の行と、長押しで出す選ぶ窓では、端末の字の選び（iOS のつまみ・編集メニュー）を出さない
+  （2026-11-18 Mac の iPad mini 0.1.110：作品を長押しして出た窓の［題を変える］の字に、iOS の選びのつまみが出た。
+  長押しが、指の下に出た窓の字にも効いていた）。字を打つ欄（askText の入力）は選べるまま
+*/
+.work-card,
+.ep,
+.dialog-choices,
+.dialog-choices button {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}

@@ -1748,8 +1748,15 @@ a.gh-open {
 .ec-pane .caret:has(+ .sel) {
   visibility: hidden !important;
 }
+/* 字はこの画面が描き、範囲もこの画面が持つ。端末の選び（Android の緑のしずく形のつまみ）を出さない。出ると端末のつまみが
+   指を取り、この画面のつまみを引けない（2026-11-19 AQUOS SH-M25 0.1.114）。受け口の作り（.sink-pane）は、描く所
+   （.sink-view）がもとから選ばれず、受け口の textarea を選べるままにする（iOS は親を選べなくすると打てないことがある） */
 .ec-pane {
   -webkit-touch-callout: none;
+}
+.ec-pane:not(.sink-pane) {
+  -webkit-user-select: none;
+  user-select: none;
 }
 /* 設定 → 書きかけの控え（`src/app/orphanDrafts.ts`） */
 .orphan-drafts {

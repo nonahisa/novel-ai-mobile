@@ -188,6 +188,21 @@ for (const build of ["EditContext", "受け口"] as const) {
       await expect(page.locator("#msEditor .sel")).toHaveText(["手", "紙"]);
     });
 
+    test("欄の字を端末が選ばない（つまみ・範囲はこの画面のものだけ）", async ({ page }) => {
+      await openRight(page);
+      // 2026-11-19 AQUOS（SH-M25）0.1.114：長押しで、この画面の範囲とつまみに重ねて、端末の選び（緑のしずく形のつまみ）も出た。
+      // 端末のつまみが指を取り、この画面のつまみを引けなかった。二度押し（端末が語を選ぶ）で、端末の選びが出ないことを見る
+      const at = await page.locator("#msEditor").evaluate((el) => {
+        const r = el.querySelector('[data-i="4"]')!.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      await page.mouse.dblclick(at.x, at.y);
+      expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+      // 受け口の作りは、描く所（.sink-view）がもとから選ばれない。受け口の textarea は打つために選べるままにする（iOS は親を
+      // 選べなくすると打てなくなることがある）
+      if (build === "EditContext") expect(await page.locator("#msEditor").evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
+    });
+
     test("範囲の近くに帯（設計書 4.4.1）：［ルビ］［傍点］［資料を見る］。［傍点］で選んだ字に付き、範囲が外れると帯も消える", async ({ page }) => {
       await openRight(page);
       const at = await page.locator("#msEditor").evaluate((el) => {

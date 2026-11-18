@@ -187,6 +187,42 @@ test.describe("誤字脱字", () => {
     await expect(page.locator('.proposal[data-kind="typo"]')).toHaveCount(1);
   });
 
+  test("何話かまとめて（2026-11-18 母艦の順 C）：［話を選ぶ］で話を選び、選んだ話ごとに見て［提案］へ。競合の話は選べない", async ({ page }) => {
+    const bodies: string[] = [];
+    await page.route("https://api.anthropic.com/v1/messages", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ headers: CORS });
+      const body = JSON.stringify(route.request().postDataJSON());
+      bodies.push(body);
+      const issues = body.includes("姉から手紙がが届いた")
+        ? [{ line: 1, original: "姉から手紙がが届いた。", target: "がが", suggestion: "が", reason: "衍字", confidence: "high" }]
+        : [];
+      return route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ issues }) }], stop_reason: "end_turn" }) });
+    });
+    await setUpClaude(page);
+    await openFirstEpisode(page);
+    await page.locator('#tabbar [data-tab="proposals"]').click();
+    await page.locator("[data-typo-path]").click();
+    await page.locator("#typoPick").click();
+    const rows = page.locator(".pick-list .pick-row");
+    await expect(rows).toHaveCount(4);
+    await expect(rows.filter({ hasText: "第4話 港" }).locator("input")).toBeDisabled();
+    await expect(rows.filter({ hasText: "第1話 手紙" }).locator("input")).toBeChecked();
+    await page.locator("#pickAll").check();
+    await expect(page.locator(".pick-list input:checked")).toHaveCount(3);
+    await page.locator("#pickDone").click();
+    await expect(page.locator(".estimate")).toContainText("3話（第1話 手紙 ほか）");
+    await expect(page.locator(".estimate")).toContainText("3 回");
+    await page.locator("#typoRun").click();
+    await expect(page.locator(".paid-lines")).toContainText("3話");
+    await page.locator('[data-answer="yes"]').click();
+    await expect(page.locator("#typoProgress")).toHaveText("指摘 1件");
+    expect(bodies).toHaveLength(3);
+    expect(bodies.some((b) => b.includes("階段をのぼる"))).toBe(true);
+    expect(bodies.some((b) => b.includes("霧が出た"))).toBe(true);
+    await page.locator('[data-tab="proposals"]').last().click();
+    await expect(page.locator(".proposal")).toHaveCount(1);
+  });
+
   test("確認の窓でやめたら送らない。見送ると本文は変えずに一覧から消える", async ({ page }) => {
     let calls = 0;
     await page.route("https://api.anthropic.com/v1/messages", (route) => {

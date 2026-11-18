@@ -100,12 +100,18 @@ export function renderActionRows(entries: readonly ActionEntry[]): string {
   return html + "</div>";
 }
 
-/** 下のタブ */
-export function renderTabBar(tabs: readonly PlannedTab[], current: string | undefined): string {
+/** 件数の印（99 を超えたら「99+」） */
+export function badgeText(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
+/** 下のタブ。`badges` はタブごとの件数（設計書 4.3「［提案］には未決の件数を付ける」）。0 なら出さない */
+export function renderTabBar(tabs: readonly PlannedTab[], current: string | undefined, badges: Readonly<Record<string, number>> = {}): string {
   return tabs
-    .map(
-      (tab) =>
-        `<button class="tab${tab.id === current ? " current" : ""}" data-tab="${tab.id}"${tab.id === current ? ' aria-current="page"' : ""}>${TAB_ICONS[tab.id]}${escapeHtml(tab.label)}</button>`
-    )
+    .map((tab) => {
+      const count = badges[tab.id] ?? 0;
+      const badge = count > 0 ? `<span class="tab-badge" aria-label="${escapeHtml(`${count}件`)}">${badgeText(count)}</span>` : "";
+      return `<button class="tab${tab.id === current ? " current" : ""}" data-tab="${tab.id}"${tab.id === current ? ' aria-current="page"' : ""}>${TAB_ICONS[tab.id]}${escapeHtml(tab.label)}${badge}</button>`;
+    })
     .join("");
 }

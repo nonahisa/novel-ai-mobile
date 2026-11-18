@@ -165,3 +165,25 @@ export {
 } from "novel-ai-assistant/src/core/proofreadValidation";
 export { collectWorkStyle, buildStyleNote } from "novel-ai-assistant/src/core/workStyleFacts";
 export { parseKeepWordSet, type KeepWord } from "novel-ai-assistant/src/models/keepWord";
+// 各話あらすじ（段2。2026-11-18）：台帳の形・差し込み・頼みの文・答えの確かめ・本文の分け方とハッシュ
+export {
+  SYNOPSIS_SCHEMA_VERSION,
+  dedupeSynopsisEpisodes,
+  emptySynopsisSet,
+  findSynopsis,
+  parseSynopsisSet,
+  upsertSynopsis,
+  type ChapterSynopsis,
+  type ChapterSynopsisSet,
+} from "novel-ai-assistant/src/models/synopsis";
+export {
+  SYNOPSIS_SCHEMA,
+  SYNOPSIS_SYSTEM_PROMPT,
+  SYNOPSIS_TEMPERATURE,
+  buildSynopsisPrompt,
+  synopsisPromptVersion,
+  type SubtitleSuggestion,
+} from "novel-ai-assistant/src/prompts/synopsis";
+export { parseSynopsisResult, validateSynopsisResult } from "novel-ai-assistant/src/core/synopsisValidation";
+export { splitEpisodeBodyParts } from "novel-ai-assistant/src/core/episodeBodyParts";
+export { decodeByteFallback } from "novel-ai-assistant/src/core/byteFallback";

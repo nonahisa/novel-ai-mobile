@@ -78,6 +78,7 @@ import { nativePostForm } from "../platform/githubDeviceFlow";
 import { applyLook, parseLook, readLook, renderLookSection, writeLook } from "./look";
 import { readProposals, renderProposals, renderTypoEntry, withoutProposal, writeProposals, type TypoProposal } from "./typoProposals";
 import { mountTypoRun } from "./typoScreen";
+import { mountSynopsisRun } from "./synopsisScreen";
 import { applyOutcomeText, applyProposal } from "../platform/applyProposal";
 import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLead, type LastEpisode } from "./lastEpisode";
 
@@ -111,6 +112,8 @@ type Route =
   | { kind: "episode"; root: string; path: string }
   /** AI で1話を見る（誤字脱字・推敲）。見積もり → 有料の確認 → 指摘は［提案］へ */
   | { kind: "typo"; check: "typo" | "proofread"; root: string; path: string }
+  /** 各話あらすじ（話の長押し → あらすじ。台帳へ書く） */
+  | { kind: "synopsis"; root: string; path: string }
   | { kind: "all" }
   | { kind: "tategaki" }
   | { kind: "check" }
@@ -142,6 +145,19 @@ export function parseRoute(hash: string): Route {
         const root = decodeURIComponent(pieces[0]!);
         const relative = decodeURIComponent(pieces[1]!);
         if (isWorkRoot(root) && isEpisodeInWork(relative)) return { kind: "episode", root, path: `${root}/${relative}` };
+      }
+    } catch {
+      /* 読めない名前は作品一覧へ */
+    }
+    return { kind: "tab", tab: TABS[0] };
+  }
+  if (name.startsWith("synopsis/")) {
+    const pieces = name.slice("synopsis/".length).split("/");
+    try {
+      if (pieces.length === 2) {
+        const root = decodeURIComponent(pieces[0]!);
+        const relative = decodeURIComponent(pieces[1]!);
+        if (isWorkRoot(root) && isEpisodeInWork(relative)) return { kind: "synopsis", root, path: `${root}/${relative}` };
       }
     } catch {
       /* 読めない名前は作品一覧へ */
@@ -247,6 +263,10 @@ export function typoHash(root: string, path: string): string {
   return episodeHash(root, path).replace("#/episode/", "#/typo/");
 }
 
+export function synopsisHash(root: string, path: string): string {
+  return episodeHash(root, path).replace("#/episode/", "#/synopsis/");
+}
+
 export function proofreadHash(root: string, path: string): string {
   return episodeHash(root, path).replace("#/episode/", "#/proofread/");
 }
@@ -320,7 +340,9 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     void chooseFrom([
       { id: "typo", label: "誤字脱字" },
       { id: "proofread", label: "推敲" },
+      { id: "synopsis", label: "あらすじ" },
     ]).then((picked) => {
+      if (picked === "synopsis") location.hash = synopsisHash(workRoot, episode);
       if (picked === "typo") location.hash = typoHash(workRoot, episode);
       if (picked === "proofread") location.hash = proofreadHash(workRoot, episode);
     });
@@ -412,7 +434,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "ai" || route.kind === "drafts" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "ai" || route.kind === "drafts" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab);
@@ -502,6 +524,20 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         lastTabHash = "#/proposals";
         const stop = mountTypoRun(screen, {
           check: route.check,
+          store,
+          root: route.root,
+          path: route.path,
+          settings: DeviceSettings.load(capacitorPreferencesBackend).then(({ settings }) => settings),
+          vault: secretVault(),
+          toast,
+          stillHere,
+        });
+        leaveGuard = { isDirty: () => false, destroy: stop };
+        return;
+      }
+      case "synopsis": {
+        lastTabHash = "#/works";
+        const stop = mountSynopsisRun(screen, {
           store,
           root: route.root,
           path: route.path,

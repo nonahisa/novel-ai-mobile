@@ -35,6 +35,7 @@ import {
   type TrialPrefs,
 } from "./tategakiDraft";
 import { askChoice, askText, chooseFrom, tell } from "./dialog";
+import { watchLongPress } from "./longPress";
 import { mountOrphanDrafts } from "./orphanDrafts";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
 import { listWorks, scanWorkFolder, type ScanOptions } from "../platform/workScan";
@@ -302,6 +303,18 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => toastEl.classList.remove("shown"), 2800);
   };
+
+  /*
+    話の一覧で話を長押し → その話の AI の手（設計書 4.4「話の一覧で話を長押し → その話の誤字脱字・推敲・あらすじ」）。
+    作ってあるものだけを並べる（いまは誤字脱字だけ。推敲・あらすじは作ったら足す）
+  */
+  watchLongPress(root, "[data-episode][data-root]", (item) => {
+    const workRoot = item.dataset.root!;
+    const episode = item.dataset.episode!;
+    void chooseFrom([{ id: "typo", label: "誤字脱字" }]).then((picked) => {
+      if (picked === "typo") location.hash = typoHash(workRoot, episode);
+    });
+  });
 
   root.addEventListener("click", (event) => {
     const target = (event.target as HTMLElement).closest<HTMLElement>("[data-screen],[data-planned],[data-tab],[data-back],[data-work],[data-episode],[data-sync],[data-conflict]");

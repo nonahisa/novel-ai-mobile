@@ -109,6 +109,29 @@ test.describe("誤字脱字", () => {
     await expect(page.locator(".proposal mark")).toHaveText("がが");
   });
 
+  test("話の一覧で話を長押しすると、その話の誤字脱字へ（設計書 4.4）。短く押せば話が開く", async ({ page }) => {
+    await openWithWorks(page, "#/works", WORKS);
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    const episode = page.locator(".ep-list .ep").first();
+    const box = (await episode.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(700);
+    await page.mouse.up();
+    // 長押しのあとの click で話を開かない
+    const choices = page.locator(".dialog-choices button", { hasText: "誤字脱字" });
+    await expect(choices).toBeVisible();
+    await expect(page).not.toHaveURL(/#\/episode\//);
+    await choices.click();
+    await expect(page).toHaveURL(/#\/typo\//);
+    await expect(page.locator(".estimate")).toContainText("第1話 手紙");
+
+    await page.evaluate(() => (location.hash = "#/works"));
+    await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+    await page.locator(".ep-list .ep").first().click();
+    await expect(page).toHaveURL(/#\/episode\//);
+  });
+
   test("確認の窓でやめたら送らない。見送ると本文は変えずに一覧から消える", async ({ page }) => {
     let calls = 0;
     await page.route("https://api.anthropic.com/v1/messages", (route) => {

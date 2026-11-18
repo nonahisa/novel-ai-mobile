@@ -2,7 +2,7 @@ import { App } from "@capacitor/app";
 import type { FileStore } from "../platform/fileStore";
 import type { AutoSaveStatus } from "./autoSave";
 import { failureMessage } from "./autoSave";
-import { askChoice, askText, tell } from "./dialog";
+import { askChoice, askText, chooseFrom, tell } from "./dialog";
 import { openEpisode, type BackgroundSource, type EpisodeSession } from "./episodeSession";
 import { escapeHtml, renderAppBar } from "./menuScreen";
 import { TOOL_STRIP, applyRuby, insertText, rubyPlan, toggleEmphasis, wrapBrackets, type TextEdit, type ToolId } from "./manuscriptTools";
@@ -451,6 +451,8 @@ export function mountEpisodeScreen(
     openEpisodeAt?: (path: string, offset: number) => void;
     /** 開いたらカーソルを置く所（`openEpisodeAt` で来たとき） */
     initialCaret?: number;
+    /** この話で AI を走らせる画面へ（上のバーの［…］。設計書 4.4「上のバーの［…］：… AI を走らせる」） */
+    runAi?: (kind: "typo" | "proofread" | "synopsis") => void;
   }
 ): EpisodeLeaveGuard {
   let orientation = readOrientation();
@@ -491,6 +493,25 @@ export function mountEpisodeScreen(
   toggle.id = "orientToggle";
   toggle.textContent = orientationButtonLabel(orientation);
   screen.querySelector<HTMLElement>(".appbar")!.appendChild(toggle);
+  // ［…］：この話の操作（設計書 4.4・4.4.2「走らせる入口は話の長押しと［…］」）。作ってあるものだけ並べる（いまは AI の3つ）
+  if (options.runAi) {
+    const runAi = options.runAi;
+    const more = document.createElement("button");
+    more.className = "appbar-action";
+    more.id = "episodeMore";
+    more.setAttribute("aria-label", "この話の操作");
+    more.textContent = "…";
+    more.addEventListener("click", () => {
+      void chooseFrom([
+        { id: "typo", label: "誤字脱字" },
+        { id: "proofread", label: "推敲" },
+        { id: "synopsis", label: "あらすじ" },
+      ]).then((picked) => {
+        if (picked === "typo" || picked === "proofread" || picked === "synopsis") runAi(picked);
+      });
+    });
+    screen.querySelector<HTMLElement>(".appbar")!.appendChild(more);
+  }
   const stateEl = screen.querySelector<HTMLElement>("#saveState")!;
   const host = screen.querySelector<HTMLElement>("#msHost")!;
   let session: EpisodeSession | undefined;

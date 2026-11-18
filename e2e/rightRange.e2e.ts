@@ -35,6 +35,13 @@ async function caretBefore(page: Page, at: number): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => document.activeElement?.id === "msEditor" || document.activeElement?.classList.contains("ime-sink") === true))
     .toBe(true);
+  // 押した字の前にカーソルが描かれるまで待つ（もう焦点がある欄では、上の待ちはすぐ通る。カーソルが動く前に
+  // Shift＋矢印が届くと、範囲が前の所から伸びた。込み合った全体の走らせで、ときどき起きた）
+  await expect
+    .poll(() =>
+      page.locator("#msEditor").evaluate((el, i) => (el.querySelector(".caret")?.nextElementSibling as HTMLElement | null)?.dataset.i === String(i), at)
+    )
+    .toBe(true);
 }
 
 /** Shift を押しながら、字の進む向きへ `count` 字のばす */

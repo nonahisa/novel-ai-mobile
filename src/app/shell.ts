@@ -558,6 +558,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
             },
             ...(caret !== undefined ? { initialCaret: caret } : {}),
             ...(touchedRecorder(store) ? { beforeWrite: touchedRecorder(store)! } : {}),
+            // ［…］→ AI（離れるときに書きかけは保存される）
+            runAi: (kind) => {
+              location.hash = kind === "typo" ? typoHash(episodeRoot, route.path) : kind === "proofread" ? proofreadHash(episodeRoot, route.path) : synopsisHash(episodeRoot, route.path);
+            },
           });
         }
         fillEpisodeSide(screen, store, route.root, route.path, scanOptions, stillHere);

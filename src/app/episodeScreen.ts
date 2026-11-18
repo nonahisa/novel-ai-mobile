@@ -27,6 +27,8 @@ import { createTrialLog } from "./trialLogFile";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import type { TermEntry } from "../shared";
 import type { TermFinder } from "./editContextPane";
+import { wantsIosTextareaFixes, watchTextareaLongPress } from "./textareaLongPress";
+import { watchOwnCaret } from "./textareaCaret";
 
 /**
  * **原稿エディター（C）の土台**：話の一覧から押した話を開いて書く画面（設計書 5.1〜5.4）。
@@ -158,6 +160,12 @@ function mountWritingPane(
   area.addEventListener("beforeinput", onBeforeInput);
   const backdrop = colors ? mountTermBackdrop(host, area, orientation) : undefined;
   if (!backdrop) host.appendChild(area);
+  // iOS は縦書きの textarea の長押しで何もしない（範囲もカーソルも動かず、⌫ で文の末の字が消えた。2026-11-19 Mac）。
+  // 長押しだけ、押した字を含む語をこちらで選ぶ（`textareaLongPress.ts`）
+  // iPad は縦書きの textarea のカーソルの印をずれた所に描く（実機だけ）。印をこちらで描く（`textareaCaret.ts`）
+  const iosFixes = wantsIosTextareaFixes(Capacitor.getPlatform(), window.localStorage);
+  const stopLongPress = iosFixes ? watchTextareaLongPress(area) : undefined;
+  const stopOwnCaret = iosFixes ? watchOwnCaret(area) : undefined;
   return {
     setText(text) {
       area.value = text;
@@ -184,6 +192,8 @@ function mountWritingPane(
     destroy() {
       area.removeEventListener("input", onInput);
       area.removeEventListener("beforeinput", onBeforeInput);
+      stopLongPress?.();
+      stopOwnCaret?.();
       backdrop?.destroy();
       area.remove();
     },

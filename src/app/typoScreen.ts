@@ -12,6 +12,7 @@ import { typoCallerFor } from "../platform/typoCallers";
 import { readWorkLayout, scanWorkFolder } from "../platform/workScan";
 import { toStorePath } from "../platform/paths";
 import { backgroundWork, whileWorking, type BackgroundWork } from "../platform/backgroundWork";
+import { Capacitor } from "@capacitor/core";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
 import { escapeHtml, renderAppBar } from "./menuScreen";
 import { confirmPaidUsage } from "./paidConfirm";
@@ -35,6 +36,12 @@ export interface TypoRunDeps {
   stillHere: () => boolean;
   /** 裏に回っても続けるための口（試験で差し替える。既定は端末に合ったもの） */
   background?: BackgroundWork;
+  /**
+   * 裏に回ったら、いまの1区切りで止めるか（既定は iOS だけ。試験で差し替える）。
+   * 【決定】2026-11-18 作者の答え「案A」：iOS には前面サービスが無いので、裏に回ったら次の区切りを頼まずに止め、
+   * 戻ったら「裏に回したので○○の途中で止めました。続きを走らせますか」と出して残りの話だけ走らせ直せる
+   */
+  pauseWhenHidden?: boolean;
 }
 
 /** 4行の見積もり（DOM の無い試験で中身を確かめる） */
@@ -86,11 +93,28 @@ export function renderEpisodePicker(rows: readonly PickRow[], selected: Readonly
         `<span class="pick-name">${escapeHtml(row.name)}</span>${row.conflicted ? `<span class="flag shu">競合</span>` : ""}</label>`
     )
     .join("");
+  // 範囲で選ぶ（2026-11-18 作者の答え「範囲（第○話〜第○話）でも選べるように」）。話の一覧の並びで頭と末を選ぶ（欠番があってもずれない）
+  const options = (pick: number) =>
+    rows.map((row, index) => `<option value="${index}"${index === pick ? " selected" : ""}>${escapeHtml(row.name)}</option>`).join("");
+  const indices = rows.map((row, index) => (selected.has(row.path) ? index : -1)).filter((index) => index >= 0);
+  const from = indices.length > 0 ? Math.min(...indices) : 0;
+  const to = indices.length > 0 ? Math.max(...indices) : rows.length - 1;
+  const range =
+    rows.length > 2
+      ? `<div class="pick-range"><select id="pickFrom" aria-label="頭の話">${options(from)}</select><span aria-hidden="true">〜</span><select id="pickTo" aria-label="末の話">${options(to)}</select><button type="button" id="pickRangeApply">この範囲を選ぶ</button></div>`
+      : "";
   return (
+    range +
     `<div class="pick-head"><label class="pick-row"><input type="checkbox" id="pickAll"${all ? " checked" : ""} /><span class="pick-name">すべて</span></label></div>` +
     `<div class="pick-list">${items}</div>` +
     `<div class="draft-actions"><button class="primary" id="pickDone"${selected.size === 0 ? " disabled" : ""}>決める</button></div>`
   );
+}
+
+/** 話の一覧の並びで a 番目から b 番目まで（逆でもよい）の、選べる話 */
+export function pathsInRange(rows: readonly PickRow[], a: number, b: number): string[] {
+  const [lo, hi] = a <= b ? [a, b] : [b, a];
+  return rows.slice(lo, hi + 1).filter((row) => !row.conflicted).map((row) => row.path);
 }
 
 /** 見積もりの「話」の行（1話ならその名前、何話かなら数と頭の話） */
@@ -174,44 +198,74 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
       let done = 0;
       progress.textContent = `AI に見せています（0/${calls}）`;
       const total: TypoCheckResult = { findings: [], failures: [], calls: 0, rejected: 0 };
-      // 走らせているあいだは、アプリを裏に回しても続ける（Android の前面サービスと通知。設計書 7章）
-      await whileWorking(deps.background ?? backgroundWork(), `${label}（${list.length}話）`, calls, async (step) => {
-        const counted: ModelCall = async (request) => {
-          try {
-            return await caller(request);
-          } finally {
-            done++;
-            step(done);
-            if (deps.stillHere()) progress.textContent = `AI に見せています（${done}/${calls}）`;
+      // 止める印：画面を離れた（abort）か、iOS で裏に回った（paused）
+      const stopRun = new AbortController();
+      const stopWithScreen = () => stopRun.abort();
+      abort.signal.addEventListener("abort", stopWithScreen);
+      let paused = false;
+      let interrupted = list.length;
+      const onHidden = () => {
+        if (document.visibilityState !== "hidden" || !(deps.pauseWhenHidden ?? Capacitor.getPlatform() === "ios")) return;
+        paused = true;
+        stopRun.abort();
+      };
+      document.addEventListener("visibilitychange", onHidden);
+      try {
+        // 走らせているあいだは、アプリを裏に回しても続ける（Android の前面サービスと通知。設計書 7章）
+        await whileWorking(deps.background ?? backgroundWork(), `${label}（${list.length}話）`, calls, async (step) => {
+          const counted: ModelCall = async (request) => {
+            try {
+              // 頼んでいる1回は、裏に回っても止めない（案A「いまの1区切りだけ終わらせる」）。止めるのは画面を離れたときだけ
+              return await caller({ ...request, signal: abort.signal });
+            } finally {
+              done++;
+              step(done);
+              if (deps.stillHere()) progress.textContent = `AI に見せています（${done}/${calls}）`;
+            }
+          };
+          for (const [index, input] of list.entries()) {
+            if (stopRun.signal.aborted) {
+              interrupted = Math.min(interrupted, index);
+              break;
+            }
+            const result: TypoCheckResult =
+              deps.check === "typo"
+                ? await checkEpisodeTypos(input, counted, stopRun.signal)
+                : await checkEpisodeProofread({ path: input.path, text: input.text, memoMarkers: input.memoMarkers, keepWords }, counted, stopRun.signal);
+            // 区切りを全部見終わる前に止めたなら、この話から走らせ直す（見られた区切りの指摘は足して残す）。
+            // 最後の区切りを頼んでいるあいだに止めたのなら、この話は見終わっている
+            const unfinished = stopRun.signal.aborted && result.calls < typoCheckChunks(input).length;
+            if (unfinished) interrupted = Math.min(interrupted, index);
+            // 話ごとに、すぐ［提案］へ書く（途中で止めても、見られた話の指摘は残る。払った分を捨てない）。
+            // 前の指摘はこの話の同じ種類だけ入れ替える。途中で画面を離れたら、前の指摘は消さずに足すだけ
+            const before = readProposals(globalThis.localStorage);
+            writeProposals(
+              globalThis.localStorage,
+              unfinished
+                ? addProposals(before, deps.root, result.findings, deps.check)
+                : replaceEpisodeProposals(before, deps.root, input.path, result.findings, deps.check)
+            );
+            total.findings.push(...result.findings);
+            total.failures.push(...result.failures);
+            total.calls += result.calls;
+            total.rejected += result.rejected;
           }
-        };
-        for (const input of list) {
-          if (abort.signal.aborted) break;
-          const result: TypoCheckResult =
-            deps.check === "typo"
-              ? await checkEpisodeTypos(input, counted, abort.signal)
-              : await checkEpisodeProofread({ path: input.path, text: input.text, memoMarkers: input.memoMarkers, keepWords }, counted, abort.signal);
-          // 話ごとに、すぐ［提案］へ書く（途中で止めても、見られた話の指摘は残る。払った分を捨てない）。
-          // 前の指摘はこの話の同じ種類だけ入れ替える。途中で画面を離れたら、前の指摘は消さずに足すだけ
-          const before = readProposals(globalThis.localStorage);
-          writeProposals(
-            globalThis.localStorage,
-            abort.signal.aborted
-              ? addProposals(before, deps.root, result.findings, deps.check)
-              : replaceEpisodeProposals(before, deps.root, input.path, result.findings, deps.check)
-          );
-          total.findings.push(...result.findings);
-          total.failures.push(...result.failures);
-          total.calls += result.calls;
-          total.rejected += result.rejected;
-        }
-      });
+        });
+      } finally {
+        document.removeEventListener("visibilitychange", onHidden);
+        abort.signal.removeEventListener("abort", stopWithScreen);
+      }
       if (abort.signal.aborted || !deps.stillHere()) return;
+      if (paused && interrupted < list.length) {
+        // 残りの話だけを選び直して、見積もりから（払う前にもう一度確かめる）
+        selected = list.slice(interrupted).map((input) => input.path);
+        return showEstimate(`裏に回したので「${episodeName(list[interrupted]!.path)}」の途中で止めました。続きを走らせますか`);
+      }
       progress.textContent = typoResultText(total);
       slot.querySelector<HTMLElement>("#typoAfter")!.innerHTML = `<div class="menu-items"><button class="menu-item built" data-tab="proposals">提案を見る</button></div>`;
     };
 
-    const showEstimate = async (): Promise<void> => {
+    const showEstimate = async (notice?: string): Promise<void> => {
       let loaded: { input: TypoCheckInput; conflicted: boolean }[];
       try {
         loaded = await Promise.all(selected.map(inputOf));
@@ -230,6 +284,7 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
       const priceLine = choice && provider ? paidUsageNotice(provider.displayName, choice.model, { sends: "", calls }).lines[2]?.replace(/^料金[:：]\s*/, "") : undefined;
       slot.removeAttribute("aria-busy");
       slot.innerHTML =
+        (notice ? `<p class="flag warn long" id="typoPaused">${escapeHtml(notice)}</p>` : "") +
         renderTypoEstimate({
           episode: pickedEpisodesText(selected.map(episodeName)),
           chars,
@@ -251,6 +306,8 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
       paint();
       slot.onchange = (event) => {
         const box = event.target as HTMLInputElement;
+        // 範囲の頭と末を選んだだけでは描き直さない（描き直すと、もう片方の選びが戻る）
+        if (box.tagName === "SELECT") return;
         if (box.id === "pickAll") {
           for (const row of rows) if (!row.conflicted) box.checked ? picked.add(row.path) : picked.delete(row.path);
         } else if (box.dataset.pick) {
@@ -259,6 +316,15 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
         paint();
       };
       slot.onclick = (event) => {
+        if ((event.target as HTMLElement).id === "pickRangeApply") {
+          // 選んだ範囲の話だけにする（競合の話は飛ばす）。頭と末が逆でも並びのまま
+          const a = Number(slot.querySelector<HTMLSelectElement>("#pickFrom")!.value);
+          const b = Number(slot.querySelector<HTMLSelectElement>("#pickTo")!.value);
+          picked.clear();
+          for (const path of pathsInRange(rows, a, b)) picked.add(path);
+          paint();
+          return;
+        }
         if ((event.target as HTMLElement).id !== "pickDone" || picked.size === 0) return;
         // 話の一覧の並びのまま
         selected = rows.filter((row) => picked.has(row.path)).map((row) => row.path);

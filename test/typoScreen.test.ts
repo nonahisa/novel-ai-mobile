@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { renderTypoEstimate, typoResultText, renderEpisodePicker, pickedEpisodesText } from "../src/app/typoScreen";
+import { renderTypoEstimate, typoResultText, renderEpisodePicker, pickedEpisodesText, pathsInRange } from "../src/app/typoScreen";
 
 /** 誤字脱字を走らせる前の見積もり（F）の4行と、走らせたあとの1行 */
 describe("見積もりと結果の1行", () => {
@@ -38,5 +38,26 @@ describe("何話かまとめて（2026-11-18）", () => {
   test("見積もりの「話」：1話ならその名前、何話かなら数と頭の話", () => {
     expect(pickedEpisodesText(["第1話 手紙"])).toBe("第1話 手紙");
     expect(pickedEpisodesText(["第1話 手紙", "第2話", "第3話"])).toBe("3話（第1話 手紙 ほか）");
+  });
+});
+
+describe("範囲で選ぶ（2026-11-18 作者の答え）", () => {
+  const rows = [
+    { path: "1", name: "第1話", conflicted: false },
+    { path: "2", name: "第2話", conflicted: false },
+    { path: "4", name: "第4話", conflicted: true },
+    { path: "5", name: "第5話", conflicted: false },
+  ];
+  test("話の一覧の並びで頭から末まで。逆でもよい。競合の話は飛ばす", () => {
+    expect(pathsInRange(rows, 1, 3)).toEqual(["2", "5"]);
+    expect(pathsInRange(rows, 3, 1)).toEqual(["2", "5"]);
+    expect(pathsInRange(rows, 0, 0)).toEqual(["1"]);
+  });
+  test("3話以上あれば、頭と末を選ぶ欄を出す。いま選んでいる話の頭と末を初めに選んでおく", () => {
+    const html = renderEpisodePicker(rows, new Set(["2", "5"]));
+    expect(html).toContain('id="pickFrom"');
+    expect(html).toContain('<option value="1" selected>第2話</option>');
+    expect(html).toContain('<option value="3" selected>第5話</option>');
+    expect(renderEpisodePicker(rows.slice(0, 2), new Set(["1"]))).not.toContain("pickFrom");
   });
 });

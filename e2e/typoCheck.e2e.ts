@@ -132,6 +132,15 @@ test.describe("誤字脱字", () => {
     await expect(page).toHaveURL(/#\/episode\//);
   });
 
+  test("すべての機能の［誤字脱字検知］は［提案］を開き、最後に開いた話の誤字脱字の入口が頭にある", async ({ page }) => {
+    await openWithWorks(page, "#/works", WORKS);
+    await openFirstEpisode(page);
+    await page.evaluate(() => (location.hash = "#/all"));
+    await page.locator(".menu-item.built", { hasText: "誤字脱字検知" }).click();
+    await expect(page).toHaveURL(/#\/proposals$/);
+    await expect(page.locator("[data-typo-path]")).toContainText("第1話 手紙");
+  });
+
   test("確認の窓でやめたら送らない。見送ると本文は変えずに一覧から消える", async ({ page }) => {
     let calls = 0;
     await page.route("https://api.anthropic.com/v1/messages", (route) => {

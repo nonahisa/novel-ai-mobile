@@ -18,7 +18,7 @@ import { parseRoute } from "../src/app/shell";
  * 作ってある項目だけが画面を開き、ほかは灰色で「まだ作っていません」と出ることを見張る。
  */
 
-const SCREENS: readonly ScreenId[] = ["tategaki", "check", "allActions", "github", "import", "display", "licenses", "ai", "drafts"];
+const SCREENS: readonly ScreenId[] = ["tategaki", "check", "allActions", "github", "import", "display", "licenses", "ai", "drafts", "proposals"];
 
 /** 本体の木の操作の名前を全部 */
 function bodyLabels(): Set<string> {

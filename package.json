@@ -16,7 +16,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test screens fieldCheck composed episode hardwareBack writeTab syncState githubSignin widthTiers importWork fontDownload aiKeys paidConfirm aiAssignment compositionLine verticalGlyphs leftLine termTag compact lookChoice typoCheck rightRange orphanDrafts synopsis proposalBoard longPress bodyFont workLongPress episodeMore",
+    "e2e": "playwright test screens fieldCheck composed episode hardwareBack writeTab syncState githubSignin widthTiers importWork fontDownload aiKeys paidConfirm aiAssignment compositionLine verticalGlyphs leftLine termTag compact lookChoice typoCheck rightRange orphanDrafts synopsis proposalBoard longPress bodyFont workLongPress proposalBadge episodeMore",
     "shots": "playwright test shots",
     "sync": "pnpm run build && cap sync android",
     "apk": "pnpm run sync && cd android && .\\gradlew.bat assembleDebug",

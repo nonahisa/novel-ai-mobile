@@ -285,6 +285,42 @@ test.describe("誤字脱字", () => {
     await expect(page.locator(".proposal")).toHaveCount(1);
   });
 
+  test("見積もりの AI の行を押すと、その回だけ別の AI で走らせる（設計書 7章 F）。設定の既定は替わらない", async ({ page }) => {
+    let gemini = 0;
+    let claude = 0;
+    await page.route("https://generativelanguage.googleapis.com/v1beta/models?**", (route) =>
+      route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ models: [{ name: "models/gemini-a" }] }) })
+    );
+    await page.route("https://generativelanguage.googleapis.com/v1beta/models/*:generateContent", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ headers: CORS });
+      gemini++;
+      return route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ issues: [] }) }] } }] }) });
+    });
+    await page.route("https://api.anthropic.com/v1/messages", (route) => {
+      claude++;
+      return route.fulfill({ headers: CORS, contentType: "application/json", body: "{}" });
+    });
+    await setUpClaude(page);
+    await page.locator('[data-ai-set="gemini"]').click();
+    await page.locator("#dialogInput").fill("AIza-tukurimono-switch");
+    await page.locator('[data-answer="yes"]').click();
+    await openFirstEpisode(page);
+    await page.locator('#tabbar [data-tab="proposals"]').click();
+    await page.locator("[data-typo-path]").click();
+    await expect(page.locator("#typoAi")).toContainText("claude-a");
+    await page.locator("#typoAi").click();
+    await page.locator(".dialog-choices button", { hasText: "Gemini" }).click();
+    await page.locator(".dialog-choices button", { hasText: "gemini-a" }).click();
+    await expect(page.locator("#typoAi")).toContainText("gemini-a");
+    await page.locator("#typoRun").click();
+    await page.locator('[data-answer="yes"]').click();
+    await expect(page.locator("#typoProgress")).toHaveText("指摘 0件");
+    expect(gemini).toBe(1);
+    expect(claude).toBe(0);
+    await page.evaluate(() => (location.hash = "#/ai"));
+    await expect(page.locator("#aiDefault")).toContainText("claude-a");
+  });
+
   test("確認の窓でやめたら送らない。見送ると本文は変えずに一覧から消える", async ({ page }) => {
     let calls = 0;
     await page.route("https://api.anthropic.com/v1/messages", (route) => {

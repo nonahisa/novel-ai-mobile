@@ -79,7 +79,7 @@ import {
 } from "../platform/workSyncRun";
 import { nativePostForm } from "../platform/githubDeviceFlow";
 import { applyLook, parseLook, readLook, renderLookSection, writeLook } from "./look";
-import { readProposals, renderProposals, renderTypoEntry, withoutProposal, writeProposals, type TypoProposal } from "./typoProposals";
+import { PROPOSALS_CHANGED, readProposals, renderProposals, renderTypoEntry, withoutProposal, writeProposals, type TypoProposal } from "./typoProposals";
 import { mountTypoRun } from "./typoScreen";
 import { mountSynopsisRun } from "./synopsisScreen";
 import { applyOutcomeText, applyProposal } from "../platform/applyProposal";
@@ -307,6 +307,13 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   const screen = root.querySelector<HTMLElement>("#screen")!;
   const tabbar = root.querySelector<HTMLElement>("#tabbar")!;
+  /** 下のタブの件数：［提案］は未決の指摘の数（設計書 4.3） */
+  const tabBadges = () => ({ proposals: readProposals(globalThis.localStorage).length });
+  // 提案が替わったら、件数だけを描き直す（採る・見送る・走らせる・作品を外す）
+  globalThis.addEventListener(PROPOSALS_CHANGED, () => {
+    const current = tabbar.querySelector<HTMLElement>(".tab.current")?.dataset.tab;
+    tabbar.innerHTML = renderTabBar(TABS, current, tabBadges());
+  });
   const toastEl = root.querySelector<HTMLElement>("#toast")!;
   let toastTimer: number | undefined;
   /** 離れる前に確かめること（縦書きの試しの未保存）と、離れるときの後片付け */
@@ -475,7 +482,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "ai" || route.kind === "drafts" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
-    tabbar.innerHTML = renderTabBar(TABS, currentTab);
+    tabbar.innerHTML = renderTabBar(TABS, currentTab, tabBadges());
     screen.scrollTop = 0;
     // 送っているのはページ（body）なので、移るたびに頭へ戻す（前の画面の送り位置が残っていた。2026-11-07 Mac）
     window.scrollTo(0, 0);

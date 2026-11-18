@@ -103,12 +103,17 @@ export function readProposals(storage: Pick<Storage, "getItem"> | undefined): Ty
   }
 }
 
+/** 提案が替わったときに知らせる名前（下のタブの件数を描き直す） */
+export const PROPOSALS_CHANGED = "novelai-proposals-changed";
+
 export function writeProposals(storage: Pick<Storage, "setItem"> | undefined, list: readonly TypoProposal[]): void {
   try {
     storage?.setItem(PROPOSALS_KEY, JSON.stringify(list));
   } catch {
     /* 覚えられなくても、いまの画面には出る */
   }
+  // 画面のあるときだけ知らせる（試験の DOM の無い所では何もしない）
+  if (typeof globalThis.dispatchEvent === "function" && typeof Event === "function") globalThis.dispatchEvent(new Event(PROPOSALS_CHANGED));
 }
 
 function episodeName(path: string): string {

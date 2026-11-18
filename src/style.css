@@ -1910,3 +1910,56 @@ a.gh-open {
   min-height: 44px;
   font: inherit;
 }
+/* 下のタブの件数（設計書 4.3「［提案］には未決の件数を付ける」） */
+.tab {
+  position: relative;
+}
+.tab-badge {
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 8px);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--shu);
+  /* 朱の地に、地の色の字（暗い画面では朱が明るく、地が暗くなるので読める。#fff を直に書かない） */
+  color: var(--surface);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+/* 見積もりの AI の行：押すと、その回だけ別の AI に替えられる（設計書 7章 F） */
+.estimate-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+}
+.estimate-switch::after {
+  content: "›";
+  content: "›" / "";
+  color: var(--muted);
+}
+/* 横の板の［提案］［資料］（設計書 4.3）。資料は、広い段で板を開いているとき、名前の札から出す紹介を板の中に入れる */
+.board-tabs {
+  margin: 12px 0 8px;
+}
+.term-sheet.in-board,
+.ms-board .term-sheet {
+  position: static;
+  height: auto;
+  padding: 0 0 16px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  width: auto;
+}

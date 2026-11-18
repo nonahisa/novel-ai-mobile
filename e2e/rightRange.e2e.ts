@@ -24,24 +24,30 @@ async function openRight(page: Page): Promise<void> {
 const paneText = (page: Page) =>
   page.locator("#msEditor").evaluate((el) => Array.from(el.querySelectorAll("[data-i]"), (span) => span.textContent).join(""));
 
-/** `at` 字目の字の頭の側を押す（カーソルはその字の前に来る） */
+/**
+ * `at` 字目の字の頭の側を押す（カーソルはその字の前に来る）。
+ * 押した字の前にカーソルが描かれるまで待ち、来なければ押し直す（3回まで。込み合った全体の走らせで、ときどき
+ * 押しがカーソルを動かさないことがあった）。範囲があるときは、範囲の端の近くの字を押すとつまみ（押せる所 44px）や
+ * 範囲の近くの帯の上になり、カーソルは動かない（そう作ってある。引継ぎ書 125章）。離れた字を押すこと
+ */
 async function caretBefore(page: Page, at: number): Promise<void> {
-  const point = await page.locator("#msEditor").evaluate((el, i) => {
-    const r = el.querySelector(`[data-i="${i}"]`)!.getBoundingClientRect();
-    return el.classList.contains("vertical") ? { x: r.x + r.width / 2, y: r.y + r.height * 0.2 } : { x: r.x + r.width * 0.2, y: r.y + r.height / 2 };
-  }, at);
-  await page.mouse.click(point.x, point.y);
-  // 焦点が欄（EditContext）か受け口に入ってから次のキーを押す（込み合った CI で、焦点の前にキーが届いて範囲ができなかった）
-  await expect
-    .poll(() => page.evaluate(() => document.activeElement?.id === "msEditor" || document.activeElement?.classList.contains("ime-sink") === true))
-    .toBe(true);
-  // 押した字の前にカーソルが描かれるまで待つ（もう焦点がある欄では、上の待ちはすぐ通る。カーソルが動く前に
-  // Shift＋矢印が届くと、範囲が前の所から伸びた。込み合った全体の走らせで、ときどき起きた）
-  await expect
-    .poll(() =>
-      page.locator("#msEditor").evaluate((el, i) => (el.querySelector(".caret")?.nextElementSibling as HTMLElement | null)?.dataset.i === String(i), at)
-    )
-    .toBe(true);
+  const caretThere = () =>
+    page.locator("#msEditor").evaluate((el, i) => (el.querySelector(".caret")?.nextElementSibling as HTMLElement | null)?.dataset.i === String(i), at);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const point = await page.locator("#msEditor").evaluate((el, i) => {
+      const r = el.querySelector(`[data-i="${i}"]`)!.getBoundingClientRect();
+      return el.classList.contains("vertical") ? { x: r.x + r.width / 2, y: r.y + r.height * 0.2 } : { x: r.x + r.width * 0.2, y: r.y + r.height / 2 };
+    }, at);
+    await page.mouse.click(point.x, point.y);
+    // 焦点が欄（EditContext）か受け口に入り、押した字の前にカーソルが来るまで待つ
+    const ok = await expect
+      .poll(async () => (await page.evaluate(() => document.activeElement?.id === "msEditor" || document.activeElement?.classList.contains("ime-sink") === true)) && (await caretThere()), { timeout: 1500 })
+      .toBe(true)
+      .then(() => true)
+      .catch(() => false);
+    if (ok) return;
+  }
+  expect(await caretThere()).toBe(true);
 }
 
 /** Shift を押しながら、字の進む向きへ `count` 字のばす */
@@ -100,7 +106,8 @@ for (const build of ["EditContext", "受け口"] as const) {
       await caretBefore(page, 0);
       await extend(page, 1);
       await expect(page.locator("#msEditor .sel")).toHaveCount(1);
-      await caretBefore(page, 3);
+      // 範囲のすぐ近くの字は、つまみ（押せる所 44px）や範囲の近くの帯（0.1.110）の下になる。離れた字を押して外す
+      await caretBefore(page, 17);
       await expect(page.locator("#msEditor .sel")).toHaveCount(0);
     });
 
@@ -143,6 +150,27 @@ for (const build of ["EditContext", "受け口"] as const) {
       await caretBefore(page, 2);
       await expect(page.locator("#msEditor .sel")).toHaveCount(0);
       await expect(handles).toHaveCount(0);
+    });
+
+    test("範囲の近くに帯（設計書 4.4.1）：［ルビ］［傍点］［資料を見る］。［傍点］で選んだ字に付き、範囲が外れると帯も消える", async ({ page }) => {
+      await openRight(page);
+      const at = await page.locator("#msEditor").evaluate((el) => {
+        const r = el.querySelector('[data-i="4"]')!.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      await page.mouse.move(at.x, at.y);
+      await page.mouse.down();
+      await page.waitForTimeout(700);
+      await page.mouse.up();
+      const band = page.locator(".sel-band");
+      await expect(band).toBeVisible();
+      await expect(band.locator("button")).toHaveText(["ルビ", "傍点", "資料を見る"]);
+      // 名前でない字で［資料を見る］は知らせる
+      await band.locator('[data-band="term"]').click();
+      await expect(page.locator("#toast")).toHaveText("選んだ字は、資料の名前ではありません");
+      await band.locator('[data-band="emphasis"]').click();
+      await expect.poll(() => paneText(page)).toBe("姉から{{手紙}}が届いた。\n// 付箋：ここは後で直す\n");
+      await expect(band).toBeHidden();
     });
 
     test("範囲を選んで変換すると、変換中の字が範囲と置き換わる", async ({ page }) => {

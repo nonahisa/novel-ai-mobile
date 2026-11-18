@@ -204,7 +204,7 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", ai: "#/ai", drafts: "#/drafts" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals" } as const;
 
 /**
  * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。

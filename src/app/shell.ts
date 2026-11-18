@@ -36,10 +36,12 @@ import {
 } from "./tategakiDraft";
 import { askChoice, askText, chooseFrom, tell } from "./dialog";
 import { applyBodyFont, parseBodyFont, readBodyFont, renderBodyFontSection, writeBodyFont } from "./bodyFont";
+import { renameWork } from "../platform/workRename";
+import { checkRemovable, removeWorkFolder } from "../platform/workRemove";
 import { watchLongPress } from "./longPress";
 import { mountOrphanDrafts } from "./orphanDrafts";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
-import { listWorks, scanWorkFolder, type ScanOptions } from "../platform/workScan";
+import { listWorks, readWorkLayout, scanWorkFolder, type ScanOptions } from "../platform/workScan";
 import { lastCommitTime } from "../platform/git";
 import { dayLabel, syncFlag, workSummary } from "./workListView";
 import { createGitFs, CapacitorGitFsBackend } from "../platform/gitFs";
@@ -346,6 +348,41 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       if (picked === "synopsis") location.hash = synopsisHash(workRoot, episode);
       if (picked === "typo") location.hash = typoHash(workRoot, episode);
       if (picked === "proofread") location.hash = proofreadHash(workRoot, episode);
+    });
+  });
+
+  /*
+    作品の一覧で作品を長押し → 題を変える・登録から外す（設計書 4.4.1。作者の答え 2026-11-18）。
+    シリーズ・作品の設定はまだ作っていない（作ってあるものだけ並べる）
+  */
+  watchLongPress(root, ".work-card[data-work]", (item) => {
+    const workRoot = item.dataset.work!;
+    void chooseFrom([
+      { id: "rename", label: "題を変える" },
+      { id: "remove", label: "登録から外す" },
+    ]).then(async (picked) => {
+      if (picked === "rename") {
+        const current = await readWorkLayout(store, workRoot).then((layout) => layout.title).catch(() => undefined);
+        if (current === undefined) return toast("作品の設定を読めないので、題を変えられません");
+        const title = await askText("作品の題", { initial: current, okLabel: "変える", validate: (value) => (value.trim() ? undefined : "題を入れてください") });
+        if (title === undefined) return;
+        const outcome = await renameWork(store, workRoot, title);
+        if (outcome.kind === "failed") return toast(outcome.message);
+        if (outcome.kind === "renamed") toast(["題を変えました", ...outcome.notes].join("。"));
+        render();
+      }
+      if (picked === "remove") {
+        const backend = new CapacitorGitFsBackend();
+        const check = await checkRemovable(store, createGitFs(backend), workRoot);
+        if (!check.ok) return tell(check.reason);
+        const title = await readWorkLayout(store, workRoot).then((layout) => layout.title).catch(() => workRoot);
+        // 作者のデータを消すので、確かめの窓に残す（設計書 4.6）
+        if (!(await askChoice(`「${title}」をこの端末から外します。端末の中のフォルダーは消え、元に戻せません。GitHub の置き場は消しません（取り寄せ直せます）`, "外す", "やめる"))) return;
+        await removeWorkFolder(backend, workRoot);
+        writeProposals(globalThis.localStorage, readProposals(globalThis.localStorage).filter((proposal) => proposal.root !== workRoot));
+        toast("外しました");
+        render();
+      }
     });
   });
 

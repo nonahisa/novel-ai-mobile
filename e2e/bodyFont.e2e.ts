@@ -49,3 +49,37 @@ for (const look of ["standard", "washi", "hakuai", "sumishu"]) {
     expect(font.size).toBe("16px");
   });
 }
+
+test("原稿の欄の上で2本指で広げると字が大きくなり、開き直しても覚えている（設計書 5.2）", async ({ page }) => {
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("#msEditor");
+  await expect(editor).toBeVisible();
+  const pinch = (distances: number[], fingers = 2) =>
+    page.locator("#msHost").evaluate(
+      (host, [list, count]) => {
+        const box = host.getBoundingClientRect();
+        const cx = box.left + box.width / 2;
+        const cy = box.top + box.height / 2;
+        const touches = (d: number) =>
+          Array.from({ length: count as number }, (_, i) => new Touch({ identifier: i + 1, target: host, clientX: cx + (i === 0 ? -d / 2 : d / 2), clientY: cy }));
+        const fire = (type: string, d: number, active = true) =>
+          host.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: active ? touches(d) : [], changedTouches: touches(d) }));
+        const ds = list as number[];
+        fire("touchstart", ds[0]!);
+        for (const d of ds.slice(1)) fire("touchmove", d);
+        fire("touchend", ds[ds.length - 1]!, false);
+      },
+      [distances, fingers] as const
+    );
+  await pinch([100, 120, 150]);
+  await expect.poll(() => editor.evaluate((el) => getComputedStyle(el).fontSize)).toBe("24px");
+  expect(await page.evaluate(() => localStorage.getItem("novelai.bodySize"))).toBe("24");
+  // 1本指の動きでは変えない
+  await pinch([100, 200], 1);
+  await expect.poll(() => editor.evaluate((el) => getComputedStyle(el).fontSize)).toBe("24px");
+  await page.reload();
+  await expect(page.locator("#msEditor")).toBeVisible();
+  await expect.poll(() => page.locator("#msEditor").evaluate((el) => getComputedStyle(el).fontSize)).toBe("24px");
+});

@@ -1779,3 +1779,31 @@ a.gh-open {
   grid-row: 1 / span 2;
   grid-column: 2;
 }
+/* 各話あらすじ（`src/app/synopsisScreen.ts`） */
+.synopsis-list {
+  display: block;
+  margin: 16px 0 0;
+}
+.synopsis-row {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  margin-bottom: 8px;
+}
+.synopsis-row dt {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.synopsis-row dd {
+  margin: 0;
+  font-family: var(--font-ms);
+  line-height: 1.8;
+}
+.synopsis-subtitles {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+}

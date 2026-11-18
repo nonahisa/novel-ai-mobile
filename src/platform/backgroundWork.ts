@@ -7,7 +7,8 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
  * 仕事そのもの（AI を呼ぶ・指摘を書く）はこれまでどおり画面が続ける。前面サービスがあるあいだ、Android は
  * アプリのプロセスを凍らせない・止めない。
  *
- * iOS とブラウザでは何もしない（iOS は前面サービスが無く、裏に回ると数十秒で止まる。iOS の裏の処理は別の作りで、まだ作らない）。
+ * iOS では、同じ名前の口（`ios/App/App/AiWorkPlugin.swift`）で `beginBackgroundTask` の猶予をもらう（数十秒。いま頼んでいる1回を
+ * 終わらせるため。2026-11-18 作者の答え「案A」。続きを頼むかは画面が決める）。ブラウザでは何もしない。
  * 前面サービスを始められなくても、仕事は止めない（前面にいるあいだは続く）
  */
 
@@ -33,7 +34,8 @@ let plugin: AiWorkPlugin | undefined;
 
 /** 端末に合った口（Android だけ前面サービス。ほかは何もしない） */
 export function backgroundWork(): BackgroundWork {
-  if (Capacitor.getPlatform() !== "android") return NONE;
+  const platform = Capacitor.getPlatform();
+  if (platform !== "android" && platform !== "ios") return NONE;
   plugin ??= registerPlugin<AiWorkPlugin>("AiWork");
   const native = plugin;
   let title = "AI の処理";

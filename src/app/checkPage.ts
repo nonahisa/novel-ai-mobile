@@ -1,4 +1,4 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { AIError, SHARED_VERSION, fetchJson, postingNotationTextHash } from "../shared";
 import { CapacitorFileStore } from "../platform/capacitorFileStore";
@@ -109,6 +109,13 @@ app.innerHTML = `
     <p class="note">本体と同じ文言の窓を出すだけです。どこにも送りません。</p>
     <button id="paidConfirm">窓を出す</button>
     <pre id="paidResult" class="result">まだ試していません</pre>
+  </section>
+
+  <section class="card">
+    <h2>9. 裏でも続ける口（AiWork）</h2>
+    <p class="note">AI は呼びません。口が登録されているかを、始める・止めるの返事で見ます（Android は通知が出て消える。iOS は猶予をもらって返す）。</p>
+    <button id="aiWorkTry">口を試す</button>
+    <pre id="aiWorkResult" class="result">まだ試していません</pre>
   </section>
 `;
 
@@ -374,5 +381,31 @@ document.querySelector<HTMLButtonElement>("#paidConfirm")!.addEventListener("cli
     notice: { sends: "本文 約4,321字（1話）", calls: 1 },
   });
   paidResult.textContent = go ? "［実行］を選びました（送っていません）" : "［やめる］を選びました";
+});
+
+/* ---------- 9. 裏でも続ける口（Android の前面サービス・iOS の beginBackgroundTask。引継ぎ書 114・121章） ---------- */
+
+const aiWorkResult = document.querySelector<HTMLPreElement>("#aiWorkResult")!;
+document.querySelector<HTMLButtonElement>("#aiWorkTry")!.addEventListener("click", async () => {
+  // Mac のセッションがシミュレーターで押して確かめる（Safari のコンソールに打たずに済むように）
+  const lines: string[] = [`端末：${platformName(Capacitor.getPlatform())}`];
+  const show = () => (aiWorkResult.textContent = lines.join("\n"));
+  if (!Capacitor.isNativePlatform()) {
+    lines.push("ブラウザなので口はありません（端末で試してください）");
+    return show();
+  }
+  const plugin = registerPlugin<{ start(o: object): Promise<void>; stop(): Promise<void> }>("AiWork");
+  for (const [name, call] of [
+    ["start", () => plugin.start({ title: "動作確認", text: "口を試しています", progress: 0, max: 1 })],
+    ["stop", () => plugin.stop()],
+  ] as const) {
+    try {
+      await call();
+      lines.push(`✅ ${name}：返事あり`);
+    } catch (error) {
+      lines.push(`❌ ${name}：${error instanceof Error ? error.message : String(error)}`);
+    }
+    show();
+  }
 });
 }

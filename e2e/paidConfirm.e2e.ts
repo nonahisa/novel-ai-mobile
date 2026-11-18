@@ -27,3 +27,9 @@ test.describe("有料の AI へ送る前の確認の窓", () => {
     expect(sent).toBe(0);
   });
 });
+
+test("動作確認ページの［口を試す］（裏でも続ける口。Mac がシミュレーターで押して確かめる）：ブラウザでは口が無いと出す", async ({ page }) => {
+  await openWithWorks(page, "#/check");
+  await page.locator("#aiWorkTry").click();
+  await expect(page.locator("#aiWorkResult")).toContainText("ブラウザなので口はありません");
+});

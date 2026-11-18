@@ -31,6 +31,10 @@ async function caretBefore(page: Page, at: number): Promise<void> {
     return el.classList.contains("vertical") ? { x: r.x + r.width / 2, y: r.y + r.height * 0.2 } : { x: r.x + r.width * 0.2, y: r.y + r.height / 2 };
   }, at);
   await page.mouse.click(point.x, point.y);
+  // 焦点が欄（EditContext）か受け口に入ってから次のキーを押す（込み合った CI で、焦点の前にキーが届いて範囲ができなかった）
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.id === "msEditor" || document.activeElement?.classList.contains("ime-sink") === true))
+    .toBe(true);
 }
 
 /** Shift を押しながら、字の進む向きへ `count` 字のばす */

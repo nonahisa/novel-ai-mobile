@@ -509,6 +509,9 @@ export function mountEpisodeScreen(
   toggle.className = "appbar-action";
   toggle.id = "orientToggle";
   toggle.textContent = orientationButtonLabel(orientation);
+  // 押しても欄の焦点とカーソルを外さない（道具帯と同じ）。崩れたときに横へ移って、そのまま続けて打てるように
+  // （2026-11-19 AQUOS：変換中に押すと、字と位置は残ったが焦点が押し口へ移り、キーボードが閉じた）
+  toggle.addEventListener("pointerdown", (event) => event.preventDefault());
   screen.querySelector<HTMLElement>(".appbar")!.appendChild(toggle);
   // ［…］：この話の操作（設計書 4.4・4.4.2「走らせる入口は話の長押しと［…］」）。作ってあるものだけ並べる（いまは AI の3つ）
   if (options.runAi) {

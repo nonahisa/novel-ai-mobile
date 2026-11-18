@@ -482,6 +482,8 @@ export function mountEpisodeScreen(
     runAi?: (kind: "typo" | "proofread" | "synopsis") => void;
     /** この作品に新しい話を作って開く（上のバーの［…］→ 新しい話。設計書 4.4） */
     newEpisode?: () => void;
+    /** この話から始まる章を立てる（上のバーの［…］→ 章を立てる。設計書 4.4） */
+    newChapter?: () => void;
   }
 ): EpisodeLeaveGuard {
   let orientation = readOrientation();
@@ -526,8 +528,8 @@ export function mountEpisodeScreen(
   toggle.addEventListener("pointerdown", (event) => event.preventDefault());
   screen.querySelector<HTMLElement>(".appbar")!.appendChild(toggle);
   // ［…］：この話の操作（設計書 4.4・4.4.2「走らせる入口は話の長押しと［…］」）。作ってあるものだけ並べる（いまは AI の3つ）
-  if (options.runAi || options.newEpisode) {
-    const { runAi, newEpisode } = options;
+  if (options.runAi || options.newEpisode || options.newChapter) {
+    const { runAi, newEpisode, newChapter } = options;
     const more = document.createElement("button");
     more.className = "appbar-action";
     more.id = "episodeMore";
@@ -536,6 +538,7 @@ export function mountEpisodeScreen(
     more.addEventListener("click", () => {
       void chooseFrom([
         ...(newEpisode ? [{ id: "newEpisode", label: "新しい話" }] : []),
+        ...(newChapter ? [{ id: "newChapter", label: "章を立てる" }] : []),
         ...(runAi
           ? [
               { id: "typo", label: "誤字脱字" },
@@ -545,6 +548,7 @@ export function mountEpisodeScreen(
           : []),
       ]).then((picked) => {
         if (picked === "newEpisode") newEpisode?.();
+        if (picked === "newChapter") newChapter?.();
         if (picked === "typo" || picked === "proofread" || picked === "synopsis") runAi?.(picked);
       });
     });

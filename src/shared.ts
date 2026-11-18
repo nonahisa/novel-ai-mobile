@@ -94,7 +94,7 @@ export { detectEol } from "novel-ai-assistant/src/core/eolAudit";
 export { decodeBytes } from "novel-ai-assistant/src/core/textDecode";
 export { parsePlotMarkdown } from "novel-ai-assistant/src/core/plotDoc";
 export { matchWorkFormat, type WorkFormatKey } from "novel-ai-assistant/src/core/workFormat";
-export { CHAPTERS_FILE, parseChapterSet, type Chapter } from "novel-ai-assistant/src/models/chapter";
+export { CHAPTERS_FILE, CHAPTERS_SCHEMA_VERSION, assertUniqueStarts, findChapterStartingAt, parseChapterSet, withChapterStartingAt, type Chapter, type ChapterSet } from "novel-ai-assistant/src/models/chapter";
 export { groupEpisodesByChapter, type ChapterGrouping } from "novel-ai-assistant/src/core/chapterGrouping";
 export { episodeTitle, formatChapterLabel, episodeListLabel, isCollectedFile } from "novel-ai-assistant/src/core/episodeLabel";
 export {

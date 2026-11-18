@@ -35,3 +35,13 @@ test("作品を長押し → 登録から外す：GitHub と結んでいない�
   await expect(page.locator(".work-card", { hasText: "灯台守の手紙_確認用" })).toBeVisible();
   expect(await readFakeFile(page, "灯台守_確認用/本文/第1話 手紙.txt")).toBeDefined();
 });
+
+test("長押しする一覧の行と、長押しで出す窓の字は、端末の字の選びを出さない（2026-11-18 Mac：窓の字に iOS のつまみが出た）", async ({ page }) => {
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  const card = page.locator(".work-card").first();
+  expect(await card.evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
+  await longPressWork(page, "灯台守の手紙_確認用");
+  const choice = page.locator(".dialog-choices .dialog-list button").first();
+  await expect(choice).toBeVisible();
+  expect(await choice.evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
+});

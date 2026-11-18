@@ -21,6 +21,7 @@ import { termAtFrom, termFinderFrom, termOnCharFrom, termTagLabel } from "./term
 import { charFromPoint, readCharBoxes } from "./tapCaret";
 import { readProposals, renderProposals, withoutProposal, writeProposals } from "./typoProposals";
 import { applyFindingToText } from "../shared";
+import { watchPinchSize } from "./pinchSize";
 import { mountRangeGestures } from "./rangeGestures";
 import { createTrialLog } from "./trialLogFile";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
@@ -514,6 +515,8 @@ export function mountEpisodeScreen(
   }
   const stateEl = screen.querySelector<HTMLElement>("#saveState")!;
   const host = screen.querySelector<HTMLElement>("#msHost")!;
+  // 2本指で広げる・つまむと、本文の字の大きさが変わる（設計書 5.2。端末ごとに覚える）
+  const stopPinch = watchPinchSize(host);
   let session: EpisodeSession | undefined;
   let pane: WritingPane | undefined;
   /**
@@ -921,6 +924,7 @@ export function mountEpisodeScreen(
     },
     destroy() {
       destroyed = true;
+      stopPinch();
       session?.dispose();
       pane?.destroy();
     },

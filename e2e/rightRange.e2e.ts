@@ -150,6 +150,11 @@ for (const build of ["EditContext", "受け口"] as const) {
       await page.mouse.move(gx + move.dx, gy + move.dy, { steps: 6 });
       await page.mouse.up();
       await expect(page.locator("#msEditor .sel")).toHaveText(["手", "紙", "が", "届"]);
+      // iOS は、長押しの click を、つまみを引き終えたあとに遅れて出すことがある（押した字に向けて）。その click で
+      // カーソルを置き直して範囲を外さない（2026-11-18 Mac の iPad mini 0.1.111：つまみを離すと範囲が消えた）
+      await page.waitForTimeout(700);
+      await page.locator('#msEditor [data-i="4"]').dispatchEvent("click");
+      await expect(page.locator("#msEditor .sel")).toHaveText(["手", "紙", "が", "届"]);
 
       // 選んだ範囲にそのまま傍点
       await tool(page, "傍点").click();

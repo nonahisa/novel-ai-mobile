@@ -183,8 +183,12 @@ export function mountRangeGestures(target: RangeTarget): () => void {
   let pressAt: { x: number; y: number } | undefined;
   let pressStartedAt = 0;
   let swallowClick = false;
-  /** 長押しで選んで指を離した時刻まで。そのすぐあとの click だけを飲み込む（離すのがつまみの上だと click は来ず、あとの帯の押しまで飲み込んでいた） */
-  let swallowUntil = 0;
+  /**
+   * 長押しの click を待っている（欄の字の上の click を1つだけ飲み込む）。時間では切らない：iOS は、つまみを引き終えた
+   * あとに、長押しの click を押した字へ遅れて出すことがあった（2026-11-18 Mac 0.1.111：つまみを離すと範囲が消えた）。
+   * 次に欄を押したら忘れる。帯・つまみの押しは欄の外なので飲み込まない
+   */
+  let swallowPending = false;
   /** 押した所の語を選ぶ（長押しの時計か、時計が遅れたときは指を離したときに） */
   const selectPressed = () => {
     if (target.composing() || !pressAt) return;
@@ -205,6 +209,7 @@ export function mountRangeGestures(target: RangeTarget): () => void {
   };
   const onPointerDown = (e: PointerEvent) => {
     swallowClick = false;
+    swallowPending = false;
     if (target.composing() || e.button > 0) return;
     pressAt = { x: e.clientX, y: e.clientY };
     pressStartedAt = Date.now();
@@ -234,14 +239,14 @@ export function mountRangeGestures(target: RangeTarget): () => void {
     if (e.type === "pointerup" && swallowClick) {
       target.focus?.();
       swallowClick = false;
-      swallowUntil = Date.now() + 500;
+      swallowPending = true;
     }
   };
   /** 長押しで選んだあとの click は、欄に届けない（届くとカーソルを置き直し、範囲が外れる） */
   const onClickCapture = (e: MouseEvent) => {
     // 飲み込むのは欄の字の上の click だけ（帯・つまみの押しは通す）
-    if (Date.now() > swallowUntil || !element.contains(e.target as Node)) return;
-    swallowUntil = 0;
+    if (!swallowPending || !element.contains(e.target as Node)) return;
+    swallowPending = false;
     e.stopImmediatePropagation();
     e.preventDefault();
     // click も人の操作。指を離したときの焦点が外れていたら、ここでもう一度当てる（受け口の作りでは pointerup の焦点が残らなかった）

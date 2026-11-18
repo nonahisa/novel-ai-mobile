@@ -72,6 +72,43 @@ test.describe("誤字脱字", () => {
     expect(await readFakeFile(page, FIRST)).toBe("姉から手紙が届いた。\n");
   });
 
+  test("Gemini でも見られる（2026-11-18 Claude 以外の AI）：鍵は頭書きだけ、指摘は［提案］へ", async ({ page }) => {
+    const sent: { url: string; key: string | null; body: string }[] = [];
+    await page.route("https://generativelanguage.googleapis.com/v1beta/models?**", (route) =>
+      route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ models: [{ name: "models/gemini-a" }] }) })
+    );
+    await page.route("https://generativelanguage.googleapis.com/v1beta/models/*:generateContent", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ headers: CORS });
+      sent.push({ url: route.request().url(), key: route.request().headers()["x-goog-api-key"] ?? null, body: route.request().postData() ?? "" });
+      const issues = [{ line: 1, original: "姉から手紙がが届いた。", target: "がが", suggestion: "が", reason: "衍字", confidence: "high" }];
+      return route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ issues }) }] }, finishReason: "STOP" }] }) });
+    });
+    await openWithWorks(page, "#/ai", WORKS);
+    await page.locator('[data-ai-set="gemini"]').click();
+    await page.locator("#dialogInput").fill("AIza-tukurimono-typo-gemini");
+    await page.locator('[data-answer="yes"]').click();
+    await page.locator("[data-ai-default]").click();
+    await page.locator('[data-choice="gemini"]').click();
+    await page.locator('[data-choice="gemini-a"]').click();
+    await expect(page.locator("#aiDefault")).toContainText("gemini-a");
+    await openFirstEpisode(page);
+
+    await page.locator('#tabbar [data-tab="proposals"]').click();
+    await page.locator("[data-typo-path]").click();
+    await expect(page.locator(".estimate")).toContainText("gemini-a");
+    await expect(page.locator("#typoProblem")).toHaveCount(0);
+    await page.locator("#typoRun").click();
+    await page.locator('[data-answer="yes"]').click();
+    await expect(page.locator("#typoProgress")).toHaveText("指摘 1件");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.url).not.toContain("AIza");
+    expect(sent[0]!.url).toContain("/models/gemini-a:generateContent");
+    expect(sent[0]!.key).toBe("AIza-tukurimono-typo-gemini");
+    expect(sent[0]!.body).toContain("1: 姉から手紙がが届いた。");
+    await page.locator('[data-tab="proposals"]').last().click();
+    await expect(page.locator(".proposal mark")).toHaveText("がが");
+  });
+
   test("確認の窓でやめたら送らない。見送ると本文は変えずに一覧から消える", async ({ page }) => {
     let calls = 0;
     await page.route("https://api.anthropic.com/v1/messages", (route) => {

@@ -138,6 +138,20 @@ test.describe("原稿エディター（C）の土台", () => {
     await expect(page.locator("#msEditor")).toHaveCSS("writing-mode", "horizontal-tb");
   });
 
+  test("［横で書く］を押しても欄の焦点とカーソルは外れない（キーボードが閉じず、そのまま続けて打てる）", async ({ page }) => {
+    // 2026-11-19 AQUOS（SH-M25）0.1.116：変換中に［横で書く］を押すと、字と位置は残ったが、焦点が押し口へ移りキーボードが閉じた
+    await openEpisode(page);
+    const editor = page.locator("#msEditor");
+    await editor.click();
+    await editor.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(3, 3));
+    await page.locator("#orientToggle").click();
+    await expect(editor).toHaveCSS("writing-mode", "horizontal-tb");
+    await expect(editor).toBeFocused();
+    expect(await editor.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(3);
+    await page.keyboard.type("長い");
+    await expect(editor).toHaveValue(/^姉から長い手紙/);
+  });
+
   test.describe("止められる前の書きかけ（本文が変わったときだけ訊く）", () => {
     const journal = `.novelai-drafts/${createHash("sha256").update(EPISODE).digest("hex")}.txt`;
     const DRAFT = "姉から手紙が届いた。止められる前の字。\n";

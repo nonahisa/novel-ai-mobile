@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { FAKE_WORKS, openWithWorks, readFakeFile } from "./support/fakeWorks";
+import { FAKE_WORKS, listFakeFiles, openWithWorks, readFakeFile } from "./support/fakeWorks";
 
 /** 原稿エディターの上のバーの［…］（設計書 4.4・4.4.2）：この話で AI を走らせる。離れる前に書きかけは保存する。作品は作り物（`_確認用`）だけ */
 const PATH = "灯台守_確認用/本文/第1話 手紙.txt";
@@ -13,7 +13,7 @@ test("［…］→ 誤字脱字：書きかけを保存してから、この話�
   await editor.press("End");
   await page.keyboard.type("足した");
   await page.locator("#episodeMore").click();
-  await expect(page.locator(".dialog-choices .dialog-list button")).toHaveText(["誤字脱字", "推敲", "あらすじ"]);
+  await expect(page.locator(".dialog-choices .dialog-list button")).toHaveText(["新しい話", "誤字脱字", "推敲", "あらすじ"]);
   await page.locator(".dialog-choices button", { hasText: "誤字脱字" }).click();
   await expect(page).toHaveURL(/#\/typo\//);
   await expect(page.locator(".estimate")).toContainText("第1話 手紙");
@@ -27,4 +27,26 @@ test("［…］→ あらすじ：この話のあらすじの画面へ", async (
   await page.locator("#episodeMore").click();
   await page.locator(".dialog-choices button", { hasText: "あらすじ" }).click();
   await expect(page).toHaveURL(/#\/synopsis\//);
+});
+
+test("［…］→ 新しい話：次の番号の名前を出し、空の話を作って開く。同じ名前は作らない。在るファイルは上書きしない", async ({ page }) => {
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "新しい話" }).click();
+  const input = page.locator("#dialogInput");
+  // 第1〜4話があるので、いちばん新しい話の流儀（第n話）で第5話
+  await expect(input).toHaveValue("第5話.txt");
+  // 在る名前は断る
+  await input.fill("第1話 手紙.txt");
+  await page.locator('.dialog [data-answer="yes"]').click();
+  await expect(page.locator(".dialog")).toContainText("同じ名前の話がもうあります");
+  await input.fill("第5話 灯.txt");
+  await page.locator('.dialog [data-answer="yes"]').click();
+  await expect(page).toHaveURL(/#\/episode\/.*%E7%AC%AC5%E8%A9%B1/);
+  await expect(page.locator("textarea#msEditor")).toHaveValue("");
+  expect(await listFakeFiles(page, "灯台守_確認用/本文/")).toContain("灯台守_確認用/本文/第5話 灯.txt");
+  expect(await readFakeFile(page, PATH)).toBe("姉から手紙が届いた。\n// 付箋：ここは後で直す\n");
+  expect((await listFakeFiles(page, "灯台守_確認用/本文/")).length).toBe(5);
 });

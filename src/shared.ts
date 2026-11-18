@@ -80,7 +80,8 @@ export {
   type EntryKind,
   type Listing,
 } from "novel-ai-assistant/src/core/manuscriptFolderRule";
-export { parseEpisodeFileName } from "novel-ai-assistant/src/core/episodeParser";
+export { nextChapterNumber, nextDatedName, nextUntitledName, parseEpisodeFileName } from "novel-ai-assistant/src/core/episodeParser";
+export { findLatestEpisode } from "novel-ai-assistant/src/core/latestEpisode";
 export { parseEpisodeMetadata } from "novel-ai-assistant/src/core/metadataParser";
 export { parseCollectedFile } from "novel-ai-assistant/src/core/collectedFile";
 export { isWorkInfoFile } from "novel-ai-assistant/src/core/workInfoFile";

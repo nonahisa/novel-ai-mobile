@@ -35,6 +35,7 @@ import {
   type TrialPrefs,
 } from "./tategakiDraft";
 import { askChoice, askText, chooseFrom, tell } from "./dialog";
+import { checkEpisodeName, createEpisode, manuscriptFileNames, suggestEpisodeName } from "./newEpisode";
 import { applyBodyFont, parseBodyFont, readBodyFont, renderBodyFontSection, writeBodyFont } from "./bodyFont";
 import { renameWork } from "../platform/workRename";
 import { checkRemovable, removeWorkFolder } from "../platform/workRemove";
@@ -437,6 +438,23 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   let pendingCaret: { path: string; offset: number } | undefined;
   /** 保存を済ませている最中（重ねて離れようとしても1回だけ） */
   let leaving = false;
+  /** ［…］→ 新しい話（`newEpisode.ts`）。名前の案を出して訊き、空の話を作って開く */
+  const addEpisode = async (root: string) => {
+    try {
+      const work = await scanWorkFolder(store, root, scanOptions);
+      const existing = await manuscriptFileNames(store, root);
+      const name = await askText("新しい話のファイルの名前", {
+        initial: suggestEpisodeName(work),
+        okLabel: "作る",
+        validate: (value) => checkEpisodeName(value, existing),
+      });
+      if (name === undefined) return;
+      const path = await createEpisode(store, root, name);
+      location.hash = episodeHash(root, path);
+    } catch (error) {
+      toast(`新しい話を作れませんでした（${error instanceof Error ? error.message : String(error)}）`);
+    }
+  };
   const render = () => {
     if (leaveGuard?.beforeLeave && !leaveConfirmed) {
       // 原稿エディター：URL を戻して保存を済ませ、済んだら（済まなければ訊いて）移る
@@ -562,6 +580,8 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
             runAi: (kind) => {
               location.hash = kind === "typo" ? typoHash(episodeRoot, route.path) : kind === "proofread" ? proofreadHash(episodeRoot, route.path) : synopsisHash(episodeRoot, route.path);
             },
+            // ［…］→ 新しい話：名前を訊いて空の話を作り、開く（`newEpisode.ts`。在るファイルは上書きしない）
+            newEpisode: () => void addEpisode(episodeRoot),
           });
         }
         fillEpisodeSide(screen, store, route.root, route.path, scanOptions, stillHere);

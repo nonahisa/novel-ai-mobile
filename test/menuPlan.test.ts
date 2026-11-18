@@ -18,7 +18,7 @@ import { parseRoute } from "../src/app/shell";
  * 作ってある項目だけが画面を開き、ほかは灰色で「まだ作っていません」と出ることを見張る。
  */
 
-const SCREENS: readonly ScreenId[] = ["tategaki", "check", "allActions", "github", "import", "display", "licenses", "ai"];
+const SCREENS: readonly ScreenId[] = ["tategaki", "check", "allActions", "github", "import", "display", "licenses", "ai", "drafts"];
 
 /** 本体の木の操作の名前を全部 */
 function bodyLabels(): Set<string> {
@@ -39,7 +39,7 @@ describe("下のタブ（4.3）", () => {
   test("作ってある項目は、知っている画面だけを開く", () => {
     const built = TABS.flatMap((t) => t.sections.flatMap((s) => s.items)).filter((i) => i.built);
     for (const item of built) expect(SCREENS).toContain(item.built);
-    expect(built.map((i) => i.label)).toEqual(["すべての機能", "AI", "GitHub と同期", "表示", "バージョン確認", "ライセンス"]);
+    expect(built.map((i) => i.label)).toEqual(["すべての機能", "AI", "GitHub と同期", "表示", "書きかけの控え", "バージョン確認", "ライセンス"]);
   });
 
   test("試しの画面はタブに置かず、すべての機能のいちばん下にだけ置く（2026-11-18 作者「テスト用のものでなくてもいい」）", () => {

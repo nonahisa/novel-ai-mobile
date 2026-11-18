@@ -3,8 +3,13 @@ import { escapeHtml } from "./menuScreen";
 /**
  * **見た目の案を選ぶ**（設定 → 表示 → 見た目。2026-11-18 作者「選べるようにしてください」）。
  * 色・字・余白・札の形だけを替える（`src/looks.css`）。並びと動きは替えない。端末ごとに覚える（同期しない）。
- * 既定は標準（いまの色）。既定をどれにするかは、写真を添えて作者に訊く
+ * **既定は白と藍**（2026-11-18 作者の答え「白と藍」。並べ写真を見てから）。まだ選んでいない人は白と藍で開く。
+ * 選んだ人の見た目は替えない：標準を選んだら「標準」と覚える（0.1.90 までは標準を選ぶと覚えを消していたので、
+ * そのころ標準を選んだ人は白と藍になる）
  */
+
+/** まだ選んでいないときの見た目 */
+export const DEFAULT_LOOK: LookId = "hakuai";
 
 export type LookId = "standard" | "washi" | "hakuai" | "sumishu";
 
@@ -18,21 +23,21 @@ export const LOOKS: readonly { id: LookId; label: string; paper: string; accent:
 export const LOOK_KEY = "novelai.look";
 
 export function parseLook(raw: string | null | undefined): LookId {
-  return LOOKS.some((look) => look.id === raw) ? (raw as LookId) : "standard";
+  return LOOKS.some((look) => look.id === raw) ? (raw as LookId) : DEFAULT_LOOK;
 }
 
 export function readLook(storage: Pick<Storage, "getItem"> | undefined): LookId {
   try {
     return parseLook(storage?.getItem(LOOK_KEY));
   } catch {
-    return "standard";
+    return DEFAULT_LOOK;
   }
 }
 
 export function writeLook(storage: Pick<Storage, "setItem" | "removeItem"> | undefined, look: LookId): void {
   try {
-    if (look === "standard") storage?.removeItem(LOOK_KEY);
-    else storage?.setItem(LOOK_KEY, look);
+    // 標準も覚える（覚えが無いと既定の白と藍で開くため）
+    storage?.setItem(LOOK_KEY, look);
   } catch {
     /* 覚えられなくても、いまの画面は替わる */
   }

@@ -1,6 +1,20 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openWithWorks } from "./support/fakeWorks";
 
+/*
+  この試験は「標準」の見た目の見本の値（色・札の形・高さ）を見張る。既定は白と藍になった（2026-11-18 作者の答え）ので、
+  標準を選んだ形で開く。ほかの見た目は lookChoice.e2e.ts で見る
+*/
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("novelai.look", "standard");
+    } catch {
+      /* 置けなければ既定のまま */
+    }
+  });
+});
+
 /**
  * **画面の自動テスト**（設計書 9章）。見た目が画面の見本（アーティファクト「Android版 画面デザイン」＝
  * `docs/画面デザイン.html`）にそろっているか、押して動くかを見る。

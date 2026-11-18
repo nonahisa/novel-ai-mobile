@@ -155,7 +155,9 @@
   font-weight: 500;
 }
 :root[data-look="hakuai"] .menu-item::after {
+  /* 飾りの › は読み上げない（押し口の名前に入れない。代わりの字は空） */
   content: "›";
+  content: "›" / "";
   position: absolute;
   right: 14px;
   top: 50%;

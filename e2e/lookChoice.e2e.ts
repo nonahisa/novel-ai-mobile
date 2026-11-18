@@ -5,11 +5,12 @@ import { openWithWorks } from "./support/fakeWorks";
  * **見た目の案を選ぶ**（設定 → 表示 → 見た目。`src/app/look.ts`・`src/looks.css`。2026-11-18 作者「選べるようにしてください」）
  */
 test.describe("見た目の案", () => {
-  test("表示の画面で選ぶと、すぐに替わり、開き直しても覚えている。標準に戻せる", async ({ page }) => {
+  test("まだ選んでいなければ白と藍（2026-11-18 作者の答え）。選ぶとすぐに替わり、開き直しても覚えている。標準を選べば標準のまま", async ({ page }) => {
     await page.goto("/#/display");
     const choices = page.locator("[data-look-choice]");
     await expect(choices).toHaveText(["標準", "和紙と墨", "白と藍", "墨と朱"]);
-    await expect(page.locator('[data-look-choice="standard"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator('[data-look-choice="hakuai"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("html")).toHaveAttribute("data-look", "hakuai");
     const paper = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     const before = await paper();
 
@@ -21,9 +22,13 @@ test.describe("見た目の案", () => {
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-look", "washi");
 
+    await page.locator('[data-look-choice="hakuai"]').click();
+    expect(await paper()).toBe(before);
     await page.locator('[data-look-choice="standard"]').click();
     await expect(page.locator("html")).not.toHaveAttribute("data-look", /.+/);
-    expect(await paper()).toBe(before);
+    await page.reload();
+    await expect(page.locator('[data-look-choice="standard"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("html")).not.toHaveAttribute("data-look", /.+/);
   });
 
   for (const look of ["washi", "hakuai", "sumishu"]) {

@@ -30,6 +30,9 @@ async function openFirstEpisode(page: Page): Promise<void> {
   await page.locator(".ep-list .ep").first().click();
   await expect(page.locator("#msEditor")).toBeVisible();
   await page.locator(".appbar-back").click();
+  // 離れるときは保存を済ませてから移る（非同期）。移り終わるまで待たないと、あとで変えた場所が上書きされる
+  await expect(page).not.toHaveURL(/#\/episode\//);
+  await expect(page.locator("#msEditor")).toHaveCount(0);
 }
 
 test.describe("誤字脱字", () => {

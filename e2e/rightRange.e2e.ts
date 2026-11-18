@@ -125,18 +125,29 @@ for (const build of ["EditContext", "受け口"] as const) {
       await page.mouse.up();
       // 長押しのあとの click でカーソルを置き直さない（範囲が残る）
       await expect(page.locator("#msEditor .sel")).toHaveText(["手", "紙"]);
+      // 指を離したときに焦点が入る（キーボードが出る。2026-11-18 Mac：起こしてすぐの長押しでは打てなかった）
+      await expect
+        .poll(() => page.evaluate(() => document.activeElement?.id === "msEditor" || document.activeElement?.classList.contains("ime-sink") === true))
+        .toBe(true);
       const handles = page.locator(".range-handle:not([hidden])");
       await expect(handles).toHaveCount(2);
 
-      // 末のつまみを「届」の後ろ半分まで引く
+      // 末のつまみを掴み、範囲の端（「紙」の後ろ）を「届」の後ろ半分まで動かす分だけ指を動かす
+      // （つまみの丸は列の外にある。引くあいだは、掴んだときの指と端のずれを保って読む。2026-11-18 Mac）
       const grip = await page.locator('.range-handle[data-end="end"]').boundingBox();
-      const to = await page.locator("#msEditor").evaluate((el) => {
-        const r = el.querySelector('[data-i="6"]')!.getBoundingClientRect();
-        return el.classList.contains("vertical") ? { x: r.x + r.width / 2, y: r.y + r.height * 0.8 } : { x: r.x + r.width * 0.8, y: r.y + r.height / 2 };
+      const move = await page.locator("#msEditor").evaluate((el) => {
+        const vertical = el.classList.contains("vertical");
+        const from = el.querySelector('[data-i="4"]')!.getBoundingClientRect();
+        const to = el.querySelector('[data-i="6"]')!.getBoundingClientRect();
+        const edge = vertical ? { x: from.x + from.width / 2, y: from.bottom } : { x: from.right, y: from.y + from.height / 2 };
+        const goal = vertical ? { x: to.x + to.width / 2, y: to.y + to.height * 0.8 } : { x: to.x + to.width * 0.8, y: to.y + to.height / 2 };
+        return { dx: goal.x - edge.x, dy: goal.y - edge.y };
       });
-      await page.mouse.move(grip!.x + grip!.width / 2, grip!.y + grip!.height / 2);
+      const gx = grip!.x + grip!.width / 2;
+      const gy = grip!.y + grip!.height / 2;
+      await page.mouse.move(gx, gy);
       await page.mouse.down();
-      await page.mouse.move(to.x, to.y, { steps: 6 });
+      await page.mouse.move(gx + move.dx, gy + move.dy, { steps: 6 });
       await page.mouse.up();
       await expect(page.locator("#msEditor .sel")).toHaveText(["手", "紙", "が", "届"]);
 

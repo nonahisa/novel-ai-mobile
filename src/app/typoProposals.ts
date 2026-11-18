@@ -11,14 +11,29 @@ import type { TypoFinding } from "../platform/typoCheck";
 
 export const PROPOSALS_KEY = "novelai.proposals.typo";
 
-export interface TypoProposal extends TypoFinding {
+/** 提案の種類。無ければ誤字脱字（0.1.95 までに覚えた提案は誤字脱字だけ） */
+export type ProposalKind = "typo" | "proofread";
+
+/** 提案に並べる1件（誤字脱字・推敲。推敲は説明が付き、修正案が空のこともある） */
+export type ProposalFinding = TypoFinding & { explanation?: string };
+
+export interface TypoProposal extends ProposalFinding {
   /** 作品（置き場の根から） */
   root: string;
   id: string;
+  kind?: "proofread";
 }
 
-export function proposalId(finding: Pick<TypoFinding, "path" | "line" | "target" | "suggestion">): string {
-  return `${finding.path}#${finding.line}#${finding.target}→${finding.suggestion}`;
+export function kindOf(item: Pick<TypoProposal, "kind">): ProposalKind {
+  return item.kind === "proofread" ? "proofread" : "typo";
+}
+
+export function proposalId(finding: Pick<TypoFinding, "path" | "line" | "target" | "suggestion">, kind: ProposalKind = "typo"): string {
+  return `${kind === "proofread" ? "推敲:" : ""}${finding.path}#${finding.line}#${finding.target}→${finding.suggestion}`;
+}
+
+function toProposal(finding: ProposalFinding, root: string, kind: ProposalKind): TypoProposal {
+  return { ...finding, root, id: proposalId(finding, kind), ...(kind === "proofread" ? { kind: "proofread" as const } : {}) };
 }
 
 export function parseProposals(raw: string | null | undefined): TypoProposal[] {
@@ -31,36 +46,47 @@ export function parseProposals(raw: string | null | undefined): TypoProposal[] {
         typeof item === "object" &&
         item !== null &&
         ["root", "id", "path", "original", "target", "suggestion", "reason", "confidence"].every((key) => typeof (item as Record<string, unknown>)[key] === "string") &&
-        Number.isInteger((item as Record<string, unknown>).line)
+        Number.isInteger((item as Record<string, unknown>).line) &&
+        ["undefined", "string"].includes(typeof (item as Record<string, unknown>).explanation) &&
+        [undefined, "proofread"].includes((item as Record<string, unknown>).kind as string | undefined)
     );
   } catch {
     return [];
   }
 }
 
-/** 一話を走らせ直したら、その話の前の指摘は入れ替える（古い指摘は本文と合わなくなっていることがある） */
-export function replaceEpisodeProposals(list: readonly TypoProposal[], root: string, path: string, findings: readonly TypoFinding[]): TypoProposal[] {
-  const kept = list.filter((item) => item.path !== path);
+/**
+ * 一話を走らせ直したら、その話の前の指摘は入れ替える（古い指摘は本文と合わなくなっていることがある）。
+ * 入れ替えるのは同じ種類だけ（推敲を走らせても、その話の誤字脱字の指摘は残す）
+ */
+export function replaceEpisodeProposals(
+  list: readonly TypoProposal[],
+  root: string,
+  path: string,
+  findings: readonly ProposalFinding[],
+  kind: ProposalKind = "typo"
+): TypoProposal[] {
+  const kept = list.filter((item) => item.path !== path || kindOf(item) !== kind);
   const seen = new Set<string>();
   const fresh: TypoProposal[] = [];
   for (const finding of findings) {
-    const id = proposalId(finding);
-    if (seen.has(id)) continue;
-    seen.add(id);
-    fresh.push({ ...finding, root, id });
+    const proposal = toProposal(finding, root, kind);
+    if (seen.has(proposal.id)) continue;
+    seen.add(proposal.id);
+    fresh.push(proposal);
   }
   return [...kept, ...fresh];
 }
 
 /** 前の指摘を消さずに足す（同じ指摘は重ねない） */
-export function addProposals(list: readonly TypoProposal[], root: string, findings: readonly TypoFinding[]): TypoProposal[] {
+export function addProposals(list: readonly TypoProposal[], root: string, findings: readonly ProposalFinding[], kind: ProposalKind = "typo"): TypoProposal[] {
   const seen = new Set(list.map((item) => item.id));
   const out = [...list];
   for (const finding of findings) {
-    const id = proposalId(finding);
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push({ ...finding, root, id });
+    const proposal = toProposal(finding, root, kind);
+    if (seen.has(proposal.id)) continue;
+    seen.add(proposal.id);
+    out.push(proposal);
   }
   return out;
 }
@@ -106,11 +132,14 @@ export function renderProposals(list: readonly TypoProposal[]): string {
       .sort((a, b) => a.line - b.line)
       .map(
         (item) =>
-          `<li class="proposal" data-proposal="${escapeHtml(item.id)}">` +
+          `<li class="proposal" data-proposal="${escapeHtml(item.id)}" data-kind="${kindOf(item)}">` +
           `<p class="proposal-line">${markTarget(item.original, item.target)}</p>` +
-          `<p class="proposal-fix"><span class="proposal-from">${escapeHtml(item.target)}</span> → <span class="proposal-to">${escapeHtml(item.suggestion)}</span></p>` +
-          `<p class="proposal-why">${escapeHtml(`${item.line}行・${item.reason}`)}</p>` +
-          `<div class="proposal-actions"><button class="ghost" data-dismiss="${escapeHtml(item.id)}">見送る</button><button data-accept="${escapeHtml(item.id)}">採る</button></div>` +
+          // 推敲の語尾単調・視点・長文などは修正案が空（直し方は作者に任せる）。そのときは［採る］を出さない
+          (item.suggestion
+            ? `<p class="proposal-fix"><span class="proposal-from">${escapeHtml(item.target)}</span> → <span class="proposal-to">${escapeHtml(item.suggestion)}</span></p>`
+            : "") +
+          `<p class="proposal-why">${escapeHtml(`${item.line}行・${kindOf(item) === "proofread" ? "推敲・" : ""}${item.reason}${item.explanation ? `：${item.explanation}` : ""}`)}</p>` +
+          `<div class="proposal-actions"><button class="ghost" data-dismiss="${escapeHtml(item.id)}">見送る</button>${item.suggestion ? `<button data-accept="${escapeHtml(item.id)}">採る</button>` : ""}</div>` +
           `</li>`
       )
       .join("");
@@ -125,6 +154,8 @@ export function renderTypoEntry(last: { root: string; path: string } | undefined
   return (
     `<section class="menu-section typo-entry"><h2>AI で見る</h2><div class="menu-items">` +
     `<button class="menu-item built" data-typo-path="${escapeHtml(last.path)}" data-typo-root="${escapeHtml(last.root)}">` +
-    `誤字脱字<span class="menu-note">${escapeHtml(episodeName(last.path))}</span></button></div></section>`
+    `誤字脱字<span class="menu-note">${escapeHtml(episodeName(last.path))}</span></button>` +
+    `<button class="menu-item built" data-proofread-path="${escapeHtml(last.path)}" data-proofread-root="${escapeHtml(last.root)}">` +
+    `推敲<span class="menu-note">${escapeHtml(episodeName(last.path))}</span></button></div></section>`
   );
 }

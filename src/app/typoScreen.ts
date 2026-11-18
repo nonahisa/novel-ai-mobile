@@ -5,7 +5,9 @@ import type { DeviceSettings } from "../platform/deviceSettings";
 import type { FileStore } from "../platform/fileStore";
 import type { SecretVault } from "../platform/secretVault";
 import { readTextFile } from "../platform/textFile";
-import { checkEpisodeTypos, typoCheckChunks, type TypoCheckInput, type TypoCheckResult } from "../platform/typoCheck";
+import { checkEpisodeTypos, typoCheckChunks, type ModelCall, type TypoCheckInput, type TypoCheckResult } from "../platform/typoCheck";
+import { checkEpisodeProofread, readKeepWords } from "../platform/proofreadCheck";
+import type { KeepWord } from "../shared";
 import { typoCallerFor } from "../platform/typoCallers";
 import { readWorkLayout } from "../platform/workScan";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
@@ -20,6 +22,8 @@ import { addProposals, readProposals, replaceEpisodeProposals, writeProposals } 
  */
 
 export interface TypoRunDeps {
+  /** 誤字脱字か推敲か（見積もり・確認・走らせ方は同じ。頼む文と指摘の種類が違う） */
+  check: "typo" | "proofread";
   store: FileStore;
   root: string;
   path: string;
@@ -57,22 +61,26 @@ function episodeName(path: string): string {
 }
 
 export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void {
-  screen.innerHTML = `${renderAppBar("誤字脱字", { back: true })}<div id="typoSlot" aria-busy="true"></div>`;
+  const label = deps.check === "typo" ? "誤字脱字" : "推敲";
+  screen.innerHTML = `${renderAppBar(label, { back: true })}<div id="typoSlot" aria-busy="true"></div>`;
   const slot = screen.querySelector<HTMLElement>("#typoSlot")!;
   const abort = new AbortController();
   void (async () => {
     let input: TypoCheckInput;
+    let keepWords: KeepWord[] = [];
     let conflicted = false;
     try {
       const [content, layout] = await Promise.all([readTextFile(deps.store, deps.path), readWorkLayout(deps.store, deps.root)]);
       conflicted = containsConflictMarkers(content.text);
       const own = (await readWorkTerms(deps.store, layout.settings)).entries;
       const series = await readSeriesTerms(deps.store, deps.root).catch(() => []);
+      keepWords = await readKeepWords(deps.store, layout.settings);
       input = {
         path: deps.path,
         text: content.text.replace(/\r\n?/g, "\n"),
         memoMarkers: layout.memoMarkers,
         properNouns: [...own, ...series].map((entry) => entry.text),
+        keepWords,
       };
     } catch (error) {
       if (deps.stillHere()) slot.innerHTML = `<p class="flag shu long">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
@@ -82,7 +90,7 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
     const usable = new Set<CloudProviderId>();
     for (const provider of CLOUD_PROVIDERS) if ((await deps.vault.get(provider.secret)) !== undefined) usable.add(provider.id);
     const { assignments, defaultChoice } = readAiChoices(settings);
-    const decision = decideFeatureAI("typo", assignments, defaultChoice, (id) => usable.has(id));
+    const decision = decideFeatureAI(deps.check, assignments, defaultChoice, (id) => usable.has(id));
     const choice = decision.choice;
     const calls = typoCheckChunks(input).length;
     const chars = countChars(input.text, true, input.memoMarkers).net;
@@ -90,7 +98,7 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
     const problem = conflicted
       ? "競合が残っている話には AI を当てません"
       : !choice || !provider
-        ? "誤字脱字に使う AI がまだありません"
+        ? `${label}に使う AI がまだありません`
         : undefined;
     const priceLine = choice && provider ? paidUsageNotice(provider.displayName, choice.model, { sends: "", calls }).lines[2]?.replace(/^料金[:：]\s*/, "") : undefined;
     if (!deps.stillHere()) return;
@@ -107,7 +115,7 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
     run.addEventListener("click", () => {
       void (async () => {
         const ok = await confirmPaidUsage({
-          actionLabel: "誤字脱字",
+          actionLabel: label,
           providerId: provider.id,
           providerName: provider.displayName,
           model: choice.model,
@@ -121,24 +129,26 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
         const caller = typoCallerFor(provider.id, key, choice.model);
         let done = 0;
         progress.textContent = `AI に見せています（0/${calls}）`;
-        const result = await checkEpisodeTypos(
-          input,
-          async (request) => {
-            try {
-              return await caller(request);
-            } finally {
-              done++;
-              if (deps.stillHere()) progress.textContent = `AI に見せています（${done}/${calls}）`;
-            }
-          },
-          abort.signal
-        );
+        const counted: ModelCall = async (request) => {
+          try {
+            return await caller(request);
+          } finally {
+            done++;
+            if (deps.stillHere()) progress.textContent = `AI に見せています（${done}/${calls}）`;
+          }
+        };
+        const result: TypoCheckResult =
+          deps.check === "typo"
+            ? await checkEpisodeTypos(input, counted, abort.signal)
+            : await checkEpisodeProofread({ path: input.path, text: input.text, memoMarkers: input.memoMarkers, keepWords }, counted, abort.signal);
         // 失敗した区切りがあっても、見られた所の指摘は残す（払った分を捨てない）。前の指摘はこの話の分だけ入れ替える。
         // 途中で画面を離れたら、前の指摘は消さずに足すだけ（見ていない所の指摘が残るように）
         const before = readProposals(globalThis.localStorage);
         writeProposals(
           globalThis.localStorage,
-          abort.signal.aborted ? addProposals(before, deps.root, result.findings) : replaceEpisodeProposals(before, deps.root, deps.path, result.findings)
+          abort.signal.aborted
+            ? addProposals(before, deps.root, result.findings, deps.check)
+            : replaceEpisodeProposals(before, deps.root, deps.path, result.findings, deps.check)
         );
         if (abort.signal.aborted) return;
         if (!deps.stillHere()) return;

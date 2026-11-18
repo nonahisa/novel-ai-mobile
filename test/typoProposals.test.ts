@@ -79,3 +79,31 @@ describe("採った指摘を本文へ当てる", () => {
     expect(recovered).toHaveLength(1);
   });
 });
+
+describe("推敲の提案（2026-11-18）", () => {
+  const typo = { path: "作/本文/1.txt", line: 1, original: "がが届いた", target: "がが", suggestion: "が", reason: "衍字", confidence: "high" as const };
+  const proofread = { path: "作/本文/1.txt", line: 2, original: "とてもとても", target: "とてもとても", suggestion: "", reason: "語尾単調", explanation: "4文続けて「た」で終わる", confidence: "medium" as const };
+  test("推敲を走らせ直しても、同じ話の誤字脱字の指摘は残す（入れ替えるのは同じ種類だけ）", () => {
+    const withTypo = replaceEpisodeProposals([], "作", "作/本文/1.txt", [typo]);
+    const both = replaceEpisodeProposals(withTypo, "作", "作/本文/1.txt", [proofread], "proofread");
+    expect(both.map((item) => item.kind ?? "typo")).toEqual(["typo", "proofread"]);
+    const again = replaceEpisodeProposals(both, "作", "作/本文/1.txt", [], "proofread");
+    expect(again.map((item) => item.kind ?? "typo")).toEqual(["typo"]);
+  });
+  test("修正案の無い推敲の指摘には［採る］を出さず、観点と説明を出す", () => {
+    const html = renderProposals(replaceEpisodeProposals([], "作", "作/本文/1.txt", [proofread], "proofread"));
+    expect(html).not.toContain("data-accept");
+    expect(html).toContain("data-dismiss");
+    expect(html).toContain("推敲・語尾単調：4文続けて「た」で終わる");
+  });
+  test("前に覚えた提案（種類の印が無い）は誤字脱字として読む。推敲の id は誤字脱字と重ならない", () => {
+    const stored = JSON.stringify([{ ...typo, root: "作", id: "x" }]);
+    expect(parseProposals(stored)).toHaveLength(1);
+    expect(proposalId(proofread, "proofread")).not.toBe(proposalId(proofread));
+  });
+  test("［提案］の頭に、最後に開いた話の誤字脱字と推敲の入口", () => {
+    const html = renderTypoEntry({ root: "作", path: "作/本文/第1話.txt" });
+    expect(html).toContain("data-typo-path");
+    expect(html).toContain("data-proofread-path");
+  });
+});

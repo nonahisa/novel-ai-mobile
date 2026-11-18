@@ -148,3 +148,20 @@ export {
 export { parseTypoCheckResult, validateTypoIssues, looksArchaicText, type AcceptedTypoIssue } from "novel-ai-assistant/src/core/typoCheckValidation";
 export { applyFindingToText } from "novel-ai-assistant/src/core/findingApply";
 export { toOpenAIJsonSchema, toGeminiSchema } from "novel-ai-assistant/src/ai/jsonSchema";
+// 推敲（段2。2026-11-18）：頼みの文・スキーマ・答えの読み方と確かめ・作品の作法・直さない語
+export {
+  buildProofreadPrompt,
+  issueBudget,
+  PROOFREAD_SCHEMA,
+  PROOFREAD_SYSTEM_PROMPT,
+  PROOFREAD_TEMPERATURE,
+} from "novel-ai-assistant/src/prompts/proofread";
+export {
+  parseProofreadResult,
+  validateProofreadIssues,
+  locateProofreadIssue,
+  sortProofreadIssues,
+  type AcceptedProofreadIssue,
+} from "novel-ai-assistant/src/core/proofreadValidation";
+export { collectWorkStyle, buildStyleNote } from "novel-ai-assistant/src/core/workStyleFacts";
+export { parseKeepWordSet, type KeepWord } from "novel-ai-assistant/src/models/keepWord";

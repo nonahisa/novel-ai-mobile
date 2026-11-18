@@ -141,6 +141,49 @@ test.describe("誤字脱字", () => {
     await expect(page.locator("[data-typo-path]")).toContainText("第1話 手紙");
   });
 
+  test("推敲（2026-11-18）：［提案］の頭から走らせ、観点と説明つきの指摘が並び、採ると本文が直る。誤字脱字の指摘は残る", async ({ page }) => {
+    const prompts: string[] = [];
+    await page.route("https://api.anthropic.com/v1/messages", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ headers: CORS });
+      const body = route.request().postDataJSON() as { system: string };
+      prompts.push(body.system);
+      const proofread = body.system.includes("読みにくい");
+      const issues = proofread
+        ? [{ line: 1, original: "姉から手紙がが届いた。", target: "姉から手紙がが届いた。", suggestion: "姉から手紙が届いた。", reason: "冗長", explanation: "「がが」が重なっている", confidence: "high" }]
+        : [{ line: 1, original: "姉から手紙がが届いた。", target: "がが", suggestion: "が", reason: "衍字", confidence: "high" }];
+      return route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ issues }) }], stop_reason: "end_turn" }) });
+    });
+    await setUpClaude(page);
+    await openFirstEpisode(page);
+    // 先に誤字脱字
+    await page.locator('#tabbar [data-tab="proposals"]').click();
+    await page.locator("[data-typo-path]").click();
+    await page.locator("#typoRun").click();
+    await page.locator('[data-answer="yes"]').click();
+    await expect(page.locator("#typoProgress")).toHaveText("指摘 1件");
+    // つぎに推敲
+    await page.locator('#tabbar [data-tab="proposals"]').click();
+    await page.locator("[data-proofread-path]").click();
+    await expect(page).toHaveURL(/#\/proofread\//);
+    await expect(page.locator(".appbar-title")).toContainText("推敲");
+    await page.locator("#typoRun").click();
+    await page.locator('[data-answer="yes"]').click();
+    await expect(page.locator("#typoProgress")).toHaveText("指摘 1件");
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).not.toBe(prompts[0]);
+
+    await page.locator('[data-tab="proposals"]').last().click();
+    const items = page.locator(".proposal");
+    await expect(items).toHaveCount(2);
+    const proofreadItem = page.locator('.proposal[data-kind="proofread"]');
+    await expect(proofreadItem.locator(".proposal-why")).toContainText("推敲・冗長：「がが」が重なっている");
+    await proofreadItem.locator("[data-accept]").click();
+    await expect(page.locator("#toast")).toHaveText("本文を直しました");
+    expect(await readFakeFile(page, FIRST)).toBe("姉から手紙が届いた。\n");
+    // 誤字脱字の指摘は消えずに残る（本文が直ったので、採ろうとすると外れる）
+    await expect(page.locator('.proposal[data-kind="typo"]')).toHaveCount(1);
+  });
+
   test("確認の窓でやめたら送らない。見送ると本文は変えずに一覧から消える", async ({ page }) => {
     let calls = 0;
     await page.route("https://api.anthropic.com/v1/messages", (route) => {

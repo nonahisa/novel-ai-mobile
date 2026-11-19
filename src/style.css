@@ -1240,11 +1240,19 @@ button {
     grid-template-columns: 260px minmax(0, 1fr);
   }
 }
+/*
+  一覧の頭（作品名と［たたむ］）は、一覧を送っても上に留める（2026-11-20 iPhone 17 シミュレーター 0.1.133：開いた話の所まで
+  一覧が送られると、頭の行が見えない所へ隠れた）。下の札が透けないよう地の色を敷く
+*/
 .ms-side-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 8px 8px 4px 0;
+  padding: 8px 8px 4px 0;
+  background: var(--bg);
 }
 .ms-side-title {
   flex: 1;

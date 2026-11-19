@@ -612,6 +612,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "typo": {
         lastTabHash = "#/proposals";
         const stop = mountTypoRun(screen, {
+          undecidedConflicts: () => undecidedConflictPaths(store, route.root),
           check: route.check,
           // 画面の試験だけ、iOS の「裏に回ったら止める」を確かめられるようにする（端末では使わない）
           ...(!Capacitor.isNativePlatform() && (globalThis as { __novelaiTestPauseWhenHidden?: boolean }).__novelaiTestPauseWhenHidden ? { pauseWhenHidden: true } : {}),
@@ -629,6 +630,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "synopsis": {
         lastTabHash = "#/works";
         const stop = mountSynopsisRun(screen, {
+          undecidedConflicts: () => undecidedConflictPaths(store, route.root),
           store,
           root: route.root,
           path: route.path,
@@ -763,6 +765,18 @@ function touchedRecorder(store: FileStore): ((storePath: string) => Promise<void
 async function conflictsOf(store: FileStore, root: string): Promise<SyncConflictRow[]> {
   if (!(store instanceof CapacitorFileStore)) return [];
   return listConflicts(createGitFs(new CapacitorGitFsBackend()), root);
+}
+
+/**
+ * 競合したまま、まだ選んでいない話（置き場の中の場所）。AI の画面に渡し、選ぶまで当てない（設計書 6章）。
+ * 競合の道はリポジトリの中の道なので、頭にリポジトリ（作品の場所の頭）を付ける。画面の試験だけ（端末でないとき）、
+ * `__novelaiTestUndecidedConflicts` があればそれを使う
+ */
+async function undecidedConflictPaths(store: FileStore, root: string): Promise<string[]> {
+  const fake = (globalThis as { __novelaiTestUndecidedConflicts?: string[] }).__novelaiTestUndecidedConflicts;
+  if (!Capacitor.isNativePlatform() && Array.isArray(fake)) return fake;
+  const repo = root.split("/")[0];
+  return (await conflictsOf(store, root)).filter((row) => !row.decision).map((row) => `${repo}/${row.path}`);
 }
 
 /** 選ぶ画面から同期の画面へ持ち帰る1行（作品ごと。読んだら消す） */

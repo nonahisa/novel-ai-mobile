@@ -215,13 +215,40 @@ for (const build of ["EditContext", "受け口"] as const) {
       await page.mouse.up();
       const band = page.locator(".sel-band");
       await expect(band).toBeVisible();
-      await expect(band.locator("button")).toHaveText(["ルビ", "傍点", "資料を見る"]);
+      await expect(band.locator("button")).toHaveText(["ルビ", "傍点", "資料を見る", "コピー", "貼り付け"]);
       // 名前でない字で［資料を見る］は知らせる
       await band.locator('[data-band="term"]').click();
       await expect(page.locator("#toast")).toHaveText("選んだ字は、資料の名前ではありません");
       await band.locator('[data-band="emphasis"]').click();
       await expect.poll(() => paneText(page)).toBe("姉から{{手紙}}が届いた。\n// 付箋：ここは後で直す\n");
       await expect(band).toBeHidden();
+    });
+
+    test("帯の［コピー］で選んだ字が写しに入り、［貼り付け］で写しの字が範囲と置き換わる（取り消せる）", async ({ page, context }) => {
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await openRight(page);
+      const longPress = async (at: number) => {
+        const p = await page.locator("#msEditor").evaluate((el, i) => {
+          const r = el.querySelector(`[data-i="${i}"]`)!.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        }, at);
+        await page.mouse.move(p.x, p.y);
+        await page.mouse.down();
+        await page.waitForTimeout(700);
+        await page.mouse.up();
+      };
+      await longPress(4);
+      const band = page.locator(".sel-band");
+      await band.locator('[data-band="copy"]').click();
+      await expect(page.locator("#toast")).toHaveText("コピーしました");
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("手紙");
+
+      await page.evaluate(() => navigator.clipboard.writeText("便り"));
+      await longPress(4);
+      await band.locator('[data-band="paste"]').click();
+      await expect.poll(() => paneText(page)).toBe("姉から便りが届いた。\n// 付箋：ここは後で直す\n");
+      await tool(page, "取り消し").click();
+      await expect.poll(() => paneText(page)).toBe("姉から手紙が届いた。\n// 付箋：ここは後で直す\n");
     });
 
     test("範囲を選んで変換すると、変換中の字が範囲と置き換わる", async ({ page }) => {

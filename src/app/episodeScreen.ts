@@ -1,4 +1,5 @@
 import { PHONE_SHORT_SIDE, watchLandscapeKeyboard } from "./landscapeKeyboard";
+import { lockScrollChain } from "./scrollChainLock";
 import { exportCopy, exportTargets } from "./exportCopy";
 import { readWorkMemoMarkers } from "../platform/memoMarkers";
 import { App } from "@capacitor/app";
@@ -645,6 +646,12 @@ export function mountEpisodeScreen(
     if (blankPress) traceTouch("blank-cancel");
     blankPress = undefined;
   };
+  // キーボードが出ていて見える所が低いあいだ（`data-compact`）、一覧・横の板を指で送っても画面全体がずれないように
+  // （2026-11-20 iPhone 17 シミュレーター 0.1.130。`scrollChainLock.ts`）
+  const stopScrollChainLock = lockScrollChain(
+    [screen.querySelector<HTMLElement>("#msSide")!, screen.querySelector<HTMLElement>("#msBoard")!],
+    () => document.documentElement.dataset.compact === "on"
+  );
   document.addEventListener("pointerdown", onBlankDown, true);
   document.addEventListener("pointerup", onBlankUp, true);
   document.addEventListener("pointercancel", onBlankCancel, true);
@@ -1135,6 +1142,7 @@ export function mountEpisodeScreen(
       stopPinch();
       stopLandscapeKeyboard();
       stopBlankTap();
+      stopScrollChainLock();
       session?.dispose();
       pane?.destroy();
     },

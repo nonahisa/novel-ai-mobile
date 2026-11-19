@@ -226,3 +226,23 @@ function charBox(editor: import("@playwright/test").Locator, i: number) {
     return { x: b.x, y: b.y, w: b.width, h: b.height };
   }, i);
 }
+
+/** 押したあとに本文が変わったら（道具帯の［貼り付け］・ルビなど、打たずに入る字）、もう押した所へ戻さない */
+test("短く押したあとで本文が変わったら、カーソルを押した所へ戻さない", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("novelai.test.iosTextarea", "1"));
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("#msEditor");
+  await expect(editor).toBeVisible();
+  const kami = await charBox(editor, 4);
+  await page.mouse.click(kami.x + kami.w / 2, kami.y + kami.h * 0.5);
+  await expect.poll(() => editor.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(5);
+  // 打たずに字が入る（カーソルはその字の後ろ＝8）
+  await editor.evaluate((el: HTMLTextAreaElement) => el.setRangeText("ぜんぶ", 5, 5, "end"));
+  await page.waitForTimeout(300);
+  expect(await editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([8, 8]);
+  await editor.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(1, 1));
+  await page.waitForTimeout(300);
+  expect(await editor.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(1);
+});

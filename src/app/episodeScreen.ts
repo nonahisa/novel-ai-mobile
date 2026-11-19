@@ -1,4 +1,4 @@
-import { watchLandscapeKeyboard } from "./landscapeKeyboard";
+import { PHONE_SHORT_SIDE, watchLandscapeKeyboard } from "./landscapeKeyboard";
 import { exportCopy, exportTargets } from "./exportCopy";
 import { readWorkMemoMarkers } from "../platform/memoMarkers";
 import { App } from "@capacitor/app";
@@ -604,11 +604,14 @@ export function mountEpisodeScreen(
   // 空いた所（一覧の側・上のバーの余白など）を押したら、欄の焦点を外してキーボードを閉じる（2026-11-20 iPhone 17
   // シミュレーターの T7：横向きの iPhone のキーボードには閉じるキーが無く、空いた所を押しても閉じなかった。iOS は焦点の
   // 取れない所を押しても焦点を外さない）。欄の中・ボタンや入力の欄・引き出しの中は外さない
+  // 電話だけ（iPad のキーボードには閉じるキーがある。横の板の提案の字を押して焦点が外れないように）
   screen.addEventListener("click", (e) => {
+    if (Math.min(window.screen.width, window.screen.height) >= PHONE_SHORT_SIDE) return;
     const active = document.activeElement;
     if (!(active instanceof HTMLElement) || !host.contains(active)) return;
     const target = e.target as Element;
-    if (host.contains(target)) return;
+    // 押した字は、離すまでに欄が描き直して外れていることがある（受け口の作り）。外れた所は欄の中とみなす
+    if (!target.isConnected || host.contains(target)) return;
     if (target.closest(KEEPS_EDITOR_FOCUS)) return;
     active.blur();
   });

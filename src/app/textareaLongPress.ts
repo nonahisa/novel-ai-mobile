@@ -33,6 +33,9 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   let tapped: number | undefined;
   let tappedUntil = 0;
   let tapTimer: number | undefined;
+  /** 押したときの本文（道具帯の［貼り付け］などで本文が変わったら、もう戻さない） */
+  let tappedValue = "";
+  const trace = (what: string) => traceTap(what, area);
 
   const choose = () => {
     if (composing || !pressAt) return;
@@ -48,6 +51,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     timer = undefined;
   };
   const onDown = (e: PointerEvent) => {
+    trace("down");
     chosen = undefined;
     forgetTap();
     if (composing || e.button > 0) return;
@@ -75,6 +79,9 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   /** 短く押した所へ置く（端末がもう同じ所に置いていれば触らない） */
   const applyTap = () => {
     if (tapped === undefined || composing) return;
+    if (area.value !== tappedValue) return forgetTap();
+    if (document.activeElement === area && area.selectionStart !== area.selectionEnd) return forgetTap();
+    trace(`apply ${tapped}`);
     if (document.activeElement !== area) area.focus();
     if (area.selectionStart !== tapped || area.selectionEnd !== tapped) area.setSelectionRange(tapped, tapped);
   };
@@ -91,7 +98,9 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     // 離した直後には触らない：iOS の実機は、2度押しでないと分かるまで待ってからカーソルを（語の切れ目へ）置く。
     // 先にこちらが置くと、2度押しの語の選びが効かなくなった（2026-11-20 iPad mini 実機 0.1.127 の T3）。
     // 2度押しの間が過ぎたら置き、そのあと少しのあいだ、端末が置き直したら（範囲でないカーソルなら）こちらへ戻す（T1）
+    trace(`tap ${at}`);
     tapped = at;
+    tappedValue = area.value;
     tappedUntil = performance.now() + TAP_GUARD_MS;
     window.clearTimeout(tapTimer);
     tapTimer = window.setTimeout(() => {
@@ -101,7 +110,9 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   };
   /** 端末が置き直したカーソルを、押した字の後ろへ戻す。範囲が選ばれたら（2度押しの語など）そのままにする */
   const onSelectionChange = () => {
+    trace("selectionchange");
     if (tapped === undefined) return;
+    if (area.value !== tappedValue) return forgetTap();
     if (performance.now() > tappedUntil || document.activeElement !== area) {
       if (performance.now() > tappedUntil) forgetTap();
       return;
@@ -111,9 +122,13 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
       return;
     }
     if (tapTimer !== undefined) return; // 2度押しの間のうちは待つ（端末の置いた所は、間が過ぎたら直す）
-    if (area.selectionStart !== tapped) area.setSelectionRange(tapped, tapped);
+    if (area.selectionStart !== tapped) {
+      trace(`restore ${tapped}`);
+      area.setSelectionRange(tapped, tapped);
+    }
   };
   const onUp = (e: PointerEvent) => {
+    trace(`up moved=${moved} long=${timer === undefined}`);
     // 時計が遅れていても、押していた長さが足りていれば選ぶ（右の線の欄と同じ）
     if (timer !== undefined && e.timeStamp - pressedAtTime >= LONG_PRESS_MS) {
       cancel();
@@ -146,7 +161,11 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   area.addEventListener("pointerdown", onDown);
   area.addEventListener("pointermove", onMove);
   area.addEventListener("pointerup", onUp);
-  area.addEventListener("pointercancel", cancel);
+  const onPointerCancel = () => {
+    trace("cancel");
+    cancel();
+  };
+  area.addEventListener("pointercancel", onPointerCancel);
   area.addEventListener("compositionstart", onCompStart);
   area.addEventListener("compositionend", onCompEnd);
   // 打ち始めたら（字・矢印）もう戻さない。打つ前に間が過ぎていなければ、先に置く
@@ -158,7 +177,13 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   area.addEventListener("beforeinput", onKey);
   area.addEventListener("blur", forgetTap);
   document.addEventListener("selectionchange", onSelectionChange);
+  // 欄の外を押したら（道具帯・帯など）もう戻さない
+  const onDocDown = (e: PointerEvent) => {
+    if (!area.contains(e.target as Node)) forgetTap();
+  };
+  document.addEventListener("pointerdown", onDocDown, true);
   return () => {
+    document.removeEventListener("pointerdown", onDocDown, true);
     cancel();
     forgetTap();
     area.removeEventListener("keydown", onKey);
@@ -168,7 +193,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     area.removeEventListener("pointerdown", onDown);
     area.removeEventListener("pointermove", onMove);
     area.removeEventListener("pointerup", onUp);
-    area.removeEventListener("pointercancel", cancel);
+    area.removeEventListener("pointercancel", onPointerCancel);
     area.removeEventListener("compositionstart", onCompStart);
     area.removeEventListener("compositionend", onCompEnd);
   };
@@ -204,6 +229,18 @@ export function syncMirrorScroll(mirror: HTMLElement, area: HTMLTextAreaElement)
 
 /** 2度押しとみなす間（これより早く続けて押したら、2度目は iOS のままにする） */
 export const DOUBLE_TAP_MS = 350;
+/**
+ * 押しの道筋（実機で、端末とこちらのどちらがカーソルを置いたかを後から見るため）。直近 {@link TAP_TRACE_MAX} 件を
+ * `window.__novelaiTapTrace` に残す（Mac の Safari の Web インスペクタで読む。本文は残さない。位置の数だけ）
+ */
+export const TAP_TRACE_MAX = 60;
+function traceTap(what: string, area: HTMLTextAreaElement): void {
+  const w = window as unknown as { __novelaiTapTrace?: string[] };
+  const list = (w.__novelaiTapTrace ??= []);
+  list.push(`${Math.round(performance.now())} ${what} sel=${area.selectionStart}-${area.selectionEnd} focus=${document.activeElement === area}`);
+  if (list.length > TAP_TRACE_MAX) list.splice(0, list.length - TAP_TRACE_MAX);
+}
+
 /** 短く押したあと、端末が置き直したカーソルをこちらへ戻すあいだ（離してから） */
 export const TAP_GUARD_MS = 1500;
 /** 2度押しとみなす近さ（1度目の点から） */

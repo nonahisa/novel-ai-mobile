@@ -223,6 +223,28 @@ test.describe("誤字脱字", () => {
     await expect(page.locator(".proposal")).toHaveCount(1);
   });
 
+  test("同期で競合したまま選んでいない話（印が本文に無くても）は選べず、その話のあらすじも走らせない（設計書 6章「選ぶまで AI を当てない」）", async ({ page }) => {
+    // 端末では、取ってきた版との競合（git）から読む。画面の試験は、選んでいない話を差し入れる
+    await page.addInitScript(() => {
+      (globalThis as { __novelaiTestUndecidedConflicts?: string[] }).__novelaiTestUndecidedConflicts = ["灯台守_確認用/本文/第3話 霧笛.txt"];
+    });
+    await setUpClaude(page);
+    await openFirstEpisode(page);
+    await page.locator('#tabbar [data-tab="proposals"]').click();
+    await page.locator("[data-typo-path]").click();
+    await page.locator("#typoPick").click();
+    const rows = page.locator(".pick-list .pick-row");
+    const third = rows.filter({ hasText: "第3話 霧笛" });
+    await expect(third.locator("input")).toBeDisabled();
+    await expect(third.locator(".flag")).toHaveText("競合");
+    await page.locator("#pickAll").check();
+    // 第1・第2話だけ（第3話は選んでいない競合、第4話は競合の印）
+    await expect(page.locator(".pick-list input:checked")).toHaveCount(2);
+
+    await page.evaluate(() => (location.hash = `#/synopsis/${encodeURIComponent("灯台守_確認用")}/${encodeURIComponent("本文/第3話 霧笛.txt")}`));
+    await expect(page.locator("#typoSlot")).toContainText("競合が残っている話には AI を当てません");
+  });
+
   test("範囲で選ぶ（2026-11-18 作者の答え）：頭と末を選んで［この範囲を選ぶ］。競合の話は入らない", async ({ page }) => {
     await setUpClaude(page);
     await openFirstEpisode(page);

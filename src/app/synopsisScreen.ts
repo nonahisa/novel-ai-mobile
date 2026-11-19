@@ -27,6 +27,11 @@ import { findSynopsis } from "../shared";
  */
 
 export interface SynopsisRunDeps {
+  /**
+   * 同期で競合したまま、まだ［こちら］［あちら］［両方残す］を選んでいない話（置き場の中の場所）。設計書 6章「選ぶまで、
+   * その話には AI を当てない」。競合の印〈<<<<<<<〉が本文に無くても、選ぶまでは当てない。省けば無い
+   */
+  undecidedConflicts?: () => Promise<readonly string[]>;
   store: FileStore;
   root: string;
   path: string;
@@ -81,6 +86,8 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
     try {
       const content = await readTextFile(deps.store, deps.path);
       if (containsConflictMarkers(content.text)) return fail("競合が残っている話には AI を当てません");
+      const undecided = await (deps.undecidedConflicts?.() ?? Promise.resolve<readonly string[]>([])).catch((): readonly string[] => []);
+      if (undecided.includes(deps.path)) return fail("競合が残っている話には AI を当てません");
       const [work, layout] = await Promise.all([scanWorkFolder(deps.store, deps.root), readWorkLayout(deps.store, deps.root)]);
       const file = work.episodes.find((episode) => toStorePath(episode.filePath) === deps.path);
       if (!file) return fail("この話が作品の話の一覧に見つかりません");

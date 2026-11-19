@@ -28,6 +28,11 @@ import { addProposals, readProposals, replaceEpisodeProposals, writeProposals } 
 export interface TypoRunDeps {
   /** 誤字脱字か推敲か（見積もり・確認・走らせ方は同じ。頼む文と指摘の種類が違う） */
   check: "typo" | "proofread";
+  /**
+   * 同期で競合したまま、まだ［こちら］［あちら］［両方残す］を選んでいない話（置き場の中の場所）。設計書 6章「選ぶまで、
+   * その話には AI を当てない」。競合の印〈<<<<<<<〉が本文に無くても、選ぶまでは当てない。省けば無い
+   */
+  undecidedConflicts?: () => Promise<readonly string[]>;
   store: FileStore;
   root: string;
   path: string;
@@ -150,6 +155,7 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
     let properNouns: string[];
     let keepWords: KeepWord[];
     let rows: PickRow[];
+    let undecided = new Set<string>();
     try {
       const [layout, work] = await Promise.all([readWorkLayout(deps.store, deps.root), scanWorkFolder(deps.store, deps.root)]);
       memoMarkers = layout.memoMarkers;
@@ -157,11 +163,12 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
       const series = await readSeriesTerms(deps.store, deps.root).catch(() => []);
       properNouns = [...own, ...series].map((entry) => entry.text);
       keepWords = await readKeepWords(deps.store, layout.settings);
+      undecided = new Set(await (deps.undecidedConflicts?.() ?? Promise.resolve<readonly string[]>([])).catch((): readonly string[] => []));
       rows = work.episodes.flatMap((episode) => {
         const path = toStorePath(episode.filePath);
-        return path ? [{ path, name: episodeName(path), conflicted: episode.hasConflictMarkers === true }] : [];
+        return path ? [{ path, name: episodeName(path), conflicted: episode.hasConflictMarkers === true || undecided.has(path) }] : [];
       });
-      if (!rows.some((row) => row.path === deps.path)) rows.unshift({ path: deps.path, name: episodeName(deps.path), conflicted: false });
+      if (!rows.some((row) => row.path === deps.path)) rows.unshift({ path: deps.path, name: episodeName(deps.path), conflicted: undecided.has(deps.path) });
     } catch (error) {
       return fail(error);
     }
@@ -173,7 +180,7 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
       const content = await readTextFile(deps.store, path);
       const loaded = {
         input: { path, text: content.text.replace(/\r\n?/g, "\n"), memoMarkers, properNouns, keepWords },
-        conflicted: containsConflictMarkers(content.text),
+        conflicted: containsConflictMarkers(content.text) || undecided.has(path),
       };
       inputs.set(path, loaded);
       return loaded;

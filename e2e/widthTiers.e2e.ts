@@ -86,3 +86,30 @@ test.describe("幅で3段", () => {
     await expect(page.locator("#msSide .ms-side-fold")).toBeVisible();
   });
 });
+
+/**
+ * **開いた話を、左の話の一覧の見える所へ送る**（2026-11-20 iPhone 17 シミュレーター 0.1.132：横向きで第20話を開くと一覧が頭〈第1話〉
+ * へ戻り、開いた話は一覧の見えない所にあって、色の印も見えなかった）。送るのは一覧の中だけで、ページは動かさない
+ */
+test("開いた話が、左の話の一覧の見える所に来る（ページは動かない）", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.startsWith("phone"), "左の一覧は幅 600 以上だけ");
+  const works: Record<string, string> = { "長い作品_確認用/.aiwriter/config.json": JSON.stringify({ workTitle: "長い作品_確認用" }) };
+  for (let n = 1; n <= 20; n++) works[`長い作品_確認用/本文/第${n}話.txt`] = `第${n}話の本文。`;
+  await page.setViewportSize({ width: 900, height: 420 });
+  await openWithWorks(page, "#/works", works);
+  await page.locator(".work-card", { hasText: "長い作品_確認用" }).click();
+  await page.locator(".ep-list .ep").last().click();
+  await expect(page.locator("#msEditor")).toBeVisible();
+  const current = page.locator('#msSide [aria-current="page"]');
+  await expect(current).toHaveCount(1);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const side = document.querySelector("#msSide")!.getBoundingClientRect();
+        const row = document.querySelector('#msSide [aria-current="page"]')!.getBoundingClientRect();
+        return row.top >= side.top && row.bottom <= side.bottom;
+      })
+    )
+    .toBe(true);
+  expect(await page.evaluate(() => scrollY)).toBe(0);
+});

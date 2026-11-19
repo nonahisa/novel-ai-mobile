@@ -1019,12 +1019,17 @@ function mountEpisodeList(screen: HTMLElement, store: FileStore, root: string, o
  * 原稿エディターの左の話の一覧（中・広い段。設計書 4.3）。狭い段では CSS で隠れるが、中身は同じに入れておく
  * （回転で段が変わっても、作り直さずに出せる）。開いている話に印。押すと、保存を済ませてその話へ移る
  */
-/** `row` が `box` の見える所に収まっていなければ、`box` の中だけを送って真ん中あたりに置く */
-export function revealInBox(box: HTMLElement, row: HTMLElement): void {
+/**
+ * `row` が `box` の見える所に収まっていなければ、`box` の中だけを送って真ん中あたりに置く。
+ * `head` は `box` の頭に留めてある行（一覧の頭の作品名と［たたむ］）。その下を見える所とみなす
+ */
+export function revealInBox(box: HTMLElement, row: HTMLElement, head?: HTMLElement | null): void {
   const outer = box.getBoundingClientRect();
+  const inset = head ? head.getBoundingClientRect().height : 0;
+  const top = outer.top + inset;
   const inner = row.getBoundingClientRect();
-  if (inner.top >= outer.top && inner.bottom <= outer.bottom) return;
-  box.scrollTop += inner.top - outer.top - Math.max(0, (box.clientHeight - inner.height) / 2);
+  if (inner.top >= top && inner.bottom <= outer.bottom) return;
+  box.scrollTop += inner.top - top - Math.max(0, (box.clientHeight - inset - inner.height) / 2);
 }
 
 function fillEpisodeSide(screen: HTMLElement, store: FileStore, root: string, path: string, options: ScanOptions, stillHere: () => boolean): void {
@@ -1040,7 +1045,7 @@ function fillEpisodeSide(screen: HTMLElement, store: FileStore, root: string, pa
       // 開いた話を一覧の見える所へ（2026-11-20 iPhone 17 シミュレーター 0.1.132：第20話を開くと一覧が頭へ戻り、開いた話が
       // 見えない所にあった）。送るのは一覧の中だけ（`scrollIntoView` はページも送るので使わない）
       const current = side.querySelector<HTMLElement>('[aria-current="page"]');
-      if (current) requestAnimationFrame(() => revealInBox(side, current));
+      if (current) requestAnimationFrame(() => revealInBox(side, current, side.querySelector<HTMLElement>(".ms-side-head")));
     },
     () => undefined
   );

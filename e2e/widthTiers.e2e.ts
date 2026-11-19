@@ -106,10 +106,22 @@ test("開いた話が、左の話の一覧の見える所に来る（ページ�
     .poll(() =>
       page.evaluate(() => {
         const side = document.querySelector("#msSide")!.getBoundingClientRect();
+        const head = document.querySelector("#msSide .ms-side-head")!.getBoundingClientRect();
         const row = document.querySelector('#msSide [aria-current="page"]')!.getBoundingClientRect();
-        return row.top >= side.top && row.bottom <= side.bottom;
+        // 頭の行（留めてある）の下に、隠れずに見える
+        return row.top >= head.bottom - 1 && row.bottom <= side.bottom;
       })
     )
     .toBe(true);
   expect(await page.evaluate(() => scrollY)).toBe(0);
+  // 一覧が送られても、頭の作品名と［たたむ］は一覧の上に見えて押せる（2026-11-20 0.1.133 の気づき）
+  expect(await page.locator("#msSide").evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  const fold = page.locator("#msSide .ms-side-fold");
+  await expect.poll(() => page.evaluate(() => {
+    const side = document.querySelector("#msSide")!.getBoundingClientRect();
+    const b = document.querySelector("#msSide .ms-side-fold")!.getBoundingClientRect();
+    return b.top >= side.top - 1 && b.bottom <= side.bottom;
+  })).toBe(true);
+  await fold.click();
+  await expect(page.locator("#msLayout")).toHaveAttribute("data-side", "closed");
 });

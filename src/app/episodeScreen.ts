@@ -102,6 +102,10 @@ export function orientationButtonLabel(current: WritingOrientation): string {
 }
 
 /** 話のファイルの名前から題（`.txt` を除く） */
+/** 押しても欄の焦点を外さない所（ボタン・入力の欄・引き出し） */
+const KEEPS_EDITOR_FOCUS =
+  "button, a, input, textarea, select, label, summary, [contenteditable], [role='button'], [role='tab'], [role='dialog'], [role='menu'], .ms-tools, .term-sheet";
+
 export function episodeScreenTitle(path: string): string {
   const name = path.slice(path.lastIndexOf("/") + 1);
   return name.replace(/\.txt$/i, "");
@@ -596,6 +600,17 @@ export function mountEpisodeScreen(
       autoHorizontal = horizontal;
       pane?.setOrientation(shownOrientation());
     },
+  });
+  // 空いた所（一覧の側・上のバーの余白など）を押したら、欄の焦点を外してキーボードを閉じる（2026-11-20 iPhone 17
+  // シミュレーターの T7：横向きの iPhone のキーボードには閉じるキーが無く、空いた所を押しても閉じなかった。iOS は焦点の
+  // 取れない所を押しても焦点を外さない）。欄の中・ボタンや入力の欄・引き出しの中は外さない
+  screen.addEventListener("click", (e) => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !host.contains(active)) return;
+    const target = e.target as Element;
+    if (host.contains(target)) return;
+    if (target.closest(KEEPS_EDITOR_FOCUS)) return;
+    active.blur();
   });
   let session: EpisodeSession | undefined;
   let pane: WritingPane | undefined;

@@ -2013,3 +2013,9 @@ a.gh-open {
   user-select: none;
   -webkit-touch-callout: none;
 }
+
+/* 縦書きの入力が崩れたとき、［横で書く］へ案内する（設計書 5.3 の2。押すまで光らせる） */
+.appbar-action.orient-hint {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

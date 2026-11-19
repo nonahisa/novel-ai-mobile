@@ -29,6 +29,7 @@ import type { TermEntry } from "../shared";
 import type { TermFinder } from "./editContextPane";
 import { wantsIosTextareaFixes, watchTextareaLongPress } from "./textareaLongPress";
 import { watchOwnCaret } from "./textareaCaret";
+import { rememberedBroken, VERTICAL_INPUT_REMINDER, watchVerticalInput } from "./verticalInputCheck";
 
 /**
  * **原稿エディター（C）の土台**：話の一覧から押した話を開いて書く画面（設計書 5.1〜5.4）。
@@ -109,6 +110,9 @@ function renderToolStrip(): string {
   return `<div class="ms-tools" id="msTools" role="toolbar" aria-label="道具" hidden>${buttons}</div>`;
 }
 
+/** 前に崩れた端末の知らせは、アプリを開いているあいだに一度だけ */
+let remindedVerticalBroken = false;
+
 export const EXTERNAL_CHANGE_MESSAGE = "外で変わったので、保存を止めました\n書きかけは残っています";
 
 /** 書く欄（いまは textarea。替えるときはここだけ） */
@@ -135,7 +139,9 @@ function mountWritingPane(
   host: HTMLElement,
   orientation: WritingOrientation,
   onChange: (text: string, kind: "type" | "other") => void,
-  colors = false
+  colors = false,
+  /** 縦書きで打った字が本文へ届かなかったときに知らせる（設計書 5.3 の2。`verticalInputCheck.ts`） */
+  onVerticalBroken?: (message: string) => void
 ): WritingPane {
   const area = document.createElement("textarea");
   area.className = `ms-editor ${orientation}`;
@@ -166,6 +172,9 @@ function mountWritingPane(
   const iosFixes = wantsIosTextareaFixes(Capacitor.getPlatform(), window.localStorage);
   const stopLongPress = iosFixes ? watchTextareaLongPress(area) : undefined;
   const stopOwnCaret = iosFixes ? watchOwnCaret(area) : undefined;
+  const stopInputCheck = onVerticalBroken
+    ? watchVerticalInput(area, { vertical: () => area.classList.contains("vertical"), warn: onVerticalBroken, storage: window.localStorage })
+    : undefined;
   return {
     setText(text) {
       area.value = text;
@@ -194,6 +203,7 @@ function mountWritingPane(
       area.removeEventListener("beforeinput", onBeforeInput);
       stopLongPress?.();
       stopOwnCaret?.();
+      stopInputCheck?.();
       backdrop?.destroy();
       area.remove();
     },
@@ -817,6 +827,14 @@ export function mountEpisodeScreen(
     範囲の近くの帯（右の線の欄。設計書 4.4.1）。［ルビ］［傍点］は道具帯と同じ。［資料を見る］は、選んだ範囲の頭の字を含む
     名前の紹介を出す（名前の札を押したのと同じ。名前でなければ知らせる）
   */
+  /**
+   * 縦書きで打った字が本文へ届かなかった（設計書 5.3 の2）：その場で知らせ、［横で書く］へ案内する（押し口を光らせる）。
+   * **自動では横へ移さない**（打っている最中に面が変わると、変換中の字を失う）
+   */
+  const onVerticalBroken = (message: string) => {
+    options.toast(message);
+    toggle.classList.add("orient-hint");
+  };
   const onSelectionBand = (id: BandId) => {
     if (!pane) return;
     if (id === "ruby" || id === "emphasis") return void runTool(id, pane);
@@ -900,6 +918,7 @@ export function mountEpisodeScreen(
   };
 
   toggle.addEventListener("click", () => {
+    toggle.classList.remove("orient-hint");
     orientation = orientation === "vertical" ? "horizontal" : "vertical";
     writeOrientation(orientation);
     toggle.textContent = orientationButtonLabel(orientation);
@@ -929,7 +948,12 @@ export function mountEpisodeScreen(
         return;
       }
       session = result.session;
-      pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, orientation, onEdit, (id) => onSelectionBand(id)) : mountWritingPane(host, orientation, onEdit, readLeftLineTermColors());
+      pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, orientation, onEdit, (id) => onSelectionBand(id)) : mountWritingPane(host, orientation, onEdit, readLeftLineTermColors(), onVerticalBroken);
+      // 前に縦書きの入力が崩れた端末なら、開いたときに一度だけ知らせる（勝手に横へは開かない。設計書 5.3）
+      if (!remindedVerticalBroken && readCompositionLine() !== "right" && orientation === "vertical" && rememberedBroken(window.localStorage, navigator.userAgent)) {
+        remindedVerticalBroken = true;
+        options.toast(VERTICAL_INPUT_REMINDER);
+      }
       shown = session.text();
       pane.setText(shown);
       if (options.initialCaret !== undefined && options.initialCaret <= shown.length) pane.placeCaret(options.initialCaret);

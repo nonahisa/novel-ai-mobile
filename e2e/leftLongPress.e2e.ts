@@ -101,3 +101,49 @@ test("カーソルの印をこちらで描き、カーソルの位置の字の�
   await expect(caret).toBeHidden();
   await expect(editor).not.toHaveClass(/own-caret-shown/);
 });
+
+/**
+ * **短く押した字のすぐ後ろへカーソルを置く**（2026-11-19 夜 作者の決定。iPad mini 実機 0.1.124：「手紙」の「紙」を押すと、
+ * iOS が語の切れ目に寄せて「手」の前に入った。シミュレーターでは「紙」の直後だったので、実機でだけ出る）。
+ * 字のどこを押しても、その字の後ろ。字の無い所は右の線の欄と同じ決まり（列の末など）。2度押しの語の選びは iOS のまま
+ */
+test("短く押すと、押した字のすぐ後ろにカーソルが入る（字の上半分を押しても）", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("novelai.test.iosTextarea", "1"));
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("#msEditor");
+  await expect(editor).toBeVisible();
+  /** その字の箱（写しで読む） */
+  const boxOf = (i: number) =>
+    editor.evaluate((el: HTMLTextAreaElement, at) => {
+      const mirror = document.createElement("div");
+      const style = getComputedStyle(el);
+      for (const name of Array.from(style)) mirror.style.setProperty(name, style.getPropertyValue(name));
+      const r = el.getBoundingClientRect();
+      Object.assign(mirror.style, { position: "fixed", left: `${r.left}px`, top: `${r.top}px`, margin: "0", visibility: "hidden", overflow: "hidden", whiteSpace: "pre-wrap" });
+      const span = document.createElement("span");
+      span.textContent = el.value[at];
+      mirror.append(el.value.slice(0, at), span, el.value.slice(at + 1));
+      document.body.appendChild(mirror);
+      mirror.scrollTop = el.scrollTop;
+      mirror.scrollLeft = el.scrollLeft;
+      const b = span.getBoundingClientRect();
+      mirror.remove();
+      return { x: b.x, y: b.y, w: b.width, h: b.height };
+    }, i);
+  const selection = () => editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd]);
+
+  // 「紙」（4字目）の上のほう（端末のままなら「紙」の前に入る所）
+  const kami = await boxOf(4);
+  await page.mouse.click(kami.x + kami.w / 2, kami.y + kami.h * 0.2);
+  await expect.poll(selection).toEqual([5, 5]);
+  await expect(editor).toBeFocused();
+
+  // 「姉」（0字目）の下のほう → 「姉」の後ろ
+  const ane = await boxOf(0);
+  await page.mouse.click(ane.x + ane.w / 2, ane.y + ane.h * 0.8);
+  await expect.poll(selection).toEqual([1, 1]);
+  await page.keyboard.type("猫");
+  await expect(editor).toHaveValue(/^姉猫から手紙/);
+});

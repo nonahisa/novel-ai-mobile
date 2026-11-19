@@ -521,6 +521,12 @@ export function mountEpisodeScreen(
     writeSideOpen(open);
   });
   screen.querySelector<HTMLElement>(".appbar")!.appendChild(sideToggle);
+  // 一覧の頭の［たたむ］（2026-11-19 夜 作者の頼み「話の一覧をたためるように」。上のバーの［一覧］だけでは、たためると
+  // 気づきにくかった）。開き直すのは上のバーの［一覧］。中身は `shell.ts` が後から入れるので、押されたのを一覧の枠で拾う
+  screen.querySelector<HTMLElement>("#msSide")!.addEventListener("click", (e) => {
+    if (!(e.target as Element).closest(".ms-side-fold")) return;
+    if (sideToggle.getAttribute("aria-pressed") === "true") sideToggle.click();
+  });
   // ［提案］：右の板（広い段）・右からの引き出し（中の段）。設計書 4.3。左の一覧とは別々に畳む
   const boardToggle = document.createElement("button");
   boardToggle.className = "appbar-action ms-side-toggle";

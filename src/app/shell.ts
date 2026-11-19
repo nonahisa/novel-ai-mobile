@@ -988,7 +988,7 @@ function fillEpisodeSide(screen: HTMLElement, store: FileStore, root: string, pa
   scanWorkFolder(store, root, options).then(
     (work) => {
       if (!stillHere()) return;
-      side.innerHTML = `<h2 class="ms-side-title">${escapeHtml(work.title)}</h2>${renderEpisodeList(work)}`;
+      side.innerHTML = `<div class="ms-side-head"><h2 class="ms-side-title">${escapeHtml(work.title)}</h2><button type="button" class="appbar-action ms-side-fold" aria-label="話の一覧をたたむ">たたむ</button></div>${renderEpisodeList(work)}`;
       for (const row of side.querySelectorAll<HTMLElement>("[data-episode]")) {
         if (row.dataset.episode === path) row.setAttribute("aria-current", "page");
       }

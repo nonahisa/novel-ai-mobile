@@ -1,4 +1,4 @@
-import { charFromPoint, readCharBoxes } from "./tapCaret";
+import { caretFromPoint, charFromPoint, readCharBoxes, type CharBox } from "./tapCaret";
 import { LONG_PRESS_MS, MOVE_TOLERANCE_PX, wordAround } from "./rangeGestures";
 
 /**
@@ -13,6 +13,11 @@ import { LONG_PRESS_MS, MOVE_TOLERANCE_PX, wordAround } from "./rangeGestures";
  * - 語の切れ目は右の線の欄と同じ（`wordAround`）。時間と動いてよい幅も同じ（{@link LONG_PRESS_MS}・{@link MOVE_TOLERANCE_PX}）
  * - 変換中は触らない。押したまま動いたら（欄を送っている）長押しにしない
  * - 指を離したときにもう一度選び直して焦点を当てる（iOS は人の操作のうちでないとキーボードを出さない）
+ *
+ * **短く押したときは、押した字のすぐ後ろへカーソルを置く**（2026-11-19 夜 作者の決定。iPad mini 実機 0.1.124：
+ * 「手紙」の「紙」を押すと、iOS が語の切れ目に寄せて「手」の前に入った。シミュレーターでは「紙」の直後だった）。
+ * 字のどこを押しても、その字の後ろ（改行の字なら改行の前）。字の無い所（列の下の先など）は右の線の欄と同じ決まり
+ * （`caretFromPoint`）。近い所を続けて2度押したとき（語を選ぶ）は2度目に触らず、iOS のままにする
  */
 export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   let timer: number | undefined;
@@ -20,6 +25,10 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   let pressedAtTime = 0;
   let chosen: { start: number; end: number } | undefined;
   let composing = false;
+  let moved = false;
+  let lastTap: { at: number; x: number; y: number } | undefined;
+  /** 短く押した所へ置くカーソル（端末が置き直したら、次の描きの前にもう一度） */
+  let tapped: number | undefined;
 
   const choose = () => {
     if (composing || !pressAt) return;
@@ -39,6 +48,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     if (composing || e.button > 0) return;
     pressAt = { x: e.clientX, y: e.clientY };
     pressedAtTime = e.timeStamp;
+    moved = false;
     cancel();
     timer = window.setTimeout(() => {
       timer = undefined;
@@ -47,7 +57,28 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   };
   const onMove = (e: PointerEvent) => {
     if (timer === undefined || !pressAt) return;
-    if (Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > MOVE_TOLERANCE_PX) cancel();
+    if (Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > MOVE_TOLERANCE_PX) {
+      moved = true;
+      cancel();
+    }
+  };
+  /** 短く1回押した：押した字の後ろへ */
+  const placeTap = (e: PointerEvent) => {
+    if (!pressAt) return;
+    // 2度押し：近い所を続けて押した（別の字を素早く押し直したのは2度押しにしない）
+    const doubleTap =
+      lastTap !== undefined && e.timeStamp - lastTap.at < DOUBLE_TAP_MS && Math.hypot(pressAt.x - lastTap.x, pressAt.y - lastTap.y) <= DOUBLE_TAP_PX;
+    lastTap = doubleTap ? undefined : { at: e.timeStamp, x: pressAt.x, y: pressAt.y };
+    if (doubleTap || composing) return;
+    const at = textareaCaretAt(area, pressAt.x, pressAt.y);
+    if (at === undefined) return;
+    tapped = at;
+    area.focus();
+    area.setSelectionRange(at, at);
+    requestAnimationFrame(() => {
+      if (tapped === at && document.activeElement === area && area.selectionStart === area.selectionEnd) area.setSelectionRange(at, at);
+      tapped = undefined;
+    });
   };
   const onUp = (e: PointerEvent) => {
     // 時計が遅れていても、押していた長さが足りていれば選ぶ（右の線の欄と同じ）
@@ -55,8 +86,13 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
       cancel();
       choose();
     }
+    const wasTap = timer !== undefined && !moved && e.button <= 0;
     cancel();
-    if (!chosen) return;
+    if (!chosen) {
+      if (wasTap) placeTap(e);
+      return;
+    }
+    lastTap = undefined;
     const { start, end } = chosen;
     area.focus();
     area.setSelectionRange(start, end);
@@ -118,8 +154,35 @@ export function syncMirrorScroll(mirror: HTMLElement, area: HTMLTextAreaElement)
   mirror.scrollLeft = area.scrollLeft;
 }
 
+/** 2度押しとみなす間（これより早く続けて押したら、2度目は iOS のままにする） */
+export const DOUBLE_TAP_MS = 350;
+/** 2度押しとみなす近さ（1度目の点から） */
+export const DOUBLE_TAP_PX = 24;
+
 /** textarea の中で、画面の点 (x, y) の下にある字の位置。字の無い所なら undefined */
 export function textareaCharAt(area: HTMLTextAreaElement, x: number, y: number): number | undefined {
+  return charFromPoint(textareaCharBoxes(area), x, y);
+}
+
+/**
+ * 短く押した点に置くカーソルの位置。押した字があればその字の後ろ（改行の字なら改行の前）。
+ * 字の無い所は右の線の欄と同じ決まり（`caretFromPoint`）
+ */
+export function textareaCaretAt(area: HTMLTextAreaElement, x: number, y: number): number | undefined {
+  const boxes = textareaCharBoxes(area);
+  return caretAfterPressedChar(boxes, x, y, getComputedStyle(area).writingMode.startsWith("vertical"));
+}
+
+/** {@link textareaCaretAt} の決め方（DOM に触らない。テストのため） */
+export function caretAfterPressedChar(boxes: readonly CharBox[], x: number, y: number, vertical: boolean): number | undefined {
+  const at = charFromPoint(boxes, x, y);
+  if (at === undefined) return caretFromPoint(boxes, x, y, vertical);
+  const box = boxes.find((b) => b.i === at);
+  return box && !box.newline ? at + box.n : at;
+}
+
+/** textarea と同じ並びの写しで、字ごとの四隅を読む（読んだらすぐ消す） */
+function textareaCharBoxes(area: HTMLTextAreaElement): CharBox[] {
   const mirror = mountMirror(area);
   const fragment = document.createDocumentFragment();
   let i = 0;
@@ -133,9 +196,9 @@ export function textareaCharAt(area: HTMLTextAreaElement, x: number, y: number):
   }
   mirror.appendChild(fragment);
   syncMirrorScroll(mirror, area);
-  const at = charFromPoint(readCharBoxes(mirror), x, y);
+  const boxes = readCharBoxes(mirror);
   mirror.remove();
-  return at;
+  return boxes;
 }
 
 /** iOS の textarea の手当て（長押しで語を選ぶ・カーソルの印をこちらで描く）を使うか：iOS だけ（Android は端末のままで効く）。

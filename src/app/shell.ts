@@ -36,6 +36,7 @@ import {
 } from "./tategakiDraft";
 import { askChoice, askText, chooseFrom, tell } from "./dialog";
 import { checkEpisodeName, createEpisode, manuscriptFileNames, suggestEpisodeName } from "./newEpisode";
+import { planChapter, saveChapter } from "./newChapter";
 import { applyBodyFont, parseBodyFont, readBodyFont, renderBodyFontSection, writeBodyFont } from "./bodyFont";
 import { renameWork } from "../platform/workRename";
 import { checkRemovable, removeWorkFolder } from "../platform/workRemove";
@@ -455,6 +456,23 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       toast(`新しい話を作れませんでした（${error instanceof Error ? error.message : String(error)}）`);
     }
   };
+  /** ［…］→ 章を立てる（`newChapter.ts`）。その話から始まる章があれば改名 */
+  const addChapter = async (root: string, path: string, stillHere: () => boolean) => {
+    try {
+      const plan = await planChapter(store, root, path);
+      const name = await askText("この話から始まる章の名前", {
+        initial: plan.current ?? "",
+        okLabel: plan.current !== undefined ? "名前を変える" : "立てる",
+        validate: (value) => (value.trim() ? undefined : "章の名前を入れてください"),
+      });
+      if (name === undefined) return;
+      const outcome = await saveChapter(store, plan, name);
+      toast(outcome === "renamed" ? "章の名前を変えました" : `「${name.trim()}」を立てました`);
+      if (stillHere()) fillEpisodeSide(screen, store, root, path, scanOptions, stillHere);
+    } catch (error) {
+      toast(`章を立てられませんでした（${error instanceof Error ? error.message : String(error)}）`);
+    }
+  };
   const render = () => {
     if (leaveGuard?.beforeLeave && !leaveConfirmed) {
       // 原稿エディター：URL を戻して保存を済ませ、済んだら（済まなければ訊いて）移る
@@ -582,6 +600,8 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
             },
             // ［…］→ 新しい話：名前を訊いて空の話を作り、開く（`newEpisode.ts`。在るファイルは上書きしない）
             newEpisode: () => void addEpisode(episodeRoot),
+            // ［…］→ 章を立てる：この話から始まる章の名前を訊き、章立て（設定/章立て.json）に置く（`newChapter.ts`）
+            newChapter: () => void addChapter(episodeRoot, route.path, stillHere),
           });
         }
         fillEpisodeSide(screen, store, route.root, route.path, scanOptions, stillHere);

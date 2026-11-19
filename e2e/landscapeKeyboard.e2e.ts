@@ -186,3 +186,56 @@ test.describe("一覧の指の動き", () => {
     expect(await swipeOnSide(-30)).toBe(!scrolls);
   });
 });
+
+/**
+ * **キーボードが出ているとき、一覧の下の端が見える所の下の端に来る**（2026-11-20 iPhone 17 シミュレーター 0.1.131：一覧の末まで
+ * 送っても第20話がキーボードの下に隠れたまま。一覧の枠の下の端がキーボードの下にあった）。
+ * iOS はキーボードでページの大きさを変えず、見える所（visualViewport）だけが縮み、ページの途中へ動くこともある。それをまねる。
+ * 一覧の頭が CSS の見込み（細いバーのすぐ下）より下にあっても、見える所が動いていても、下の端は見える所の下の端
+ */
+test.describe("一覧の下の端", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      const vv = new EventTarget() as EventTarget & { height: number; width: number; offsetTop: number; offsetLeft: number; scale: number };
+      Object.assign(vv, { height: 360, width: 780, offsetTop: 0, offsetLeft: 0, scale: 1 });
+      Object.defineProperty(window, "visualViewport", { get: () => vv });
+      (window as unknown as { __vv: typeof vv }).__vv = vv;
+    });
+  });
+  const keyboard = (page: import("@playwright/test").Page, offsetTop: number, height: number) =>
+    page.evaluate(
+      ([top, h]) => {
+        const vv = (window as unknown as { __vv: EventTarget & { offsetTop: number; height: number } }).__vv;
+        vv.offsetTop = top!;
+        vv.height = h!;
+        vv.dispatchEvent(new Event("resize"));
+      },
+      [offsetTop, height]
+    );
+  const sideBottom = (page: import("@playwright/test").Page) => page.locator("#msSide").evaluate((el) => Math.round(el.getBoundingClientRect().bottom));
+
+  test("一覧の頭が見込みより下にあっても、下の端は見える所の下の端", async ({ page }) => {
+    await page.addInitScript(() => {
+      document.addEventListener("DOMContentLoaded", () => {
+        const style = document.createElement("style");
+        style.textContent = ".appbar { min-height: 60px !important; }";
+        document.head.appendChild(style);
+      });
+    });
+    await openFirst(page);
+    await page.locator("textarea#msEditor").click();
+    await keyboard(page, 0, 150);
+    await expect(page.locator("html")).toHaveAttribute("data-compact", "on");
+    await expect.poll(() => sideBottom(page)).toBe(150);
+  });
+
+  test("見える所がページの途中へ動いていても、下の端は見える所の下の端。キーボードを閉じると CSS へ戻る", async ({ page }) => {
+    await openFirst(page);
+    await page.locator("textarea#msEditor").click();
+    await keyboard(page, 60, 150);
+    await expect.poll(() => sideBottom(page)).toBe(210);
+    await keyboard(page, 0, 360);
+    await expect(page.locator("html")).toHaveAttribute("data-compact", "on");
+    await expect.poll(() => sideBottom(page)).toBe(360);
+  });
+});

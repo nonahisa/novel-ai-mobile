@@ -190,3 +190,7 @@ export { splitEpisodeBodyParts } from "novel-ai-assistant/src/core/episodeBodyPa
 export { decodeByteFallback } from "novel-ai-assistant/src/core/byteFallback";
 // 作品の題を変える（作品の長押し。2026-11-18）：設定ファイルの改行の形を読んだまま書く
 export { detectJsonFileFormat, formatJsonForFile } from "novel-ai-assistant/src/core/jsonFileFormat";
+// ［…］→ 書き出し（2026-11-19 夜 作者の決定「投稿サイト向けの本文を写す」）：本体の「コピー（投稿サイト用）」と同じ変換
+export { convertForPosting, noteCopyMessage } from "novel-ai-assistant/src/core/postingConvert";
+export { postingCopyTargets, type PostingCopyTarget } from "novel-ai-assistant/src/core/postingCopyTargets";
+export { postingCopySource } from "novel-ai-assistant/src/core/episodeCopy";

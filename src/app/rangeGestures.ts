@@ -35,7 +35,7 @@ export interface RangeTarget {
    * 範囲の近くに出す帯の押し口（設計書 4.4.1「長押しの品書き：原稿で字を選ぶと、選んだ範囲の近くに帯を出す」）。
    * 無ければ帯を出さない。押すと `onBand(id)`。帯の押し口を押しても範囲は外さない
    */
-  band?: readonly { id: string; label: string }[];
+  band?: readonly { id: string; label: string; /** 段（0 が上。2026-11-19 夜 作者の決定「2段にして幅を詰める」） */ row?: number }[];
   onBand?(id: string): void;
   /**
    * 欄に焦点を当てる（キーボードを出す）。長押しで選んだあと、指を離したときに呼ぶ（2026-11-18 Mac の iPad mini 0.1.110：
@@ -112,13 +112,22 @@ export function mountRangeGestures(target: RangeTarget): () => void {
   band.setAttribute("role", "toolbar");
   band.setAttribute("aria-label", "選んだ字");
   band.hidden = true;
+  // 段ごとに並べる（幅を詰め、範囲の後ろの字と隣の列にかかる幅を減らす）
+  const rows: HTMLElement[] = [];
   for (const item of target.band ?? []) {
+    const index = item.row ?? 0;
+    for (let r = rows.length; r <= index; r++) {
+      const row = document.createElement("div");
+      row.className = "sel-band-row";
+      rows.push(row);
+    }
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.band = item.id;
     button.textContent = item.label;
-    band.appendChild(button);
+    rows[index]!.appendChild(button);
   }
+  for (const row of rows) if (row.childElementCount > 0) band.appendChild(row);
   if ((target.band ?? []).length > 0) layer.appendChild(band);
   // 押しても欄の焦点と範囲を外さない（道具帯と同じ）
   band.addEventListener("pointerdown", (event) => event.preventDefault());
@@ -159,7 +168,8 @@ export function mountRangeGestures(target: RangeTarget): () => void {
     if (tail && !band.hidden) {
       const width = band.offsetWidth || 180;
       const left = Math.min(Math.max(tail.x - box.left - width / 2, 4), Math.max(4, box.width - width - 4));
-      const top = Math.min(tail.y - box.top + 28, Math.max(4, box.height - 52));
+      const height = band.offsetHeight || 52;
+      const top = Math.min(tail.y - box.top + 28, Math.max(4, box.height - height - 4));
       band.style.left = `${left + host.scrollLeft}px`;
       band.style.top = `${top + host.scrollTop}px`;
     }

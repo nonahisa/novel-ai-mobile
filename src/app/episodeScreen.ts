@@ -327,12 +327,16 @@ export function writeCompositionLine(value: CompositionLine): void {
 }
 
 /** 右の線：字と変換中の線をこの画面が描く欄（13章の B）を、原稿エディターの欄の形にする */
+/** 範囲の近くの帯の押し口 */
+const BAND_IDS = ["ruby", "emphasis", "term", "copy", "paste"] as const;
+type BandId = (typeof BAND_IDS)[number];
+
 function mountRightLinePane(
   host: HTMLElement,
   orientation: WritingOrientation,
   onChange: (text: string, kind: "type" | "other") => void,
   /** 範囲の近くの帯の押し口（［ルビ］［傍点］［資料を見る］。設計書 4.4.1） */
-  onBand?: (id: "ruby" | "emphasis" | "term") => void
+  onBand?: (id: BandId) => void
 ): WritingPane {
   const element = document.createElement("div");
   element.className = `ms-editor ms-editor-right ${orientation}`;
@@ -385,10 +389,12 @@ function mountRightLinePane(
             { id: "ruby", label: "ルビ" },
             { id: "emphasis", label: "傍点" },
             { id: "term", label: "資料を見る" },
+            { id: "copy", label: "コピー" },
+            { id: "paste", label: "貼り付け" },
           ],
           onBand: (id: string) => {
             log(`範囲：帯の［${id}］`);
-            if (id === "ruby" || id === "emphasis" || id === "term") onBand(id);
+            if ((BAND_IDS as readonly string[]).includes(id)) onBand(id as BandId);
           },
         }
       : {}),
@@ -811,14 +817,37 @@ export function mountEpisodeScreen(
     範囲の近くの帯（右の線の欄。設計書 4.4.1）。［ルビ］［傍点］は道具帯と同じ。［資料を見る］は、選んだ範囲の頭の字を含む
     名前の紹介を出す（名前の札を押したのと同じ。名前でなければ知らせる）
   */
-  const onSelectionBand = (id: "ruby" | "emphasis" | "term") => {
+  const onSelectionBand = (id: BandId) => {
     if (!pane) return;
     if (id === "ruby" || id === "emphasis") return void runTool(id, pane);
+    if (id === "copy" || id === "paste") return void copyOrPaste(id, pane);
     const { start } = pane.selection();
     const entry = termOnChar?.(pane.value(), start);
     if (!entry) return options.toast("選んだ字は、資料の名前ではありません");
     tagged = entry;
     tag.click();
+  };
+  /**
+   * 帯の［コピー］［貼り付け］（設計書 4.4.1「Android の［コピー］［貼り付け］」）。字はこの画面が描くので、端末の文字選択の帯が
+   * 出ない。写しは端末の写し（`navigator.clipboard`）。読めない・書けない端末（許しが無いなど）は知らせて止める。
+   * 貼り付けは選んだ範囲と置き換え、道具帯と同じく1手として取り消せる
+   */
+  const copyOrPaste = async (id: "copy" | "paste", target: WritingPane): Promise<void> => {
+    const text = target.value();
+    const { start, end } = target.selection();
+    try {
+      if (id === "copy") {
+        await navigator.clipboard.writeText(text.slice(start, end));
+        options.toast("コピーしました");
+        return;
+      }
+      const clip = await navigator.clipboard.readText();
+      if (!clip) return options.toast("貼り付ける字がありません");
+      const caret = start + clip.length;
+      target.apply({ text: text.slice(0, start) + clip + text.slice(end), selStart: caret, selEnd: caret });
+    } catch {
+      options.toast(id === "copy" ? "コピーできませんでした" : "貼り付けられませんでした（端末の写しを読めません）");
+    }
   };
   const runTool = async (id: ToolId, target: WritingPane): Promise<void> => {
     const text = target.value();

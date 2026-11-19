@@ -39,5 +39,5 @@ test("［ほか］→ 執筆統計 で開く", async ({ page }) => {
   await openWithWorks(page, "#/other", FAKE_WORKS);
   await page.getByRole("button", { name: "執筆統計" }).or(page.getByRole("link", { name: "執筆統計" })).first().click();
   await expect(page).toHaveURL(/#\/stats$/);
-  await expect(page.locator(".stats-total")).toContainText("+0字");
+  await expect(page.locator(".stats-total")).toContainText("今日0字");
 });

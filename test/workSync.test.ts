@@ -108,4 +108,9 @@ describe("同期の状態の印", () => {
     expect(syncFlag({ unsent: [], otherCount: 0 })).toEqual({ text: "同期済み", tone: "ok" });
     expect(syncFlag(undefined)).toBeUndefined();
   });
+  test("取ってきた版と競合して、まだ選んでいない話があれば、それをいちばん先に出す（自動の取得で見つかったものも）", () => {
+    const file = { path: "灯台守_確認用/本文/第1話.txt", deleted: false };
+    expect(syncFlag({ unsent: [file], otherCount: 0 }, 2)).toEqual({ text: "競合：2話", tone: "shu" });
+    expect(syncFlag({ unsent: [], otherCount: 0 }, 0)).toEqual({ text: "同期済み", tone: "ok" });
+  });
 });

@@ -151,10 +151,13 @@ function workFolderLocation(work: ScannedWork): string {
 
 /**
  * 同期の状態の印（見本の作品一覧の「送っていない話：1」「同期済み」）。git で持っていない作品は出さない。
- * 原稿のほかの変更しか無いときは「送っていない変更」（送り忘れに気づけるように。設計書 6章）
+ * 原稿のほかの変更しか無いときは「送っていない変更」（送り忘れに気づけるように。設計書 6章）。
+ * 取ってきた版と競合して、まだ選んでいない話（`undecided`。自動の取得で見つかったものも）があれば、それをいちばん先に
+ * 「競合：N話」で出す（設計書 4.2 A「同期の状態（送っていない話の数・競合の印）」。押すと同期の画面で選べる）
  */
-export function syncFlag(state: WorkSyncState | undefined): { text: string; tone: "warn" | "ok" } | undefined {
+export function syncFlag(state: WorkSyncState | undefined, undecided = 0): { text: string; tone: "warn" | "ok" | "shu" } | undefined {
   if (!state) return undefined;
+  if (undecided > 0) return { text: `競合：${undecided}話`, tone: "shu" };
   if (state.unsent.length > 0) return { text: `送っていない話：${state.unsent.length}`, tone: "warn" };
   if (state.otherCount > 0) return { text: `送っていない変更：${state.otherCount}`, tone: "warn" };
   return { text: "同期済み", tone: "ok" };

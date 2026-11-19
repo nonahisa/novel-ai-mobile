@@ -740,14 +740,14 @@ async function syncStateOf(store: FileStore, root: string): Promise<WorkSyncStat
   }
 }
 
-function flagHtml(state: WorkSyncState | undefined, extraClass = ""): string {
-  const flag = syncFlag(state);
+function flagHtml(state: WorkSyncState | undefined, extraClass = "", undecided = 0): string {
+  const flag = syncFlag(state, undecided);
   return flag ? `<span class="flag ${flag.tone}${extraClass}" data-sync-flag>${escapeHtml(flag.text)}</span>` : "";
 }
 
 /** 話の一覧の頭の印。押すと同期の画面（G） */
-function flagButtonHtml(state: WorkSyncState | undefined, root: string): string {
-  const flag = syncFlag(state);
+function flagButtonHtml(state: WorkSyncState | undefined, root: string, undecided = 0): string {
+  const flag = syncFlag(state, undecided);
   return flag
     ? `<button class="flag ${flag.tone} work-warn sync-open" data-sync-flag data-sync="${escapeHtml(root)}">${escapeHtml(flag.text)}</button>`
     : "";
@@ -759,6 +759,11 @@ function touchedRecorder(store: FileStore): ((storePath: string) => Promise<void
   if (!(store instanceof CapacitorFileStore)) return undefined;
   recorder ??= createTouchedRecorder(createGitFs(new CapacitorGitFsBackend()));
   return recorder;
+}
+
+/** 取ってきた版と競合して、まだ選んでいない話の数（作品一覧・話の一覧の印。読めなければ 0） */
+async function undecidedCountOf(store: FileStore, root: string): Promise<number> {
+  return (await conflictsOf(store, root).catch(() => [])).filter((row) => !row.decision).length;
 }
 
 /** 取ってきた版と競合している話（端末の置き場のときだけ） */
@@ -920,9 +925,9 @@ function mountSyncScreen(screen: HTMLElement, store: FileStore, root: string, st
  */
 async function fillWorkSync(slot: HTMLElement, store: FileStore, stillHere: () => boolean): Promise<void> {
   for (const card of [...slot.querySelectorAll<HTMLElement>(".work-card[data-work]")]) {
-    const state = await syncStateOf(store, card.dataset.work!);
+    const [state, undecided] = await Promise.all([syncStateOf(store, card.dataset.work!), undecidedCountOf(store, card.dataset.work!)]);
     if (!stillHere()) return;
-    card.insertAdjacentHTML("beforeend", flagHtml(state));
+    card.insertAdjacentHTML("beforeend", flagHtml(state, "", undecided));
     const latest = latestUnsentTime(state);
     if (latest === undefined) continue;
     const label = `最後に書いた日：${dayLabel(new Date(latest), new Date())}`;
@@ -964,8 +969,8 @@ function mountEpisodeList(screen: HTMLElement, store: FileStore, root: string, o
       screen.querySelector<HTMLElement>(".appbar-title")!.firstChild!.textContent = work.title;
       screen.querySelector<HTMLElement>("#workSummary")!.textContent = workSummary(work);
       show(renderEpisodeList(work));
-      void syncStateOf(store, root).then((state) => {
-        const flag = flagButtonHtml(state, root);
+      void Promise.all([syncStateOf(store, root), undecidedCountOf(store, root)]).then(([state, undecided]) => {
+        const flag = flagButtonHtml(state, root, undecided);
         if (flag && stillHere()) slot.insertAdjacentHTML("afterbegin", flag);
       });
     },

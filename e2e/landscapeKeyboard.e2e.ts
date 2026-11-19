@@ -55,3 +55,29 @@ test("変換中は替えず、確定してから替える", async ({ page }) => 
   await expect(editor).toHaveCSS("writing-mode", "horizontal-tb");
   await expect(editor).toHaveValue(/猫/);
 });
+
+/**
+ * **一覧の側などの空いた所を押すと、キーボードが閉じる**（2026-11-20 iPhone 17 シミュレーターの T7：横向きの iPhone の
+ * キーボードには閉じるキーが無く、一覧の側の空いた所を押しても閉じなかった。上のバーの題を押すと閉じた）。
+ * iOS は、焦点の取れない所を押しても焦点を外さない（Chromium は外す）。ここでは焦点の動かない押し（click だけ）でまねる
+ */
+test("空いた所を押すと欄の焦点が外れ（キーボードが閉じ）、縦書きへ戻る。ボタンや欄の中を押したときは外さない", async ({ page }) => {
+  await openFirst(page);
+  const editor = page.locator("textarea#msEditor");
+  await editor.click();
+  await page.setViewportSize({ width: 780, height: 150 });
+  await expect(editor).toHaveCSS("writing-mode", "horizontal-tb");
+  /** 焦点を動かさずに押す（iOS の空いた所の押しと同じ） */
+  const tapWithoutFocus = (selector: string) =>
+    page.locator(selector).first().evaluate((el) => el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
+  // 欄の中を押しても外さない
+  await tapWithoutFocus("textarea#msEditor");
+  await expect(editor).toBeFocused();
+  // ボタン（道具帯のルビなど、欄に焦点があるまま使うもの）を押しても外さない
+  await tapWithoutFocus(".ms-tools button");
+  await expect(editor).toBeFocused();
+  // 一覧の空いた所（一覧の枠そのもの）を押すと外れる
+  await tapWithoutFocus("#msSide");
+  await expect(editor).not.toBeFocused();
+  await expect(editor).toHaveCSS("writing-mode", "vertical-rl");
+});

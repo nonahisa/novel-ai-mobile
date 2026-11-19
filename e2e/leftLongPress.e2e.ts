@@ -147,3 +147,102 @@ test("短く押すと、押した字のすぐ後ろにカーソルが入る（�
   await page.keyboard.type("猫");
   await expect(editor).toHaveValue(/^姉猫から手紙/);
 });
+
+/**
+ * **実機の iOS は、2度押しでないと分かるまで待ってから、カーソルを語の切れ目へ置き直す**（2026-11-20 iPad mini 実機 0.1.127 の T1：
+ * 「紙」の上を短く押して「あ」→「姉からあ手紙が届いた。」。シミュレーターと Chromium では出ない）。
+ * ここでは、押して少しあとに「手」の前（3）へ置き直す端末をまねる。置き直されても、押した字の後ろ（5）へ戻る
+ */
+test("短く押したあとで端末が語の頭へ置き直しても、押した字の後ろへ戻る（実機の T1）", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("novelai.test.iosTextarea", "1"));
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("#msEditor");
+  await expect(editor).toBeVisible();
+  const kami = await charBox(editor, 4);
+  await page.mouse.click(kami.x + kami.w / 2, kami.y + kami.h * 0.2);
+  // 端末が遅れて置き直す（2度押しの間が過ぎたころ）
+  await page.waitForTimeout(450);
+  await editor.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(3, 3));
+  await expect.poll(() => editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([5, 5]);
+  await page.keyboard.type("あ");
+  await expect(editor).toHaveValue(/^姉から手紙あが届いた。/);
+});
+
+/**
+ * **2度押しの語の選びを邪魔しない**（2026-11-20 iPad mini 実機 0.1.127 の T3：「紙」を素早く2度押しても語が選ばれず、
+ * カーソルが「手紙」の頭に置かれただけ）。1度目を離した直後にこちらがカーソルを動かしていた。
+ * 2度目を押すまでのあいだ、こちらはカーソルを動かさず、端末が語を選んだら（範囲）そのままにする
+ */
+test("素早く2度押すあいだ、こちらはカーソルを動かさず、端末の選んだ語がそのまま残る（実機の T3）", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("novelai.test.iosTextarea", "1");
+    const original = HTMLTextAreaElement.prototype.setSelectionRange;
+    const w = window as unknown as { __appSetSelection: number; __setSelection: typeof original };
+    w.__appSetSelection = 0;
+    w.__setSelection = original;
+    HTMLTextAreaElement.prototype.setSelectionRange = function (...args: Parameters<typeof original>) {
+      w.__appSetSelection += 1;
+      return original.apply(this, args);
+    };
+  });
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("#msEditor");
+  await expect(editor).toBeVisible();
+  const kami = await charBox(editor, 4);
+  const x = kami.x + kami.w / 2;
+  const y = kami.y + kami.h * 0.5;
+  await page.mouse.click(x, y);
+  await page.evaluate(() => ((window as unknown as { __appSetSelection: number }).__appSetSelection = 0));
+  await page.waitForTimeout(120);
+  // 1度目と2度目のあいだに、こちらはカーソルを動かさない
+  expect(await page.evaluate(() => (window as unknown as { __appSetSelection: number }).__appSetSelection)).toBe(0);
+  await page.mouse.click(x, y);
+  // 端末が語を選ぶ（まねる。こちらの数には入れない）
+  await editor.evaluate((el: HTMLTextAreaElement) => (window as unknown as { __setSelection: HTMLTextAreaElement["setSelectionRange"] }).__setSelection.call(el, 3, 5));
+  await page.waitForTimeout(800);
+  expect(await editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([3, 5]);
+});
+
+/** その字の箱（textarea と同じ並びの写しで読む） */
+function charBox(editor: import("@playwright/test").Locator, i: number) {
+  return editor.evaluate((el: HTMLTextAreaElement, at) => {
+    const mirror = document.createElement("div");
+    const style = getComputedStyle(el);
+    for (const name of Array.from(style)) mirror.style.setProperty(name, style.getPropertyValue(name));
+    const r = el.getBoundingClientRect();
+    Object.assign(mirror.style, { position: "fixed", left: `${r.left}px`, top: `${r.top}px`, margin: "0", visibility: "hidden", overflow: "hidden", whiteSpace: "pre-wrap" });
+    const span = document.createElement("span");
+    span.textContent = el.value[at];
+    mirror.append(el.value.slice(0, at), span, el.value.slice(at + 1));
+    document.body.appendChild(mirror);
+    mirror.scrollTop = el.scrollTop;
+    mirror.scrollLeft = el.scrollLeft;
+    const b = span.getBoundingClientRect();
+    mirror.remove();
+    return { x: b.x, y: b.y, w: b.width, h: b.height };
+  }, i);
+}
+
+/** 押したあとに本文が変わったら（道具帯の［貼り付け］・ルビなど、打たずに入る字）、もう押した所へ戻さない */
+test("短く押したあとで本文が変わったら、カーソルを押した所へ戻さない", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("novelai.test.iosTextarea", "1"));
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("#msEditor");
+  await expect(editor).toBeVisible();
+  const kami = await charBox(editor, 4);
+  await page.mouse.click(kami.x + kami.w / 2, kami.y + kami.h * 0.5);
+  await expect.poll(() => editor.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(5);
+  // 打たずに字が入る（カーソルはその字の後ろ＝8）
+  await editor.evaluate((el: HTMLTextAreaElement) => el.setRangeText("ぜんぶ", 5, 5, "end"));
+  await page.waitForTimeout(300);
+  expect(await editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([8, 8]);
+  await editor.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(1, 1));
+  await page.waitForTimeout(300);
+  expect(await editor.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(1);
+});

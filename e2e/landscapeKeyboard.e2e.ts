@@ -59,25 +59,42 @@ test("変換中は替えず、確定してから替える", async ({ page }) => 
 /**
  * **一覧の側などの空いた所を押すと、キーボードが閉じる**（2026-11-20 iPhone 17 シミュレーターの T7：横向きの iPhone の
  * キーボードには閉じるキーが無く、一覧の側の空いた所を押しても閉じなかった。上のバーの題を押すと閉じた）。
- * iOS は、焦点の取れない所を押しても焦点を外さない（Chromium は外す）。ここでは焦点の動かない押し（click だけ）でまねる
+ * iOS は、焦点の取れない所を押しても焦点を外さず、押せる物に見えない所では click も送らないことがある（0.1.128 の
+ * シミュレーターで click で見る作りが効かなかった）。ここでは焦点の動かない押し（pointerdown・pointerup だけ。click は送らない）でまねる
  */
-test("空いた所を押すと欄の焦点が外れ（キーボードが閉じ）、縦書きへ戻る。ボタンや欄の中を押したときは外さない", async ({ page }) => {
+test("空いた所を押すと欄の焦点が外れ（キーボードが閉じ）、縦書きへ戻る。ボタンや欄の中を押したとき・送ったときは外さない", async ({ page }) => {
   await openFirst(page);
   const editor = page.locator("textarea#msEditor");
   await editor.click();
   await page.setViewportSize({ width: 780, height: 150 });
   await expect(editor).toHaveCSS("writing-mode", "horizontal-tb");
-  /** 焦点を動かさずに押す（iOS の空いた所の押しと同じ） */
-  const tapWithoutFocus = (selector: string) =>
-    page.locator(selector).first().evaluate((el) => el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
+  /** 焦点を動かさずに押して離す（iOS の空いた所の押しと同じ。click は来ない）。`dy` だけ動かして離す */
+  const tapWithoutFocus = (selector: string, dy = 0) =>
+    page
+      .locator(selector)
+      .first()
+      .evaluate((el, move) => {
+        const r = el.getBoundingClientRect();
+        const x = r.x + Math.min(10, r.width / 2);
+        const y = r.y + Math.min(10, r.height / 2);
+        const at = (type: string, yy: number) =>
+          el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType: "touch", clientX: x, clientY: yy, isPrimary: true }));
+        at("pointerdown", y);
+        at("pointerup", y + move);
+      }, dy);
   // 欄の中を押しても外さない
   await tapWithoutFocus("textarea#msEditor");
   await expect(editor).toBeFocused();
   // ボタン（道具帯のルビなど、欄に焦点があるまま使うもの）を押しても外さない
   await tapWithoutFocus(".ms-tools button");
   await expect(editor).toBeFocused();
+  // 一覧を指で送った（押して動かして離した）だけなら外さない
+  await tapWithoutFocus("#msSide", 40);
+  await expect(editor).toBeFocused();
   // 一覧の空いた所（一覧の枠そのもの）を押すと外れる
   await tapWithoutFocus("#msSide");
   await expect(editor).not.toBeFocused();
   await expect(editor).toHaveCSS("writing-mode", "vertical-rl");
+  // 押しの道筋に残る（実機で読む）
+  expect(await page.evaluate(() => (window as unknown as { __novelaiTapTrace?: string[] }).__novelaiTapTrace?.some((l) => l.includes("blank-up moved=false")))).toBe(true);
 });

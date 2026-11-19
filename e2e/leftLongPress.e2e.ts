@@ -246,3 +246,28 @@ test("短く押したあとで本文が変わったら、カーソルを押し�
   await page.waitForTimeout(300);
   expect(await editor.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(1);
 });
+
+/**
+ * **2度押しで、押した字を含む語をこちらで選ぶ**（2026-11-20 iPad mini 実機 0.1.128 の T3：1度目のあとに触らないようにしても、
+ * 語が選ばれずカーソルが置かれただけ。iOS は縦書きの textarea では2度押しでも語を選ばないと見る）。
+ * ここでは、2度目のあとに端末が語の頭（3）へカーソルを置く動きをまねる。それでも「手紙」（3〜5）が選ばれたまま
+ */
+test("2度押しで語が選ばれ、端末があとからカーソルを置いても語の範囲へ戻る（実機の T3）", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("novelai.test.iosTextarea", "1"));
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("#msEditor");
+  await expect(editor).toBeVisible();
+  const kami = await charBox(editor, 4);
+  const x = kami.x + kami.w / 2;
+  const y = kami.y + kami.h * 0.5;
+  await page.mouse.click(x, y);
+  await page.mouse.click(x, y);
+  await page.waitForTimeout(400);
+  await editor.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(3, 3));
+  await expect.poll(() => editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([3, 5]);
+  await expect(editor).toBeFocused();
+  await page.keyboard.press("Backspace");
+  await expect(editor).toHaveValue(/^姉からが届いた。/);
+});

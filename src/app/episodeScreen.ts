@@ -30,7 +30,7 @@ import { createTrialLog } from "./trialLogFile";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import type { TermEntry } from "../shared";
 import type { TermFinder } from "./editContextPane";
-import { wantsIosTextareaFixes, watchTextareaLongPress } from "./textareaLongPress";
+import { traceTouch, wantsIosTextareaFixes, watchTextareaLongPress } from "./textareaLongPress";
 import { watchOwnCaret } from "./textareaCaret";
 import { rememberedBroken, VERTICAL_INPUT_REMINDER, watchVerticalInput } from "./verticalInputCheck";
 
@@ -102,6 +102,8 @@ export function orientationButtonLabel(current: WritingOrientation): string {
 }
 
 /** 話のファイルの名前から題（`.txt` を除く） */
+/** 空いた所の押しとみなす、押してから離すまでに動いてよい幅（これより動いたら一覧を送っている） */
+const BLANK_TAP_MOVE_PX = 10;
 /** 押しても欄の焦点を外さない所（ボタン・入力の欄・引き出し） */
 const KEEPS_EDITOR_FOCUS =
   "button, a, input, textarea, select, label, summary, [contenteditable], [role='button'], [role='tab'], [role='dialog'], [role='menu'], .ms-tools, .term-sheet";
@@ -603,18 +605,41 @@ export function mountEpisodeScreen(
   });
   // 空いた所（一覧の側・上のバーの余白など）を押したら、欄の焦点を外してキーボードを閉じる（2026-11-20 iPhone 17
   // シミュレーターの T7：横向きの iPhone のキーボードには閉じるキーが無く、空いた所を押しても閉じなかった。iOS は焦点の
-  // 取れない所を押しても焦点を外さない）。欄の中・ボタンや入力の欄・引き出しの中は外さない
-  // 電話だけ（iPad のキーボードには閉じるキーがある。横の板の提案の字を押して焦点が外れないように）
-  screen.addEventListener("click", (e) => {
-    if (Math.min(window.screen.width, window.screen.height) >= PHONE_SHORT_SIDE) return;
-    const active = document.activeElement;
-    if (!(active instanceof HTMLElement) || !host.contains(active)) return;
-    const target = e.target as Element;
-    // 押した字は、離すまでに欄が描き直して外れていることがある（受け口の作り）。外れた所は欄の中とみなす
-    if (!target.isConnected || host.contains(target)) return;
-    if (target.closest(KEEPS_EDITOR_FOCUS)) return;
-    active.blur();
-  });
+  // 取れない所を押しても焦点を外さない）。欄の中・ボタンや入力の欄・引き出しの中は外さない。
+  // 電話だけ（iPad のキーボードには閉じるキーがある。横の板の提案の字を押して焦点が外れないように）。
+  // click では見ない：iOS は押せる物に見えない所では click を送らないことがあり、0.1.128 のシミュレーターで閉じなかった。
+  // 押した（pointerdown）所で決め、その場で離した（pointerup。送ったのではない）ときに外す。押した字は離すまでに
+  // 欄が描き直して外れることがある（受け口の作り）ので、押した所は押したときに読む
+  let blankPress: { x: number; y: number; id: number } | undefined;
+  screen.addEventListener(
+    "pointerdown",
+    (e) => {
+      blankPress = undefined;
+      if (Math.min(window.screen.width, window.screen.height) >= PHONE_SHORT_SIDE) return;
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || !host.contains(active)) return;
+      const target = e.target as Element;
+      const keep = host.contains(target) || target.closest(KEEPS_EDITOR_FOCUS) !== null;
+      traceTouch(`blank-down ${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""} keep=${keep}`);
+      if (!keep) blankPress = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    },
+    true
+  );
+  screen.addEventListener(
+    "pointerup",
+    (e) => {
+      const press = blankPress;
+      blankPress = undefined;
+      if (!press || press.id !== e.pointerId) return;
+      const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y) > BLANK_TAP_MOVE_PX;
+      const active = document.activeElement;
+      traceTouch(`blank-up moved=${moved} focus=${active instanceof HTMLElement && host.contains(active)}`);
+      if (moved || !(active instanceof HTMLElement) || !host.contains(active)) return;
+      active.blur();
+    },
+    true
+  );
+  screen.addEventListener("pointercancel", () => (blankPress = undefined), true);
   let session: EpisodeSession | undefined;
   let pane: WritingPane | undefined;
   /**

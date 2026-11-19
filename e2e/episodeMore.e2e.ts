@@ -13,7 +13,7 @@ test("［…］→ 誤字脱字：書きかけを保存してから、この話�
   await editor.press("End");
   await page.keyboard.type("足した");
   await page.locator("#episodeMore").click();
-  await expect(page.locator(".dialog-choices .dialog-list button")).toHaveText(["新しい話", "章を立てる", "誤字脱字", "推敲", "あらすじ"]);
+  await expect(page.locator(".dialog-choices .dialog-list button")).toHaveText(["新しい話", "章を立てる", "書き出し", "誤字脱字", "推敲", "あらすじ"]);
   await page.locator(".dialog-choices button", { hasText: "誤字脱字" }).click();
   await expect(page).toHaveURL(/#\/typo\//);
   await expect(page.locator(".estimate")).toContainText("第1話 手紙");
@@ -77,4 +77,19 @@ test("［…］→ 章を立てる：その話から始まる章を章立てに�
   await page.locator('.dialog [data-answer="yes"]').click();
   await expect(page.locator("#toast")).toHaveText("章の名前を変えました");
   expect(JSON.parse((await readFakeFile(page, "灯台守_確認用/設定/章立て.json"))!).chapters[2].name).toBe("間章");
+});
+
+// 2026-11-19 夜 作者の決定「投稿サイト向けの本文を写す」：本体の「コピー（投稿サイト用）」と同じ変換。付箋の行は落とす
+test("［…］→ 書き出し → カクヨム：カクヨムの書き方に直した本文が写しに入る", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("textarea#msEditor");
+  await editor.fill("{灯台|とうだい}の{{手紙}}が届いた。\n// 付箋：ここは後で直す\n");
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "書き出し" }).click();
+  await page.locator(".dialog-choices button", { hasText: /^カクヨム$/ }).click();
+  await expect(page.locator("#toast")).toHaveText("カクヨム向けにコピーしました（21字）");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("｜灯台《とうだい》の《《手紙》》が届いた。");
 });

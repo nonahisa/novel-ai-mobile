@@ -1987,7 +1987,9 @@ a.gh-open {
 .sel-band {
   position: absolute;
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1999,6 +2001,11 @@ a.gh-open {
 }
 .sel-band[hidden] {
   display: none;
+}
+/* 帯の段（上［ルビ］［傍点］［資料を見る］・下［コピー］［貼り付け］。2026-11-19 夜 作者の決定「2段にして幅を詰める」） */
+.sel-band-row {
+  display: flex;
+  gap: 4px;
 }
 .sel-band button {
   min-height: 40px;

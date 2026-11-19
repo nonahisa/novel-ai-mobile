@@ -72,4 +72,17 @@ test.describe("幅で3段", () => {
     await page.locator("#sideToggle").click();
     await expect(page.locator("#msSide")).toBeVisible();
   });
+
+  // 2026-11-19 夜 作者の頼み（iPad）「話の一覧をたためるように」：上のバーの［一覧］だけでは気づきにくいので、一覧の頭にも［たたむ］
+  test("一覧の頭の［たたむ］で畳み、上のバーの［一覧］で開き直す", async ({ page }) => {
+    await page.setViewportSize({ width: 744, height: 1133 });
+    await openFirst(page);
+    const before = (await page.locator("#msEditor").boundingBox())!.width;
+    await page.locator("#msSide .ms-side-fold").click();
+    await expect(page.locator("#msSide")).toBeHidden();
+    await expect(page.locator("#sideToggle")).toHaveAttribute("aria-pressed", "false");
+    expect((await page.locator("#msEditor").boundingBox())!.width).toBeGreaterThan(before + 200);
+    await page.locator("#sideToggle").click();
+    await expect(page.locator("#msSide .ms-side-fold")).toBeVisible();
+  });
 });

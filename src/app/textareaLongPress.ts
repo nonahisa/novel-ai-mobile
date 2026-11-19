@@ -235,9 +235,13 @@ export const DOUBLE_TAP_MS = 350;
  */
 export const TAP_TRACE_MAX = 60;
 function traceTap(what: string, area: HTMLTextAreaElement): void {
+  traceTouch(`${what} sel=${area.selectionStart}-${area.selectionEnd} focus=${document.activeElement === area}`);
+}
+/** 押しの道筋に1行足す（原稿の画面の空いた所の押しもここへ。本文は入れない） */
+export function traceTouch(line: string): void {
   const w = window as unknown as { __novelaiTapTrace?: string[] };
   const list = (w.__novelaiTapTrace ??= []);
-  list.push(`${Math.round(performance.now())} ${what} sel=${area.selectionStart}-${area.selectionEnd} focus=${document.activeElement === area}`);
+  list.push(`${Math.round(performance.now())} ${line}`);
   if (list.length > TAP_TRACE_MAX) list.splice(0, list.length - TAP_TRACE_MAX);
 }
 

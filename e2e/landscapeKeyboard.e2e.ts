@@ -98,3 +98,58 @@ test("空いた所を押すと欄の焦点が外れ（キーボードが閉じ�
   // 押しの道筋に残る（実機で読む）
   expect(await page.evaluate(() => (window as unknown as { __novelaiTapTrace?: string[] }).__novelaiTapTrace?.some((l) => l.includes("blank-up moved=false")))).toBe(true);
 });
+
+/**
+ * **画面の外（body）の空きを押しても閉じる**（2026-11-20 iPhone 17 シミュレーター 0.1.129 の T7：一覧の札の下・キーボードの上の
+ * 空きを押しても閉じなかった。キーボードが出ていると、その空きが画面の要素の外〈body〉になる見込み）。
+ * 画面の外のほかの物（問いの窓・知らせなど）を押したときは外さない
+ */
+test("画面の外の body の空きを押すと焦点が外れる。画面の外のほかの物では外さない", async ({ page }) => {
+  await openFirst(page);
+  const editor = page.locator("textarea#msEditor");
+  await editor.click();
+  await page.setViewportSize({ width: 780, height: 150 });
+  await expect(editor).toHaveCSS("writing-mode", "horizontal-tb");
+  const tapOn = (make: string) =>
+    page.evaluate((kind) => {
+      let el: Element = document.body;
+      if (kind === "overlay") {
+        el = document.createElement("div");
+        el.className = "zz-overlay";
+        document.body.appendChild(el);
+      }
+      const at = (type: string) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 9, pointerType: "touch", clientX: 300, clientY: 140, isPrimary: true }));
+      at("pointerdown");
+      at("pointerup");
+      if (kind === "overlay") el.remove();
+    }, make);
+  await tapOn("overlay");
+  await expect(editor).toBeFocused();
+  await tapOn("body");
+  await expect(editor).not.toBeFocused();
+});
+
+/** 試しで起こしたとき（iOS の起動の引数 `-novelaiTouchTrace`）だけ、押しの道筋を端末の記録の受け口へも送る */
+test("試しの印があるときだけ、押しの道筋を端末の記録の受け口へ送る（本文は入れない）", async ({ page }) => {
+  await page.addInitScript(() => {
+    const got: string[] = [];
+    (window as unknown as { __got: string[] }).__got = got;
+    (window as unknown as { webkit: unknown }).webkit = { messageHandlers: { novelaiTouchTrace: { postMessage: (b: string) => got.push(b) } } };
+  });
+  await openFirst(page);
+  const editor = page.locator("textarea#msEditor");
+  await editor.click();
+  const tapBody = () =>
+    page.evaluate(() => {
+      for (const type of ["pointerdown", "pointerup"]) document.body.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 3, clientX: 1, clientY: 1 }));
+    });
+  await tapBody();
+  expect(await page.evaluate(() => (window as unknown as { __got: string[] }).__got.length)).toBe(0);
+  await editor.click();
+  await page.evaluate(() => ((window as unknown as { __novelaiTouchTraceOn: boolean }).__novelaiTouchTraceOn = true));
+  await tapBody();
+  const got = await page.evaluate(() => (window as unknown as { __got: string[] }).__got);
+  expect(got.some((l) => l.includes("blank-down body blank=true"))).toBe(true);
+  const text = await editor.inputValue();
+  expect(got.some((l) => l.includes(text.slice(0, 4)))).toBe(false);
+});

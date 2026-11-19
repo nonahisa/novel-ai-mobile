@@ -263,8 +263,14 @@ function traceTap(what: string, area: HTMLTextAreaElement): void {
 export function traceTouch(line: string): void {
   const w = window as unknown as { __novelaiTapTrace?: string[] };
   const list = (w.__novelaiTapTrace ??= []);
-  list.push(`${Math.round(performance.now())} ${line}`);
+  const stamped = `${Math.round(performance.now())} ${line}`;
+  list.push(stamped);
   if (list.length > TAP_TRACE_MAX) list.splice(0, list.length - TAP_TRACE_MAX);
+  // 試しで起こしたときだけ（iOS のアプリを起動の引数 `-novelaiTouchTrace` で起こすと、`MainViewController.swift` が
+  // 印と受け口を入れる）、端末の記録（NSLog）にも出す。Mac が Safari なしで読むため（2026-11-20 母艦の頼み）。
+  // Capacitor の記録は切ってある（`loggingBehavior: "none"`。合言葉が入るため）ので、console には出さない
+  const w2 = window as unknown as { __novelaiTouchTraceOn?: boolean; webkit?: { messageHandlers?: { novelaiTouchTrace?: { postMessage(body: string): void } } } };
+  if (w2.__novelaiTouchTraceOn === true) w2.webkit?.messageHandlers?.novelaiTouchTrace?.postMessage(stamped);
 }
 
 /** 短く押したあと、端末が置き直したカーソルをこちらへ戻すあいだ（離してから） */

@@ -611,35 +611,48 @@ export function mountEpisodeScreen(
   // 押した（pointerdown）所で決め、その場で離した（pointerup。送ったのではない）ときに外す。押した字は離すまでに
   // 欄が描き直して外れることがある（受け口の作り）ので、押した所は押したときに読む
   let blankPress: { x: number; y: number; id: number } | undefined;
-  screen.addEventListener(
-    "pointerdown",
-    (e) => {
-      blankPress = undefined;
-      if (Math.min(window.screen.width, window.screen.height) >= PHONE_SHORT_SIDE) return;
-      const active = document.activeElement;
-      if (!(active instanceof HTMLElement) || !host.contains(active)) return;
-      const target = e.target as Element;
-      const keep = host.contains(target) || target.closest(KEEPS_EDITOR_FOCUS) !== null;
-      traceTouch(`blank-down ${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""} keep=${keep}`);
-      if (!keep) blankPress = { x: e.clientX, y: e.clientY, id: e.pointerId };
-    },
-    true
-  );
-  screen.addEventListener(
-    "pointerup",
-    (e) => {
-      const press = blankPress;
-      blankPress = undefined;
-      if (!press || press.id !== e.pointerId) return;
-      const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y) > BLANK_TAP_MOVE_PX;
-      const active = document.activeElement;
-      traceTouch(`blank-up moved=${moved} focus=${active instanceof HTMLElement && host.contains(active)}`);
-      if (moved || !(active instanceof HTMLElement) || !host.contains(active)) return;
-      active.blur();
-    },
-    true
-  );
-  screen.addEventListener("pointercancel", () => (blankPress = undefined), true);
+  /**
+   * 押した所が空いた所か。画面の中で欄・ボタンなどでない所、または画面の外の body・html（0.1.129 のシミュレーターの T7：
+   * キーボードが出ていると、一覧の下の空きが画面の要素の外〈body〉になることがあり、画面で拾う作りでは閉じなかった見込み）。
+   * 画面の外のほかの物（引き出し・問いの窓・知らせ）は空いた所にしない
+   */
+  const isBlank = (target: Element): boolean => {
+    if (target === document.body || target === document.documentElement) return true;
+    if (!screen.contains(target)) return false;
+    return !host.contains(target) && target.closest(KEEPS_EDITOR_FOCUS) === null;
+  };
+  const onBlankDown = (e: PointerEvent) => {
+    blankPress = undefined;
+    if (Math.min(window.screen.width, window.screen.height) >= PHONE_SHORT_SIDE) return;
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !host.contains(active)) return;
+    const target = e.target instanceof Element ? e.target : document.body;
+    const blank = isBlank(target);
+    traceTouch(`blank-down ${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""} blank=${blank} at=${Math.round(e.clientX)},${Math.round(e.clientY)}`);
+    if (blank) blankPress = { x: e.clientX, y: e.clientY, id: e.pointerId };
+  };
+  const onBlankUp = (e: PointerEvent) => {
+    const press = blankPress;
+    blankPress = undefined;
+    if (!press || press.id !== e.pointerId) return;
+    const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y) > BLANK_TAP_MOVE_PX;
+    const active = document.activeElement;
+    traceTouch(`blank-up moved=${moved} focus=${active instanceof HTMLElement && host.contains(active)}`);
+    if (moved || !(active instanceof HTMLElement) || !host.contains(active)) return;
+    active.blur();
+  };
+  const onBlankCancel = () => {
+    if (blankPress) traceTouch("blank-cancel");
+    blankPress = undefined;
+  };
+  document.addEventListener("pointerdown", onBlankDown, true);
+  document.addEventListener("pointerup", onBlankUp, true);
+  document.addEventListener("pointercancel", onBlankCancel, true);
+  const stopBlankTap = () => {
+    document.removeEventListener("pointerdown", onBlankDown, true);
+    document.removeEventListener("pointerup", onBlankUp, true);
+    document.removeEventListener("pointercancel", onBlankCancel, true);
+  };
   let session: EpisodeSession | undefined;
   let pane: WritingPane | undefined;
   /**
@@ -1121,6 +1134,7 @@ export function mountEpisodeScreen(
       destroyed = true;
       stopPinch();
       stopLandscapeKeyboard();
+      stopBlankTap();
       session?.dispose();
       pane?.destroy();
     },

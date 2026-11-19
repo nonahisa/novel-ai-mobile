@@ -106,8 +106,21 @@ for (const build of ["EditContext", "受け口"] as const) {
       await caretBefore(page, 0);
       await extend(page, 1);
       await expect(page.locator("#msEditor .sel")).toHaveCount(1);
-      // 範囲のすぐ近くの字は、つまみ（押せる所 44px）や範囲の近くの帯（0.1.110）の下になる。離れた字を押して外す
-      await caretBefore(page, 17);
+      // 範囲のすぐ近くの字は、つまみ（押せる所 44px）や範囲の近くの帯（0.1.110。0.1.126 から2段で背が高い）の下になる。
+      // 帯にもつまみにもかかっていない字を探して押し、外す
+      const free = await page.locator("#msEditor").evaluate((el) => {
+        for (let i = 17; i < 30; i++) {
+          const span = el.querySelector<HTMLElement>(`[data-i="${i}"]`);
+          if (!span || span.textContent === "\n") continue;
+          const r = span.getBoundingClientRect();
+          const x = r.x + r.width / 2;
+          const y = r.y + r.height / 2;
+          if (document.elementFromPoint(x, y) === span) return { x, y };
+        }
+        return undefined;
+      });
+      expect(free).toBeDefined();
+      await page.mouse.click(free!.x, free!.y);
       await expect(page.locator("#msEditor .sel")).toHaveCount(0);
     });
 
@@ -216,6 +229,11 @@ for (const build of ["EditContext", "受け口"] as const) {
       const band = page.locator(".sel-band");
       await expect(band).toBeVisible();
       await expect(band.locator("button")).toHaveText(["ルビ", "傍点", "資料を見る", "コピー", "貼り付け"]);
+      // 2段（2026-11-19 夜 作者の決定「2段にして幅を詰める」）：上の段［ルビ］［傍点］［資料を見る］、下の段［コピー］［貼り付け］
+      await expect(band.locator(".sel-band-row").nth(0).locator("button")).toHaveText(["ルビ", "傍点", "資料を見る"]);
+      await expect(band.locator(".sel-band-row").nth(1).locator("button")).toHaveText(["コピー", "貼り付け"]);
+      const rows = await band.locator(".sel-band-row").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
+      expect(rows[1]!.top).toBeGreaterThanOrEqual(rows[0]!.bottom - 1);
       // 名前でない字で［資料を見る］は知らせる
       await band.locator('[data-band="term"]').click();
       await expect(page.locator("#toast")).toHaveText("選んだ字は、資料の名前ではありません");

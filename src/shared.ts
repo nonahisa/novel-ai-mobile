@@ -193,3 +193,7 @@ export { detectJsonFileFormat, formatJsonForFile } from "novel-ai-assistant/src/
 // 執筆統計（I。2026-11-19）：字数の言い方だけ本体から。記録の読み方は `platform/writingStatsRead.ts`
 // （本体の core/writingStats.ts は型を `import type` で読まず、このアプリの型検査〈verbatimModuleSyntax〉を通らない）
 export { describeWrittenAmount } from "novel-ai-assistant/src/core/writingAmountText";
+// ［…］→ 書き出し（2026-11-19 夜 作者の決定「投稿サイト向けの本文を写す」）：本体の「コピー（投稿サイト用）」と同じ変換
+export { convertForPosting, noteCopyMessage } from "novel-ai-assistant/src/core/postingConvert";
+export { postingCopyTargets, type PostingCopyTarget } from "novel-ai-assistant/src/core/postingCopyTargets";
+export { postingCopySource } from "novel-ai-assistant/src/core/episodeCopy";

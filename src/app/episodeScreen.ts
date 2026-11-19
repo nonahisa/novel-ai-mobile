@@ -1,3 +1,6 @@
+import { watchLandscapeKeyboard } from "./landscapeKeyboard";
+import { exportCopy, exportTargets } from "./exportCopy";
+import { readWorkMemoMarkers } from "../platform/memoMarkers";
 import { App } from "@capacitor/app";
 import type { FileStore } from "../platform/fileStore";
 import type { AutoSaveStatus } from "./autoSave";
@@ -399,8 +402,8 @@ function mountRightLinePane(
             { id: "ruby", label: "ルビ" },
             { id: "emphasis", label: "傍点" },
             { id: "term", label: "資料を見る" },
-            { id: "copy", label: "コピー" },
-            { id: "paste", label: "貼り付け" },
+            { id: "copy", label: "コピー", row: 1 },
+            { id: "paste", label: "貼り付け", row: 1 },
           ],
           onBand: (id: string) => {
             log(`範囲：帯の［${id}］`);
@@ -503,6 +506,9 @@ export function mountEpisodeScreen(
   }
 ): EpisodeLeaveGuard {
   let orientation = readOrientation();
+  /** 横向きの電話でキーボードが出ているあいだの、自動の横書き（作者の選びは書き換えない。`landscapeKeyboard.ts`） */
+  let autoHorizontal = false;
+  const shownOrientation = (): WritingOrientation => (autoHorizontal ? "horizontal" : orientation);
   // 幅が 600dp 以上（中・広い段）なら、左に話の一覧（`#msSide`。中身は呼ぶ側が入れる）。段は CSS だけで切り替え、
   // 原稿の欄は作り直さない（回転や分割画面で、書きかけ・カーソル・変換中の字を保つ。設計書 4.3・4.5）
   const sideOpen = readSideOpen();
@@ -550,7 +556,8 @@ export function mountEpisodeScreen(
   toggle.addEventListener("pointerdown", (event) => event.preventDefault());
   screen.querySelector<HTMLElement>(".appbar")!.appendChild(toggle);
   // ［…］：この話の操作（設計書 4.4・4.4.2「走らせる入口は話の長押しと［…］」）。作ってあるものだけ並べる（いまは AI の3つ）
-  if (options.runAi || options.newEpisode || options.newChapter) {
+  // 書き出し（投稿サイト向けの本文を写す）はいつも出す（2026-11-19 夜 作者の決定）
+  {
     const { runAi, newEpisode, newChapter } = options;
     const more = document.createElement("button");
     more.className = "appbar-action";
@@ -561,6 +568,7 @@ export function mountEpisodeScreen(
       void chooseFrom([
         ...(newEpisode ? [{ id: "newEpisode", label: "新しい話" }] : []),
         ...(newChapter ? [{ id: "newChapter", label: "章を立てる" }] : []),
+        { id: "export", label: "書き出し" },
         ...(runAi
           ? [
               { id: "typo", label: "誤字脱字" },
@@ -571,6 +579,7 @@ export function mountEpisodeScreen(
       ]).then((picked) => {
         if (picked === "newEpisode") newEpisode?.();
         if (picked === "newChapter") newChapter?.();
+        if (picked === "export") void exportForPosting();
         if (picked === "typo" || picked === "proofread" || picked === "synopsis") runAi?.(picked);
       });
     });
@@ -580,6 +589,14 @@ export function mountEpisodeScreen(
   const host = screen.querySelector<HTMLElement>("#msHost")!;
   // 2本指で広げる・つまむと、本文の字の大きさが変わる（設計書 5.2。端末ごとに覚える）
   const stopPinch = watchPinchSize(host);
+  // 横向きの電話でキーボードが出たら自動で横書き、閉じると作者の選びへ戻す（2026-11-19 夜 作者の決定、案2）
+  const stopLandscapeKeyboard = watchLandscapeKeyboard({
+    host,
+    apply(horizontal) {
+      autoHorizontal = horizontal;
+      pane?.setOrientation(shownOrientation());
+    },
+  });
   let session: EpisodeSession | undefined;
   let pane: WritingPane | undefined;
   /**
@@ -856,6 +873,28 @@ export function mountEpisodeScreen(
    * 出ない。写しは端末の写し（`navigator.clipboard`）。読めない・書けない端末（許しが無いなど）は知らせて止める。
    * 貼り付けは選んだ範囲と置き換え、道具帯と同じく1手として取り消せる
    */
+  /** ［…］→ 書き出し：貼り付け先を選んで、その書き方に直した本文を写しへ（`exportCopy.ts`） */
+  const exportForPosting = async (): Promise<void> => {
+    const target = pane;
+    if (!target) return;
+    const targets = exportTargets();
+    const picked = await chooseFrom(targets.map((t, i) => ({ id: String(i), label: t.label })));
+    if (picked === undefined || pane !== target) return;
+    let markers;
+    try {
+      markers = options.workRoot ? await readWorkMemoMarkers(store, options.workRoot) : undefined;
+    } catch {
+      // 作品のメモの印が壊れていたら、付箋の行が本文に混ざらないよう写さない（本体と同じく止める）
+      return options.toast("作品の設定（メモの印）が読めないので、写せません");
+    }
+    const result = exportCopy(target.value(), target.selection(), targets[Number(picked)]!, markers);
+    try {
+      await navigator.clipboard.writeText(result.text);
+      options.toast(result.message);
+    } catch {
+      options.toast("コピーできませんでした");
+    }
+  };
   const copyOrPaste = async (id: "copy" | "paste", target: WritingPane): Promise<void> => {
     const text = target.value();
     const { start, end } = target.selection();
@@ -928,7 +967,7 @@ export function mountEpisodeScreen(
     orientation = orientation === "vertical" ? "horizontal" : "vertical";
     writeOrientation(orientation);
     toggle.textContent = orientationButtonLabel(orientation);
-    pane?.setOrientation(orientation);
+    pane?.setOrientation(shownOrientation());
   });
 
   // 捨てる側（［戻さない］）を「はい」に置く。askChoice の焦点・背景は「いいえ」の側
@@ -954,7 +993,7 @@ export function mountEpisodeScreen(
         return;
       }
       session = result.session;
-      pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, orientation, onEdit, (id) => onSelectionBand(id)) : mountWritingPane(host, orientation, onEdit, readLeftLineTermColors(), onVerticalBroken);
+      pane ??= readCompositionLine() === "right" ? mountRightLinePane(host, shownOrientation(), onEdit, (id) => onSelectionBand(id)) : mountWritingPane(host, shownOrientation(), onEdit, readLeftLineTermColors(), onVerticalBroken);
       // 前に縦書きの入力が崩れた端末なら、開いたときに一度だけ知らせる（勝手に横へは開かない。設計書 5.3）
       if (!remindedVerticalBroken && readCompositionLine() !== "right" && orientation === "vertical" && rememberedBroken(window.localStorage, navigator.userAgent)) {
         remindedVerticalBroken = true;
@@ -1038,6 +1077,7 @@ export function mountEpisodeScreen(
     destroy() {
       destroyed = true;
       stopPinch();
+      stopLandscapeKeyboard();
       session?.dispose();
       pane?.destroy();
     },

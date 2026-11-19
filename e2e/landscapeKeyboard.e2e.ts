@@ -153,3 +153,36 @@ test("試しの印があるときだけ、押しの道筋を端末の記録の�
   const text = await editor.inputValue();
   expect(got.some((l) => l.includes(text.slice(0, 4)))).toBe(false);
 });
+
+/**
+ * **キーボードが出ているとき、一覧を指で送っても画面全体がずれない**（2026-11-20 iPhone 17 シミュレーター 0.1.130：
+ * 横向きでキーボードが出ているとき一覧を送ると、画面全体が上へずれ、上のバーの下に話の札と本文の上の行が潜り込んだ）。
+ * 一覧が短くて送れないとき、指の動き（touchmove）をページへ渡さない（見える所が低いあいだ＝`data-compact`。横の電話は
+ * キーボードが無くても低いので止まるが、そのときページは画面に収まっていて送る物が無い）
+ */
+test.describe("一覧の指の動き", () => {
+  test.use({ hasTouch: true });
+  test("見える所が低いあいだは、送れない一覧の指の動きをページへ渡さない", async ({ page }) => {
+    await openFirst(page);
+    const editor = page.locator("textarea#msEditor");
+    await editor.click();
+    /** 一覧の上で指を `dy` 動かし、その動きが止められたか（一覧は頭にある） */
+    const swipeOnSide = (dy: number) =>
+      page.locator("#msSide").evaluate((side, d) => {
+        side.scrollTop = 0;
+        const r = side.getBoundingClientRect();
+        const touch = (y: number) => new Touch({ identifier: 1, target: side, clientX: r.x + 20, clientY: y });
+        side.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, cancelable: true, touches: [touch(r.y + 40)] }));
+        const move = new TouchEvent("touchmove", { bubbles: true, cancelable: true, touches: [touch(r.y + 40 + d)] });
+        side.dispatchEvent(move);
+        return move.defaultPrevented;
+      }, dy);
+    await page.setViewportSize({ width: 780, height: 150 });
+    await expect(page.locator("html")).toHaveAttribute("data-compact", "on");
+    // 頭にある一覧で指を下へ（それ以上戻れない）：ページへ渡さない
+    expect(await swipeOnSide(30)).toBe(true);
+    // 指を上へ（一覧が送れる）なら止めない
+    const scrolls = await page.locator("#msSide").evaluate((el) => el.scrollHeight > el.clientHeight + 1);
+    expect(await swipeOnSide(-30)).toBe(!scrolls);
+  });
+});

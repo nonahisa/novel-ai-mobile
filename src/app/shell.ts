@@ -43,7 +43,9 @@ import { checkRemovable, removeWorkFolder } from "../platform/workRemove";
 import { watchLongPress } from "./longPress";
 import { mountOrphanDrafts } from "./orphanDrafts";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
-import { listWorks, readWorkLayout, scanWorkFolder, type ScanOptions } from "../platform/workScan";
+import { listWorks, readWorkLayout, scanWorkFolder, type ScanOptions, type WorkListItem } from "../platform/workScan";
+import { readWorkWritingDays, writingSummary } from "../platform/writingStatsRead";
+import { renderWritingStats, todayLineHtml, type WorkWriting } from "./writingStatsView";
 import { lastCommitTime } from "../platform/git";
 import { dayLabel, syncFlag, workSummary } from "./workListView";
 import { createGitFs, CapacitorGitFsBackend } from "../platform/gitFs";
@@ -101,6 +103,7 @@ import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLe
  * | `#/import` | GitHub から取り寄せる |
  * | `#/display` | 表示（書体の取り寄せ） |
  * | `#/licenses` | ライセンス |
+ * | `#/stats` | 執筆統計（I。今日・今週の字数。読むだけ） |
  * | `#/ai` | 設定 → AI（クラウドの AI の鍵） |
  * | `#/drafts` | 設定 → 書きかけの控え（どの話にも合わない控えを見て消す） |
  * | `#/check` | 動作確認ページ（開発用） |
@@ -127,7 +130,8 @@ type Route =
   | { kind: "display" }
   | { kind: "licenses" }
   | { kind: "ai" }
-  | { kind: "drafts" };
+  | { kind: "drafts" }
+  | { kind: "stats" };
 
 /** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
 function isWorkRoot(root: string): boolean {
@@ -192,6 +196,7 @@ export function parseRoute(hash: string): Route {
   if (name === "licenses") return { kind: "licenses" };
   if (name === "ai") return { kind: "ai" };
   if (name === "drafts") return { kind: "drafts" };
+  if (name === "stats") return { kind: "stats" };
   if (name.startsWith("conflict/")) {
     const pieces = name.slice("conflict/".length).split("/");
     try {
@@ -227,7 +232,7 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals" } as const;
 
 /**
  * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。
@@ -515,7 +520,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "ai" || route.kind === "drafts" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "stats" || route.kind === "ai" || route.kind === "drafts" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab, tabBadges());
@@ -656,6 +661,16 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "display":
         lastTabHash = "#/other";
         mountDisplayScreen(screen, stillHere);
+        return;
+      case "stats":
+        lastTabHash = "#/other";
+        screen.innerHTML = `${renderAppBar("執筆統計", { back: true })}<div id="statsSlot" aria-busy="true"></div>`;
+        void readAllWriting(store).then((rows) => {
+          if (!stillHere()) return;
+          const slot = screen.querySelector<HTMLElement>("#statsSlot")!;
+          slot.innerHTML = renderWritingStats(rows);
+          slot.removeAttribute("aria-busy");
+        });
         return;
       case "licenses":
         lastTabHash = "#/other";
@@ -938,6 +953,23 @@ async function fillWorkSync(slot: HTMLElement, store: FileStore, stillHere: () =
   }
 }
 
+/** 作品ごとの今日・今週の字数（執筆統計 I。記録の読めない作品は「記録なし」） */
+async function writingOf(store: FileStore, items: readonly WorkListItem[]): Promise<WorkWriting[]> {
+  const now = new Date();
+  return Promise.all(
+    items.map(async (item): Promise<WorkWriting> => {
+      const root = item.ok ? item.work.root : item.root;
+      const title = item.ok ? item.work.title : item.title;
+      const days = await readWorkWritingDays(store, root).catch(() => []);
+      return { root, title, summary: writingSummary(days, now), recorded: days.length > 0 };
+    })
+  );
+}
+
+async function readAllWriting(store: FileStore): Promise<WorkWriting[]> {
+  return writingOf(store, await listWorks(store).catch(() => []));
+}
+
 /** 作品を読み終えたら一覧を描く（読む間は空の枠のまま） */
 function mountWorkList(slot: HTMLElement, store: FileStore, options: ScanOptions, stillHere: () => boolean): void {
   const show = (html: string) => {
@@ -948,7 +980,12 @@ function mountWorkList(slot: HTMLElement, store: FileStore, options: ScanOptions
   };
   listWorks(store, options).then(
     (items) => {
-      if (show(renderWorkList(items, new Date()))) void fillWorkSync(slot, store, stillHere);
+      if (!show(renderWorkList(items, new Date()))) return;
+      void fillWorkSync(slot, store, stillHere);
+      void writingOf(store, items).then((rows) => {
+        const line = todayLineHtml(rows);
+        if (line && stillHere()) slot.insertAdjacentHTML("afterbegin", line);
+      });
     },
     (error) => show(renderWorkError(error instanceof Error ? error.message : String(error)))
   );

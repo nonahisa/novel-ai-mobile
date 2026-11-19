@@ -14,7 +14,7 @@ import { ACTION_TREE, isItemShownInActionList, type ActionGroup, type ActionItem
 
 /** 開ける画面 */
 /** `proposals` は［提案］のタブ（頭に、最後に開いた話の誤字脱字の入口がある） */
-export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals";
+export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals" | "stats";
 
 /** メニューの1項目 */
 export interface PlannedItem {
@@ -133,7 +133,7 @@ export const TABS: readonly PlannedTab[] = [
         items: [
           { label: "プロット", action: "プロット自力作成" },
           { label: "設定資料", action: "設定資料集閲覧" },
-          { label: "執筆統計", action: "執筆統計" },
+          { label: "執筆統計", action: "執筆統計", built: "stats" },
           { label: "書き出し・広報", action: "新話投稿" },
         ],
       },
@@ -225,6 +225,7 @@ export const BUILT_ACTIONS: Readonly<Record<string, ScreenId>> = {
   // 走らせる話を選ぶのは話の長押しか［提案］の頭（最後に開いた話）。すべての機能からは［提案］を開く
   誤字脱字検知: "proposals",
   推敲: "proposals",
+  執筆統計: "stats",
 };
 
 function hiddenReason(label: string, group: string, section?: string): string | undefined {

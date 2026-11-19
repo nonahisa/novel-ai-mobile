@@ -795,6 +795,66 @@ button {
 }
 
 /* ---------- 作品一覧（A）と話の一覧（B）。見本の札（.card）と一覧（.list・.ep・.chap・.newep） ---------- */
+/* 作品一覧の上の「今日 +560字」（執筆統計 I。押すと統計の画面） */
+.today-amount {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+/* 執筆統計（I）の画面 */
+.stats-total {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0 0;
+}
+.stats-total > div {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.stats-total dt {
+  font-size: 13px;
+  color: var(--muted);
+}
+.stats-total dd {
+  margin: 4px 0 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+.stats-head {
+  margin: 20px 0 6px;
+  font-size: 14px;
+}
+.stats-works {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stats-works li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.stats-title {
+  overflow-wrap: anywhere;
+}
+.stats-amounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.stats-note {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
 .work-list {
   display: grid;
   gap: 10px;

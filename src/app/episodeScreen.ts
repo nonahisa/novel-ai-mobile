@@ -1,5 +1,6 @@
 import { PHONE_SHORT_SIDE, watchLandscapeKeyboard } from "./landscapeKeyboard";
 import { lockScrollChain } from "./scrollChainLock";
+import { fitToVisible } from "./fitToVisible";
 import { exportCopy, exportTargets } from "./exportCopy";
 import { readWorkMemoMarkers } from "../platform/memoMarkers";
 import { App } from "@capacitor/app";
@@ -652,6 +653,9 @@ export function mountEpisodeScreen(
     [screen.querySelector<HTMLElement>("#msSide")!, screen.querySelector<HTMLElement>("#msBoard")!],
     () => document.documentElement.dataset.compact === "on"
   );
+  // キーボードが出ているとき、一覧の下の端を見える所の下の端に（2026-11-20 iPhone 17 シミュレーター 0.1.131：末の話が
+  // キーボードの下に隠れた。`fitToVisible.ts`）
+  const stopSideFit = fitToVisible(screen.querySelector<HTMLElement>("#msSide")!, () => document.documentElement.dataset.compact === "on");
   document.addEventListener("pointerdown", onBlankDown, true);
   document.addEventListener("pointerup", onBlankUp, true);
   document.addEventListener("pointercancel", onBlankCancel, true);
@@ -1143,6 +1147,7 @@ export function mountEpisodeScreen(
       stopLandscapeKeyboard();
       stopBlankTap();
       stopScrollChainLock();
+      stopSideFit();
       session?.dispose();
       pane?.destroy();
     },

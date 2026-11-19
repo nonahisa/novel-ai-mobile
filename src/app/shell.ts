@@ -1019,6 +1019,14 @@ function mountEpisodeList(screen: HTMLElement, store: FileStore, root: string, o
  * 原稿エディターの左の話の一覧（中・広い段。設計書 4.3）。狭い段では CSS で隠れるが、中身は同じに入れておく
  * （回転で段が変わっても、作り直さずに出せる）。開いている話に印。押すと、保存を済ませてその話へ移る
  */
+/** `row` が `box` の見える所に収まっていなければ、`box` の中だけを送って真ん中あたりに置く */
+export function revealInBox(box: HTMLElement, row: HTMLElement): void {
+  const outer = box.getBoundingClientRect();
+  const inner = row.getBoundingClientRect();
+  if (inner.top >= outer.top && inner.bottom <= outer.bottom) return;
+  box.scrollTop += inner.top - outer.top - Math.max(0, (box.clientHeight - inner.height) / 2);
+}
+
 function fillEpisodeSide(screen: HTMLElement, store: FileStore, root: string, path: string, options: ScanOptions, stillHere: () => boolean): void {
   const side = screen.querySelector<HTMLElement>("#msSide");
   if (!side) return;
@@ -1029,6 +1037,10 @@ function fillEpisodeSide(screen: HTMLElement, store: FileStore, root: string, pa
       for (const row of side.querySelectorAll<HTMLElement>("[data-episode]")) {
         if (row.dataset.episode === path) row.setAttribute("aria-current", "page");
       }
+      // 開いた話を一覧の見える所へ（2026-11-20 iPhone 17 シミュレーター 0.1.132：第20話を開くと一覧が頭へ戻り、開いた話が
+      // 見えない所にあった）。送るのは一覧の中だけ（`scrollIntoView` はページも送るので使わない）
+      const current = side.querySelector<HTMLElement>('[aria-current="page"]');
+      if (current) requestAnimationFrame(() => revealInBox(side, current));
     },
     () => undefined
   );

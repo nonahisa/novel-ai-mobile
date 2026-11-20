@@ -51,8 +51,10 @@ describe("執筆統計のグラフ", () => {
     // 14日より前（11/1）は入れない
     expect(html).not.toContain("2026-11-01");
     expect(html).toContain('role="img"');
-    expect(html).toContain("11/7");
-    expect(html).toContain("11/20");
+    // 端の日付は枠の中に収める（真ん中寄せだと半分が枠の外へ出て切れる。2026-11-21 の写真で見つけた）
+    expect(html).toMatch(/<text class="stats-axis" x="3" [^>]*text-anchor="start">11\/7</);
+    expect(html).toMatch(/<text class="stats-axis" x="280" [^>]*text-anchor="end">11\/20</);
+    expect(html).toMatch(/text-anchor="middle">11\/14</);
   });
 
   test("削った日は下へ伸ばし、色を分ける。月をまたいでも日が続く", () => {

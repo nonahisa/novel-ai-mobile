@@ -94,12 +94,12 @@ export function dailyChartHtml(rows: readonly WorkWriting[], today: string): str
       return `<rect class="stats-bar${cls ? ` ${cls}` : ""}" data-date="${key}" data-net="${net}" x="${i * step + 3}" y="${y.toFixed(1)}" width="${barWidth}" height="${Math.max(h, net === 0 ? 0 : 1).toFixed(1)}"><title>${escapeHtml(`${shortLabel(key)} ${describeWrittenAmount(net)}`)}</title></rect>`;
     })
     .join("");
-  // 日付は端と真ん中だけ（14本ぶん全部書くと重なる）
-  const labelAt = [0, 7, CHART_DAYS - 1];
-  const labels = labelAt
-    .map((i) => `<text class="stats-axis" x="${i * step + 3 + barWidth / 2}" y="${top + height + 16}" text-anchor="middle">${shortLabel(keys[i]!)}</text>`)
-    .join("");
   const width = CHART_DAYS * step;
+  // 日付は端と真ん中だけ（14本ぶん全部書くと重なる）。端の2つは棒の外の縁にそろえる（真ん中寄せだと半分が枠の外へ出て切れる）
+  const axis = (x: number, anchor: string, key: string) =>
+    `<text class="stats-axis" x="${x}" y="${top + height + 16}" text-anchor="${anchor}">${shortLabel(key)}</text>`;
+  const labels =
+    axis(3, "start", keys[0]!) + axis(7 * step + 3 + barWidth / 2, "middle", keys[7]!) + axis(width, "end", keys[CHART_DAYS - 1]!);
   const label = `直近${CHART_DAYS}日の字数（${shortLabel(keys[0]!)}〜${shortLabel(today)}）。今日 ${describeWrittenAmount(values[CHART_DAYS - 1]!)}`;
   return (
     `<h2 class="stats-head">直近${CHART_DAYS}日</h2>` +

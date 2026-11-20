@@ -8,8 +8,8 @@ import type { WritingSummary } from "../platform/writingStatsRead";
  * 文字列で作るので、DOM の無いテストでも中身を確かめられる。配線は `shell.ts`
  */
 
-/** この端末の分はまだ数えていないことを、統計の画面に書いておく（数が少なく見えても読み違えないように） */
-export const NOT_RECORDED_HERE = "この端末で書いた分は、まだ数えていません。パソコンで書いた分を、同期で届いた記録から足しています";
+/** どこで書いた分を足しているかを、統計の画面に書いておく（2026-11-20 夜からこの端末の分も数える。`writingStatsRecord.ts`） */
+export const RECORD_NOTE = "この端末で書いた分と、パソコンなどで書いた分（同期で届いた記録）を足しています";
 
 export interface WorkWriting {
   root: string;
@@ -45,5 +45,5 @@ export function renderWritingStats(rows: readonly WorkWriting[]): string {
             return `<li data-work="${escapeHtml(row.root)}"><span class="stats-title">${escapeHtml(row.title)}</span><span class="stats-amounts">${amounts}</span></li>`;
           })
           .join("")}</ul>`;
-  return `<div class="stats-screen">${head}${list}<p class="stats-note">${escapeHtml(NOT_RECORDED_HERE)}</p></div>`;
+  return `<div class="stats-screen">${head}${list}<p class="stats-note">${escapeHtml(RECORD_NOTE)}</p></div>`;
 }

@@ -206,6 +206,18 @@ describe("取ってくる", () => {
     expect(await dirty.fetch()).toEqual({ kind: "fetched", taken: 1, kept: 1 });
   });
 
+  test("自動の取得：こちらの変更が字数の記録の基準を置き直しただけなら止めずに取り込む（2026-11-20 夜 作者の答え）", async () => {
+    const env = await setup();
+    const stats = `${JSON.stringify({ schemaVersion: "1", deviceId: "phone1", days: [], baseline: { net: 3, gross: 3, fileCount: 2, conflictedCount: 0, measuredAt: "2026-11-20T10:00:00.000Z" } }, null, 2)}\n`;
+    await env.fs.promises.mkdir(`${DIR}/.aiwriter`).catch(() => undefined);
+    await env.fs.promises.mkdir(`${DIR}/.aiwriter/stats`).catch(() => undefined);
+    await env.fs.promises.writeFile(`${DIR}/.aiwriter/stats/phone1.json`, utf8(stats));
+    await env.gh.commitFiles({ "本文/第2話 灯.txt": "あちらで書いた\n" });
+    expect(await env.fetch({ fastForwardOnly: true })).toEqual({ kind: "fetched", taken: 1, kept: 1 });
+    expect(await env.read("本文/第2話 灯.txt")).toBe("あちらで書いた\n");
+    expect(await env.read(".aiwriter/stats/phone1.json")).toBe(stats);
+  });
+
   test("取得の失敗の分け方（401・404・届かない）", () => {
     expect(fetchFailure(new Errors.HttpError(401, "Unauthorized", ""))).toBe("sign_in_again");
     expect(fetchFailure(new Errors.HttpError(404, "Not Found", ""))).toBe("no_access");

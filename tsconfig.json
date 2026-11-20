@@ -17,7 +17,12 @@
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* 本体の core/writingStats.ts は型検査を通らないので、型だけ src/types の写しで見る（組み立ては本体のまま。引継ぎ書 161章） */
+    "paths": {
+      "novel-ai-assistant/src/core/writingStats": ["./src/types/writingStatsCore.d.ts"]
+    }
   },
   "include": ["src", "test"]
 }

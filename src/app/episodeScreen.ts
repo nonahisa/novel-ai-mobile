@@ -513,6 +513,10 @@ export function mountEpisodeScreen(
     newEpisode?: () => void;
     /** この話から始まる章を立てる（上のバーの［…］→ 章を立てる。設計書 4.4） */
     newChapter?: () => void;
+    /** 話を開いたとき（この端末の字数の記録の起点。`writingStatsRecord.ts`） */
+    onOpened?: () => void;
+    /** 保存が済んだとき（この端末の字数の記録。`writingStatsRecord.ts`） */
+    onSaved?: () => void;
   }
 ): EpisodeLeaveGuard {
   let orientation = readOrientation();
@@ -1115,7 +1119,9 @@ export function mountEpisodeScreen(
       session.onStatusChange((status) => {
         showState(status);
         if (status === "外で変わりました") void mergeExternal();
+        if (status === "保存済み") options.onSaved?.();
       });
+      options.onOpened?.();
       session.onFailure((failure) => void tell(failureMessage(failure)));
       if (session.restored) options.toast("保存していない書きかけを戻しました");
     });

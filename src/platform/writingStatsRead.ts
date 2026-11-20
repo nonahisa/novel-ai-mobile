@@ -10,7 +10,7 @@ import { FileNotFoundError, normalizeStorePath } from "./fileStore";
  *   `import type` で読んでおらず、このアプリの型検査（`verbatimModuleSyntax`）を通らないため。決まり：
  *   壊れた記録（競合の印が混ざった・形の違う）は黙って飛ばす／壊れた日だけ飛ばし残りの日は使う／端末の名前は
  *   英小文字・数字・`_`・`-` の64字まで／日の境目は朝4時・週の始めは月曜（本体の既定。本体の設定で変えていても、いまは既定）
- * - **この端末で書いた分はまだ記録しない**（読むだけ。記録は後で。画面にもそう書く）
+ * - この端末で書いた分の記録は `writingStatsRecord.ts`（2026-11-20 夜から。同じファイルの形で書く）。ここは全端末の分を読んで足す
  */
 export const WRITING_STATS_FOLDER = ".aiwriter/stats";
 const SCHEMA_VERSION = "1";

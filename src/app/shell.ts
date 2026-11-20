@@ -42,12 +42,14 @@ import { checkEpisodeName, createEpisode, manuscriptFileNames, suggestEpisodeNam
 import { planChapter, saveChapter } from "./newChapter";
 import { applyBodyFont, parseBodyFont, readBodyFont, renderBodyFontSection, writeBodyFont } from "./bodyFont";
 import { renameWork } from "../platform/workRename";
+import { createWritingRecorder, type WritingRecorder } from "../platform/writingStatsRecord";
+import { deviceId as readDeviceId } from "../platform/deviceSettings";
 import { readWorkSeries, seriesNeighbors, writeWorkSeries } from "../platform/workSeries";
 import { checkRemovable, removeWorkFolder } from "../platform/workRemove";
 import { watchLongPress } from "./longPress";
 import { mountOrphanDrafts } from "./orphanDrafts";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
-import { listWorks, readWorkLayout, scanWorkFolder, type ScanOptions, type WorkListItem } from "../platform/workScan";
+import { findWorkRoots, listWorks, readWorkLayout, scanWorkFolder, type ScanOptions, type WorkListItem } from "../platform/workScan";
 import { readWorkWritingDays, writingSummary } from "../platform/writingStatsRead";
 import { renderWritingStats, todayLineHtml, type WorkWriting } from "./writingStatsView";
 import { lastCommitTime } from "../platform/git";
@@ -640,6 +642,9 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
             newEpisode: () => void addEpisode(episodeRoot),
             // ［…］→ 章を立てる：この話から始まる章の名前を訊き、章立て（設定/章立て.json）に置く（`newChapter.ts`）
             newChapter: () => void addChapter(episodeRoot, route.path, stillHere),
+            // この端末で書いた字数の記録（2026-11-20 夜 作者の答え。`writingStatsRecord.ts`）
+            onOpened: () => void recorderOf(store).noteOpened(episodeRoot, route.path),
+            onSaved: () => void recorderOf(store).record(episodeRoot),
           });
         }
         fillEpisodeSide(screen, store, route.root, route.path, scanOptions, stillHere);
@@ -759,7 +764,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       return repos;
     },
     token: async () => (store instanceof CapacitorFileStore ? secretVault().get(GITHUB_TOKEN_SECRET) : undefined),
-    fetchOne: (root, token) => fetchWork({ fs: createGitFs(new CapacitorGitFsBackend()), root, token, store, fastForwardOnly: true }),
+    fetchOne: (root, token) => fetchWork({ fs: createGitFs(new CapacitorGitFsBackend()), root, token, store, fastForwardOnly: true }).then(afterIntegrated(store, root)),
     canRun: () => {
       const kind = parseRoute(location.hash).kind;
       // 同期の画面（G）も外す（［取ってくる］［送る］と同じ作品の git を重ねて触らない）
@@ -785,6 +790,34 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
 }
 
 /** 更新の確かめに渡すもの。GitHub への GET だけ（合言葉は付けない）。Android は［入れる］で取り寄せて端末のインストーラーへ（引継ぎ書 156章） */
+/** この端末で書いた字数の記録（置き場ごとに1つ。同じ作品の読み書きを1つずつにする。`writingStatsRecord.ts`） */
+const recorders = new WeakMap<FileStore, WritingRecorder>();
+function recorderOf(store: FileStore): WritingRecorder {
+  let recorder = recorders.get(store);
+  if (!recorder) {
+    const settings = DeviceSettings.load(capacitorPreferencesBackend).then(({ settings }) => settings);
+    recorder = createWritingRecorder({ store, deviceId: async () => readDeviceId(await settings) });
+    recorders.set(store, recorder);
+  }
+  return recorder;
+}
+
+/**
+ * 取ってきて取り込んだあと（自動の取得・［取ってくる］・競合を選んだあと）、そのリポジトリの作品の字数の基準を置き直す
+ * （パソコンで書いた字を、この端末で書いたことにしない。本体の `rebaseline`）。結果はそのまま返す
+ */
+function afterIntegrated<T extends { kind: string }>(store: FileStore, repo: string): (outcome: T) => Promise<T> {
+  return async (outcome) => {
+    if (outcome.kind !== "fetched") return outcome;
+    try {
+      for (const root of await findWorkRoots(store)) if (root === repo || root.startsWith(`${repo}/`)) await recorderOf(store).rebaseline(root);
+    } catch {
+      // 置き直せなくても取り込みは済んでいる
+    }
+    return outcome;
+  };
+}
+
 function updateDeps(toast: (text: string) => void): UpdateDeps {
   const native = Capacitor.isNativePlatform();
   const net = defaultUpdateFetch(native, async (url) => {
@@ -925,6 +958,7 @@ function mountConflictScreen(screen: HTMLElement, store: FileStore, root: string
       slot.setAttribute("aria-busy", "true");
       try {
         const { applied, outcome } = await chooseConflict({ fs, root, store, material: chosen, choice });
+        if (outcome) await afterIntegrated(store, root)(outcome);
         if (!applied.ok) {
           await tell(applyFailureText(applied));
           return back();
@@ -984,7 +1018,7 @@ function mountSyncScreen(screen: HTMLElement, store: FileStore, root: string, st
     const token = await secretVault().get(GITHUB_TOKEN_SECRET);
     if (!token) return outcomeText({ kind: "failed", reason: "sign_in_again" });
     const fs = createGitFs(new CapacitorGitFsBackend());
-    if (kind === "fetch") return outcomeText(await fetchWork({ fs, root, token, store }));
+    if (kind === "fetch") return outcomeText(await fetchWork({ fs, root, token, store }).then(afterIntegrated(store, root)));
     let user = readGithubUser(globalThis.localStorage);
     if (!user) {
       user = await fetchGithubLogin(token);

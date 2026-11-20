@@ -856,6 +856,30 @@ button {
   font-size: 13px;
   color: var(--muted);
 }
+/* 執筆統計のグラフ（直近14日の棒。本体の日次の色づかいにならう：ふだんは青・今日は緑・削った日は赤） */
+.stats-chart svg {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+}
+.stats-bar {
+  fill: #3b7dd8;
+}
+.stats-bar.today {
+  fill: #3f9b4f;
+}
+.stats-bar.negative {
+  fill: #d0453f;
+}
+.stats-zero {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.stats-axis {
+  font-size: 10px;
+  fill: var(--muted);
+}
 .stats-note {
   margin-top: 16px;
   font-size: 13px;

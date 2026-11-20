@@ -1,4 +1,6 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
+import { defaultUpdateFetch, fetchLatestTicket } from "../platform/appUpdate";
+import { mountUpdateScreen, runAutoUpdateCheck, type UpdateDeps } from "./updateScreen";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { createTrialLog } from "./trialLogFile";
 import { SHARED_VERSION } from "../shared";
@@ -106,6 +108,7 @@ import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLe
  * | `#/stats` | 執筆統計（I。今日・今週の字数。読むだけ） |
  * | `#/ai` | 設定 → AI（クラウドの AI の鍵） |
  * | `#/drafts` | 設定 → 書きかけの控え（どの話にも合わない控えを見て消す） |
+ * | `#/update` | 設定 → 更新（新しい版の確かめ。引継ぎ書 154章） |
  * | `#/check` | 動作確認ページ（開発用） |
  *
  * 原稿エディター・縦書きの試し・動作確認ページを開いている間は、下のタブを隠す（4.3「原稿エディターを
@@ -131,7 +134,8 @@ type Route =
   | { kind: "licenses" }
   | { kind: "ai" }
   | { kind: "drafts" }
-  | { kind: "stats" };
+  | { kind: "stats" }
+  | { kind: "update" };
 
 /** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
 function isWorkRoot(root: string): boolean {
@@ -197,6 +201,7 @@ export function parseRoute(hash: string): Route {
   if (name === "ai") return { kind: "ai" };
   if (name === "drafts") return { kind: "drafts" };
   if (name === "stats") return { kind: "stats" };
+  if (name === "update") return { kind: "update" };
   if (name.startsWith("conflict/")) {
     const pieces = name.slice("conflict/".length).split("/");
     try {
@@ -232,7 +237,7 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update" } as const;
 
 /**
  * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。
@@ -520,7 +525,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "stats" || route.kind === "ai" || route.kind === "drafts" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "stats" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab, tabBadges());
@@ -672,6 +677,11 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
           slot.removeAttribute("aria-busy");
         });
         return;
+      case "update":
+        lastTabHash = "#/other";
+        screen.innerHTML = `${renderAppBar("更新", { back: true })}<div id="updateSlot"></div>`;
+        mountUpdateScreen(screen.querySelector<HTMLElement>("#updateSlot")!, updateDeps(), stillHere);
+        return;
       case "licenses":
         lastTabHash = "#/other";
         screen.innerHTML = `${renderAppBar("ライセンス", { back: true })}<div id="licenseSlot"></div>`;
@@ -735,9 +745,31 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       if (result && result.fetched.length > 0 && !leaveGuard && (kind === "tab" || kind === "work")) render();
     });
   autoFetchNow();
+  // 新しい版の確かめ（設定がオンのとき、1日1回まで。引継ぎ書 154章）
+  const updateCheckNow = () => void runAutoUpdateCheck(updateDeps());
+  updateCheckNow();
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") autoFetchNow();
+    if (document.visibilityState === "visible") {
+      autoFetchNow();
+      updateCheckNow();
+    }
   });
+}
+
+/** 更新の確かめに渡すもの。GitHub への GET だけ（合言葉は付けない） */
+function updateDeps(): UpdateDeps {
+  const native = Capacitor.isNativePlatform();
+  const net = defaultUpdateFetch(native, async (url) => {
+    const response = await CapacitorHttp.get({ url, responseType: "text" });
+    if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
+    return typeof response.data === "string" ? response.data : JSON.stringify(response.data);
+  });
+  return {
+    storage: globalThis.localStorage,
+    current: __APP_VERSION__,
+    platform: Capacitor.getPlatform(),
+    check: () => fetchLatestTicket(net),
+  };
 }
 
 /* ---------- 作品一覧（A）と話の一覧（B） ---------- */

@@ -24,8 +24,10 @@ import { findTermOccurrences } from "./termOccurrences";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
 import { termAtFrom, termFinderFrom, termOnCharFrom, termTagLabel } from "./termHighlight";
 import { charFromPoint, readCharBoxes } from "./tapCaret";
-import { readProposals, renderProposals, withoutProposal, writeProposals } from "./typoProposals";
-import { applyFindingToText } from "../shared";
+import { readProposals, withoutProposal, writeProposals } from "./typoProposals";
+import { mergeNoteRows, renderNoteBoard } from "./noteBoard";
+import { readPendingEditorProposals } from "../platform/editorProposals";
+import { applyFindingToText, DEFAULT_MEMO_MARKERS, parseMemos, type MemoMarkers, type ProposalView } from "../shared";
 import { watchPinchSize } from "./pinchSize";
 import { mountRangeGestures } from "./rangeGestures";
 import { createTrialLog } from "./trialLogFile";
@@ -521,7 +523,7 @@ export function mountEpisodeScreen(
   // 原稿の欄は作り直さない（回転や分割画面で、書きかけ・カーソル・変換中の字を保つ。設計書 4.3・4.5）
   const sideOpen = readSideOpen();
   const boardOpen = readBoardOpen();
-  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}" data-board="${boardOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><aside class="ms-board" id="msBoard" aria-label="横の板"><div class="seg board-tabs" role="tablist"><button type="button" data-board-tab="proposals" aria-pressed="true">提案</button><button type="button" data-board-tab="term" aria-pressed="false">資料</button></div><div id="msBoardBody"></div><div id="msBoardTerm" hidden></div></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}</div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><ol class="term-hits" id="termSheetHits"></ol></div>`;
+  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}" data-board="${boardOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><aside class="ms-board" id="msBoard" aria-label="横の板"><div class="seg board-tabs" role="tablist"><button type="button" data-board-tab="proposals" aria-pressed="true">校正・メモ</button><button type="button" data-board-tab="term" aria-pressed="false">資料</button></div><div id="msBoardBody"></div><div id="msBoardTerm" hidden></div></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}</div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><ol class="term-hits" id="termSheetHits"></ol></div>`;
   // 上のバーの右に押し口を入れる。［一覧］は中・広い段だけ（CSS で出す）
   const sideToggle = document.createElement("button");
   sideToggle.className = "appbar-action ms-side-toggle";
@@ -847,6 +849,7 @@ export function mountEpisodeScreen(
     shown = text;
     session?.edit(text);
     refreshTools();
+    repaintBoardSoon();
   };
   // 押しても欄の焦点と選んだ範囲を外さない（選んだ字に振るため）
   strip.addEventListener("pointerdown", (event) => event.preventDefault());
@@ -879,10 +882,38 @@ export function mountEpisodeScreen(
     const tab = (event.target as HTMLElement).closest<HTMLElement>("[data-board-tab]")?.dataset.boardTab;
     if (tab === "proposals" || tab === "term") showBoardTab(tab);
   });
+  /*
+    「校正・メモ」（2026-11-20 夜 作者の答え「本体と同じく位置の順に1列」。`noteBoard.ts`）：付箋は欄の本文から、編集者の提案は
+    作品の台帳から（開いたときに1回読む）、AI の指摘は端末から。メモの印が読めない作品は付箋を出さない（本体と同じく、
+    作者の選んだ印でない行を付箋と取り違えない）
+  */
+  let boardMarkers: MemoMarkers | undefined = DEFAULT_MEMO_MARKERS;
+  let editorProposals: ProposalView[] = [];
+  const relPath = options.workRoot && path.startsWith(`${options.workRoot}/`) ? path.slice(options.workRoot.length + 1) : path;
   const paintBoard = () => {
-    boardBody.innerHTML = renderProposals(readProposals(globalThis.localStorage).filter((item) => item.path === path));
+    const memos = boardMarkers && pane ? parseMemos(pane.value(), path, boardMarkers).filter((memo) => !memo.unclosed) : [];
+    const ai = readProposals(globalThis.localStorage).filter((item) => item.path === path);
+    boardBody.innerHTML = renderNoteBoard(mergeNoteRows(memos, editorProposals, ai));
   };
   paintBoard();
+  if (options.workRoot) {
+    const root = options.workRoot;
+    void Promise.all([
+      readWorkMemoMarkers(store, root).catch(() => undefined),
+      readPendingEditorProposals(store, root, relPath),
+    ]).then(([markers, editor]) => {
+      boardMarkers = markers;
+      editorProposals = editor;
+      paintBoard();
+    });
+  }
+  /** 打っているあいだの付箋の描き直し（少し待ってまとめて。板が見えていなければ描かない） */
+  let boardRepaint: number | undefined;
+  const repaintBoardSoon = () => {
+    if (boardBody.hidden || boardBody.offsetParent === null) return;
+    window.clearTimeout(boardRepaint);
+    boardRepaint = window.setTimeout(paintBoard, 300);
+  };
   boardBody.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
     const all = readProposals(globalThis.localStorage);
@@ -892,17 +923,19 @@ export function mountEpisodeScreen(
       return paintBoard();
     }
     const accept = target.closest<HTMLElement>("[data-accept]")?.dataset.accept;
-    const proposal = all.find((item) => item.id === (accept ?? target.closest<HTMLElement>("[data-proposal]")?.dataset.proposal));
-    if (!proposal || !pane) return;
+    if (!pane) return;
     const text = pane.value();
     if (!accept) {
-      // 行の頭へ（行が無ければ何もしない）
+      // 行を押したら、その行の頭へ（付箋・編集者の提案・AI の指摘のどれも。行が無ければ何もしない）
+      const line = Number(target.closest<HTMLElement>("[data-note-line]")?.dataset.noteLine);
       const lines = text.split("\n");
-      if (proposal.line < 1 || proposal.line > lines.length) return;
-      const offset = lines.slice(0, proposal.line - 1).reduce((sum, line) => sum + line.length + 1, 0);
+      if (!Number.isInteger(line) || line < 1 || line > lines.length) return;
+      const offset = lines.slice(0, line - 1).reduce((sum, row) => sum + row.length + 1, 0);
       pane.placeCaret(offset);
       return;
     }
+    const proposal = all.find((item) => item.id === accept);
+    if (!proposal) return;
     if (!proposal.suggestion) return;
     const applied = applyFindingToText(text, proposal);
     writeProposals(globalThis.localStorage, withoutProposal(all, proposal.id));

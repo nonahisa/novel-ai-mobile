@@ -72,10 +72,22 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
       cancel();
     }
   };
+  /**
+   * 短く押してからこちらが置くまで（2度押しの間）は、印（`textareaCaret.ts`）を出さない。端末が先に置いた所へ描くと、
+   * 間が過ぎてこちらの所へ跳び、ちらついて見えた（2026-11-20 作者。引継ぎ書 152章）
+   */
+  const setPending = (on: boolean) => {
+    if (on) area.dataset.tapPending = "1";
+    else if (area.dataset.tapPending) {
+      delete area.dataset.tapPending;
+      area.dispatchEvent(new Event(TAP_PLACED_EVENT));
+    }
+  };
   const forgetTap = () => {
     window.clearTimeout(tapTimer);
     tapTimer = undefined;
     tapped = undefined;
+    setPending(false);
   };
   const isRange = (r: { start: number; end: number }) => r.start !== r.end;
   const selectionIs = (r: { start: number; end: number }) => area.selectionStart === r.start && area.selectionEnd === r.end;
@@ -88,6 +100,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     trace(`apply ${tapped.start}-${tapped.end}`);
     if (document.activeElement !== area) area.focus();
     if (!selectionIs(tapped)) area.setSelectionRange(tapped.start, tapped.end);
+    setPending(false);
   };
   /** 短く1回押した：押した字の後ろへ。2度押し：押した字を含む語を選ぶ */
   const placeTap = (e: PointerEvent) => {
@@ -108,6 +121,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
       trace(`double ${word.start}-${word.end}`);
       window.clearTimeout(tapTimer);
       tapTimer = undefined;
+      setPending(false);
       tapped = word;
       tappedValue = area.value;
       tappedUntil = performance.now() + TAP_GUARD_MS;
@@ -123,6 +137,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     tappedValue = area.value;
     tappedUntil = performance.now() + TAP_GUARD_MS;
     window.clearTimeout(tapTimer);
+    setPending(true);
     tapTimer = window.setTimeout(() => {
       tapTimer = undefined;
       applyTap();
@@ -249,6 +264,8 @@ export function syncMirrorScroll(mirror: HTMLElement, area: HTMLTextAreaElement)
   mirror.scrollLeft = area.scrollLeft;
 }
 
+/** 短く押した所へこちらが置き終えた（または置くのをやめた）ときに欄へ送る知らせ。印を描き直すため */
+export const TAP_PLACED_EVENT = "novelai-tap-placed";
 /** 2度押しとみなす間（これより早く続けて押したら、2度目は iOS のままにする） */
 export const DOUBLE_TAP_MS = 350;
 /**

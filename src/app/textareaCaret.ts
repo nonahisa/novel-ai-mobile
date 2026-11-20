@@ -1,4 +1,4 @@
-import { mountMirror, syncMirrorScroll } from "./textareaLongPress";
+import { mountMirror, syncMirrorScroll, TAP_PLACED_EVENT } from "./textareaLongPress";
 
 /**
  * **左の線（既定の textarea）のカーソルの印を、こちらで描く**（iOS の手当て）。
@@ -11,6 +11,11 @@ import { mountMirror, syncMirrorScroll } from "./textareaLongPress";
  * - 位置は、textarea と同じ見た目の写しに「カーソルの前までの字 + 印の字（幅の無い空白）」を入れて読む。読んだらすぐ消す
  * - 縦書きは列を横切る短い線（字の幅）、横書きは行の高さの縦の線
  * - 描き直すのは、選びが変わったとき・打ったとき・送ったとき・大きさが変わったとき（次の描きの前に1回だけ）
+ *
+ * ちらつかないように（2026-11-20 作者「カーソルの表示がいろんな場所でちらつきます」。引継ぎ書 152章）：
+ * - iOS の印は、見張っているあいだずっと透明にする（印を消すたびに透明をやめていたので、範囲の合間に iOS の印が透けた）
+ * - 短く押してからこちらが置くまで（`data-tap-pending`）は印を出さない（端末の置いた所に出てから跳んでいた）
+ * - 動かしたら、点いた所から点滅し直す（消えている時に動くと見えなかった）
  */
 export function watchOwnCaret(area: HTMLTextAreaElement): () => void {
   const caret = document.createElement("div");
@@ -20,14 +25,17 @@ export function watchOwnCaret(area: HTMLTextAreaElement): () => void {
   let frame = 0;
 
   const host = (): HTMLElement | null => area.parentElement;
+  let lastAt = "";
+  area.classList.add("own-caret-shown");
   const hide = () => {
     caret.hidden = true;
-    area.classList.remove("own-caret-shown");
+    lastAt = "";
   };
   const paint = () => {
     frame = 0;
     const parent = host();
     if (!parent || document.activeElement !== area || area.selectionStart !== area.selectionEnd) return hide();
+    if (area.dataset.tapPending) return hide();
     if (caret.parentElement !== parent) parent.appendChild(caret);
     if (getComputedStyle(parent).position === "static") parent.style.position = "relative";
     const offset = area.selectionStart;
@@ -54,8 +62,15 @@ export function watchOwnCaret(area: HTMLTextAreaElement): () => void {
     } else {
       Object.assign(caret.style, { left: `${left}px`, top: `${top}px`, width: "2px", height: `${Math.max(m.height, fontSize)}px` });
     }
+    const at = `${caret.style.left},${caret.style.top}`;
+    if (at !== lastAt) {
+      // 点いた所から点滅し直す
+      caret.style.animation = "none";
+      void caret.offsetWidth;
+      caret.style.animation = "";
+    }
+    lastAt = at;
     caret.hidden = false;
-    area.classList.add("own-caret-shown");
   };
   const refresh = () => {
     if (!frame) frame = requestAnimationFrame(paint);
@@ -77,6 +92,7 @@ export function watchOwnCaret(area: HTMLTextAreaElement): () => void {
   area.addEventListener("pointerup", refresh);
   area.addEventListener("compositionupdate", refresh);
   area.addEventListener("compositionend", refresh);
+  area.addEventListener(TAP_PLACED_EVENT, refresh);
   const resize = new ResizeObserver(refresh);
   resize.observe(area);
   window.visualViewport?.addEventListener("resize", refresh);
@@ -92,6 +108,7 @@ export function watchOwnCaret(area: HTMLTextAreaElement): () => void {
     area.removeEventListener("pointerup", refresh);
     area.removeEventListener("compositionupdate", refresh);
     area.removeEventListener("compositionend", refresh);
+    area.removeEventListener(TAP_PLACED_EVENT, refresh);
     window.visualViewport?.removeEventListener("resize", refresh);
     area.classList.remove("own-caret-shown");
     caret.remove();

@@ -23,10 +23,10 @@ export const RELEASE_DOWNLOAD_PREFIX = `https://github.com/${UPDATE_REPO}/releas
 export const TICKET_NAME = "update.json";
 
 /**
- * **自動の確かめの既定**。オンにするかオフにするかは作者が決める（共通の決まり 4章。パネルで問い中）。
- * 答えが出るまでは、勝手に通信しないオフにしておく（［ほか］→［更新］の［今すぐ確かめる］は押せる）
+ * **自動の確かめの既定はオン**（2026-11-20 作者「最初からオン」。共通の決まり 4章）。［ほか］→［設定］→［更新］で切れる。
+ * パソコンの試しのブラウザ（web）では、`shell.ts` が既定をオフにして渡す（画面の試験が本物の GitHub へ行かないように）
  */
-export const UPDATE_CHECK_DEFAULT = false;
+export const UPDATE_CHECK_DEFAULT = true;
 export const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export interface UpdateAsset {
@@ -122,18 +122,19 @@ export interface UpdateSettings {
   skipped: string | undefined;
 }
 
-export function readUpdateSettings(storage: Pick<Storage, "getItem"> | undefined): UpdateSettings {
+/** `fallback`：作者がまだ選んでいないときの自動の確かめ（既定は {@link UPDATE_CHECK_DEFAULT}） */
+export function readUpdateSettings(storage: Pick<Storage, "getItem"> | undefined, fallback: boolean = UPDATE_CHECK_DEFAULT): UpdateSettings {
   try {
     const auto = storage?.getItem(UPDATE_AUTO_KEY);
     const last = Number(storage?.getItem(UPDATE_LAST_CHECK_KEY));
     const skipped = storage?.getItem(UPDATE_SKIPPED_KEY) ?? undefined;
     return {
-      auto: auto === "on" ? true : auto === "off" ? false : UPDATE_CHECK_DEFAULT,
+      auto: auto === "on" ? true : auto === "off" ? false : fallback,
       lastCheck: Number.isFinite(last) && last > 0 ? last : undefined,
       skipped: skipped && VERSION.test(skipped) ? skipped : undefined,
     };
   } catch {
-    return { auto: UPDATE_CHECK_DEFAULT, lastCheck: undefined, skipped: undefined };
+    return { auto: fallback, lastCheck: undefined, skipped: undefined };
   }
 }
 

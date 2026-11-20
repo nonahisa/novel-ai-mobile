@@ -85,9 +85,12 @@ describe("更新の仕組み：新しい版の確かめ（統合 docs/更新の�
     expect(old).toMatchObject({ kind: "new", tooOld: true });
   });
 
-  it("設定：自動の確かめの既定は作者の答えまで決め打ちの値。切る・飛ばす版・最後に確かめた時を覚える", () => {
+  it("設定：自動の確かめの既定はオン（2026-11-20 作者「最初からオン」）。切る・飛ばす版・最後に確かめた時を覚える", () => {
     const storage = memoryStorage();
-    expect(readUpdateSettings(storage)).toEqual({ auto: UPDATE_CHECK_DEFAULT, lastCheck: undefined, skipped: undefined });
+    expect(UPDATE_CHECK_DEFAULT).toBe(true);
+    expect(readUpdateSettings(storage)).toEqual({ auto: true, lastCheck: undefined, skipped: undefined });
+    // パソコンの試しのブラウザ（web）は既定を渡してオフにする（試験が本物の GitHub へ行かないように）
+    expect(readUpdateSettings(storage, false).auto).toBe(false);
     writeUpdateSettings(storage, { auto: false, lastCheck: 42, skipped: "0.1.140" });
     expect(readUpdateSettings(storage)).toEqual({ auto: false, lastCheck: 42, skipped: "0.1.140" });
     writeUpdateSettings(storage, { auto: true, lastCheck: 43, skipped: undefined });

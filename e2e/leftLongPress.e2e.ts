@@ -58,6 +58,8 @@ test("カーソルの印をこちらで描き、カーソルの位置の字の�
   await page.locator(".ep-list .ep").first().click();
   const editor = page.locator("#msEditor");
   await editor.click();
+  // 押した所へこちらが置き終え、端末の置き直しを戻すあいだ（1.5秒）が過ぎるまで待つ。置くまでは印を出さない（引継ぎ書 152章）
+  await page.waitForTimeout(1700);
   const caret = page.locator(".textarea-caret");
   /** その位置の字の頭（縦書きは字の上の辺の真ん中）を、写しで読む */
   const headOf = (at: number) =>
@@ -96,10 +98,10 @@ test("カーソルの印をこちらで描き、カーソルの位置の字の�
     const got = await caretPoint();
     return Math.abs(got.x - want.x) < 3 && Math.abs(got.y - want.y) < 3;
   }).toBe(true);
-  // 範囲を選ぶと印は消え、端末の選びの色に任せる
+  // 範囲を選ぶと印は消え、端末の選びの色に任せる。端末の印は透明のまま（透けるとちらつく。引継ぎ書 152章）
   await editor.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(3, 5));
   await expect(caret).toBeHidden();
-  await expect(editor).not.toHaveClass(/own-caret-shown/);
+  await expect(editor).toHaveClass(/own-caret-shown/);
 });
 
 /**

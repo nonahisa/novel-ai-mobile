@@ -29,6 +29,8 @@ export interface UpdateDeps {
   /** Android：APK を取ってきて照らし、端末のインストーラーへ渡す。無ければ［入れる］を出さない */
   install?(asset: UpdateAsset): Promise<void>;
   now?(): number;
+  /** 作者がまだ選んでいないときの自動の確かめ（無ければ `UPDATE_CHECK_DEFAULT`。試しのブラウザでは false） */
+  autoDefault?: boolean;
 }
 
 export type NoticeAnswer = "install" | "later" | "skip";
@@ -70,7 +72,7 @@ export function showUpdateNotice(notice: Extract<Notice, { kind: "new" }>, canIn
 /** 知らせを出して、答えに合わせて覚える・入れる */
 async function answerNotice(notice: Extract<Notice, { kind: "new" }>, deps: UpdateDeps): Promise<NoticeAnswer> {
   const answer = await showUpdateNotice(notice, deps.install !== undefined && notice.asset !== undefined, deps.platform);
-  if (answer === "skip") writeUpdateSettings(deps.storage, { ...readUpdateSettings(deps.storage), skipped: notice.version });
+  if (answer === "skip") writeUpdateSettings(deps.storage, { ...readUpdateSettings(deps.storage, deps.autoDefault), skipped: notice.version });
   if (answer === "install" && notice.asset && deps.install) await deps.install(notice.asset);
   return answer;
 }
@@ -80,14 +82,14 @@ async function answerNotice(notice: Extract<Notice, { kind: "new" }>, deps: Upda
  * 知らせを出したら true
  */
 export async function runAutoUpdateCheck(deps: UpdateDeps): Promise<boolean> {
-  const settings = readUpdateSettings(deps.storage);
+  const settings = readUpdateSettings(deps.storage, deps.autoDefault);
   const now = (deps.now ?? Date.now)();
   if (!settings.auto || !dueForCheck(now, settings.lastCheck)) return false;
   // 先に時を書く（落ちても、次の確かめまで黙る）
   writeUpdateSettings(deps.storage, { ...settings, lastCheck: now });
   const ticket = await deps.check();
   if (!ticket) return false;
-  const notice = decideNotice(ticket, deps.current, readUpdateSettings(deps.storage).skipped, deps.platform);
+  const notice = decideNotice(ticket, deps.current, readUpdateSettings(deps.storage, deps.autoDefault).skipped, deps.platform);
   if (notice.kind !== "new") return false;
   await answerNotice(notice, deps);
   return true;
@@ -106,14 +108,14 @@ function renderUpdateScreen(current: string, auto: boolean): string {
 /** ［ほか］→ 設定 → 更新 */
 export function mountUpdateScreen(slot: HTMLElement, deps: UpdateDeps, stillHere: () => boolean): void {
   const paint = () => {
-    slot.innerHTML = renderUpdateScreen(deps.current, readUpdateSettings(deps.storage).auto);
+    slot.innerHTML = renderUpdateScreen(deps.current, readUpdateSettings(deps.storage, deps.autoDefault).auto);
   };
   paint();
   slot.addEventListener("click", (e) => {
     const target = e.target as HTMLElement;
     const auto = target.closest<HTMLElement>("[data-update-auto]");
     if (auto) {
-      writeUpdateSettings(deps.storage, { ...readUpdateSettings(deps.storage), auto: auto.dataset.updateAuto === "on" });
+      writeUpdateSettings(deps.storage, { ...readUpdateSettings(deps.storage, deps.autoDefault), auto: auto.dataset.updateAuto === "on" });
       paint();
       return;
     }
@@ -125,7 +127,7 @@ export function mountUpdateScreen(slot: HTMLElement, deps: UpdateDeps, stillHere
     void deps.check().then(async (ticket) => {
       if (!stillHere()) return;
       button.disabled = false;
-      writeUpdateSettings(deps.storage, { ...readUpdateSettings(deps.storage), lastCheck: (deps.now ?? Date.now)() });
+      writeUpdateSettings(deps.storage, { ...readUpdateSettings(deps.storage, deps.autoDefault), lastCheck: (deps.now ?? Date.now)() });
       if (!ticket) {
         result.textContent = "確かめられませんでした。通信のあるところで、もう一度押してください";
         return;

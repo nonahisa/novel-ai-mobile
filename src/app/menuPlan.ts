@@ -14,7 +14,7 @@ import { ACTION_TREE, isItemShownInActionList, type ActionGroup, type ActionItem
 
 /** 開ける画面 */
 /** `proposals` は［提案］のタブ（頭に、最後に開いた話の誤字脱字の入口がある） */
-export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals" | "stats";
+export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals" | "stats" | "update";
 
 /** メニューの1項目 */
 export interface PlannedItem {
@@ -144,6 +144,7 @@ export const TABS: readonly PlannedTab[] = [
           { label: "GitHub と同期", built: "github" },
           { label: "表示", built: "display" },
           { label: "書きかけの控え", built: "drafts" },
+          { label: "更新", built: "update" },
           { label: "確認省略解除・初回設定" },
         ],
       },

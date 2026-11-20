@@ -769,6 +769,8 @@ function updateDeps(): UpdateDeps {
     current: __APP_VERSION__,
     platform: Capacitor.getPlatform(),
     check: () => fetchLatestTicket(net),
+    // 端末では既定のオン。パソコンの試しのブラウザでは、選ぶまで見に行かない（画面の試験が本物の GitHub へ行かないように）
+    autoDefault: native,
   };
 }
 

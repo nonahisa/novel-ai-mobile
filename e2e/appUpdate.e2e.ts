@@ -38,7 +38,7 @@ async function fakeRelease(page: Page, version: string): Promise<{ asked: string
 }
 
 test.describe("更新", () => {
-  test("［ほか］→［更新］：今の版と、自動で確かめるかの切り替え。既定では起動しても見に行かない", async ({ page }) => {
+  test("［ほか］→［更新］：今の版と、自動で確かめるかの切り替え。試しのブラウザでは、選ぶまで起動しても見に行かない（端末の既定はオン）", async ({ page }) => {
     const { asked } = await fakeRelease(page, "9.9.9");
     await openWithWorks(page, "#/other");
     await page.locator('[data-screen="update"]').click();

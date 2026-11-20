@@ -73,12 +73,15 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     }
   };
   /**
-   * 短く押してからこちらが置くまで（2度押しの間）は、印（`textareaCaret.ts`）を出さない。端末が先に置いた所へ描くと、
-   * 間が過ぎてこちらの所へ跳び、ちらついて見えた（2026-11-20 作者。引継ぎ書 152章）
+   * 短く押してからこちらが置くまで（2度押しの間）は、印（`textareaCaret.ts`）を端末の置いた所ではなく、こちらが置く所に描く。
+   * 端末が先に置いた所へ描くと、間が過ぎてこちらの所へ跳び、ちらついて見えた（2026-11-20 作者。引継ぎ書 152章）。
+   * 置くまで印を消していたら、押してから印が出るまで 0.6〜1.5秒空いた（同日 Mac のシミュレーター 0.1.136。153章）
    */
-  const setPending = (on: boolean) => {
-    if (on) area.dataset.tapPending = "1";
-    else if (area.dataset.tapPending) {
+  const setPending = (at: number | undefined) => {
+    if (at !== undefined) {
+      area.dataset.tapPending = String(at);
+      area.dispatchEvent(new Event(TAP_PLACED_EVENT));
+    } else if (area.dataset.tapPending) {
       delete area.dataset.tapPending;
       area.dispatchEvent(new Event(TAP_PLACED_EVENT));
     }
@@ -87,7 +90,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     window.clearTimeout(tapTimer);
     tapTimer = undefined;
     tapped = undefined;
-    setPending(false);
+    setPending(undefined);
   };
   const isRange = (r: { start: number; end: number }) => r.start !== r.end;
   const selectionIs = (r: { start: number; end: number }) => area.selectionStart === r.start && area.selectionEnd === r.end;
@@ -100,7 +103,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     trace(`apply ${tapped.start}-${tapped.end}`);
     if (document.activeElement !== area) area.focus();
     if (!selectionIs(tapped)) area.setSelectionRange(tapped.start, tapped.end);
-    setPending(false);
+    setPending(undefined);
   };
   /** 短く1回押した：押した字の後ろへ。2度押し：押した字を含む語を選ぶ */
   const placeTap = (e: PointerEvent) => {
@@ -121,7 +124,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
       trace(`double ${word.start}-${word.end}`);
       window.clearTimeout(tapTimer);
       tapTimer = undefined;
-      setPending(false);
+      setPending(undefined);
       tapped = word;
       tappedValue = area.value;
       tappedUntil = performance.now() + TAP_GUARD_MS;
@@ -132,12 +135,14 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     if (at === undefined) return;
     // 離した直後には触らない：iOS の実機は、2度押しでないと分かるまで待ってからカーソルを（語の切れ目へ）置く。
     // 2度押しの間が過ぎたら置き、そのあと少しのあいだ、端末が置き直したら（範囲でないカーソルなら）こちらへ戻す（T1）
-    trace(`tap ${at}`);
+    // 押した点（欄の左上から。本文は残さない。Mac が狙いを確かめるため）
+    const box = area.getBoundingClientRect();
+    trace(`tap ${at} x=${Math.round(pressAt.x - box.left)} y=${Math.round(pressAt.y - box.top)}`);
     tapped = { start: at, end: at };
     tappedValue = area.value;
     tappedUntil = performance.now() + TAP_GUARD_MS;
     window.clearTimeout(tapTimer);
-    setPending(true);
+    setPending(at);
     tapTimer = window.setTimeout(() => {
       tapTimer = undefined;
       applyTap();
@@ -264,7 +269,7 @@ export function syncMirrorScroll(mirror: HTMLElement, area: HTMLTextAreaElement)
   mirror.scrollLeft = area.scrollLeft;
 }
 
-/** 短く押した所へこちらが置き終えた（または置くのをやめた）ときに欄へ送る知らせ。印を描き直すため */
+/** 短く押してこちらが置く所が決まったとき・置き終えた（やめた）ときに欄へ送る知らせ。印を描き直すため */
 export const TAP_PLACED_EVENT = "novelai-tap-placed";
 /** 2度押しとみなす間（これより早く続けて押したら、2度目は iOS のままにする） */
 export const DOUBLE_TAP_MS = 350;

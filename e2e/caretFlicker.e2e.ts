@@ -60,6 +60,24 @@ test("短く押すと、印はこちらが置いた所に1度だけ出て、跳�
   }
 });
 
+test("短く押すと、2度押しの間を待たずに、こちらが置く所へすぐ印が出る", async ({ page }) => {
+  // 2026-11-20 Mac のシミュレーター（0.1.136）：置くまで印を出さない作りで、押してから印が出るまで 0.6〜1.5秒空いた
+  const editor = await open(page);
+  const kami = await charBox(editor, 4);
+  await page.mouse.click(kami.x + kami.w / 2, kami.y + kami.h * 0.2);
+  // 2度押しの間（350ms）のうちに、印は「紙」の後ろ（5字目の頭）に出ている
+  await page.waitForTimeout(120);
+  const caret = page.locator(".textarea-caret");
+  await expect(caret).toBeVisible({ timeout: 100 });
+  const next = await charBox(editor, 5);
+  const b = (await caret.boundingBox())!;
+  expect(Math.abs(b.y - next.y)).toBeLessThan(3);
+  // 置き終えても同じ所（跳ばない）
+  await page.waitForTimeout(400);
+  const after = (await caret.boundingBox())!;
+  expect(Math.abs(after.y - b.y) + Math.abs(after.x - b.x)).toBeLessThan(1);
+});
+
 test("焦点のあるあいだ、端末の印は透明のまま（範囲を選んだときも）", async ({ page }) => {
   const editor = await open(page);
   await editor.click();

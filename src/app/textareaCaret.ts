@@ -14,7 +14,8 @@ import { mountMirror, syncMirrorScroll, TAP_PLACED_EVENT } from "./textareaLongP
  *
  * ちらつかないように（2026-11-20 作者「カーソルの表示がいろんな場所でちらつきます」。引継ぎ書 152章）：
  * - iOS の印は、見張っているあいだずっと透明にする（印を消すたびに透明をやめていたので、範囲の合間に iOS の印が透けた）
- * - 短く押してからこちらが置くまで（`data-tap-pending`）は印を出さない（端末の置いた所に出てから跳んでいた）
+ * - 短く押してからこちらが置くまで（`data-tap-pending`）は、端末の置いた所ではなく、こちらが置く所に描く
+ *   （端末の置いた所に出てから跳んでいた。置くまで消すと、押してから出るまで空いた。153章）
  * - 動かしたら、点いた所から点滅し直す（消えている時に動くと見えなかった）
  */
 export function watchOwnCaret(area: HTMLTextAreaElement): () => void {
@@ -34,11 +35,11 @@ export function watchOwnCaret(area: HTMLTextAreaElement): () => void {
   const paint = () => {
     frame = 0;
     const parent = host();
-    if (!parent || document.activeElement !== area || area.selectionStart !== area.selectionEnd) return hide();
-    if (area.dataset.tapPending) return hide();
+    const pending = area.dataset.tapPending;
+    const offset = pending !== undefined ? Math.min(Number(pending), area.value.length) : area.selectionStart;
+    if (!parent || document.activeElement !== area || (pending === undefined && area.selectionStart !== area.selectionEnd)) return hide();
     if (caret.parentElement !== parent) parent.appendChild(caret);
     if (getComputedStyle(parent).position === "static") parent.style.position = "relative";
-    const offset = area.selectionStart;
     const mirror = mountMirror(area);
     const marker = document.createElement("span");
     marker.textContent = "​";

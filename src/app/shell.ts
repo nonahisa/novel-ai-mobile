@@ -50,7 +50,7 @@ import { watchLongPress } from "./longPress";
 import { mountOrphanDrafts } from "./orphanDrafts";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
 import { findWorkRoots, listWorks, readWorkLayout, scanWorkFolder, type ScanOptions, type WorkListItem } from "../platform/workScan";
-import { readWorkWritingDays, writingSummary } from "../platform/writingStatsRead";
+import { readWorkWritingDays, statsDayKey, writingSummary } from "../platform/writingStatsRead";
 import { renderWritingStats, todayLineHtml, type WorkWriting } from "./writingStatsView";
 import { lastCommitTime } from "../platform/git";
 import { dayLabel, syncFlag, workSummary } from "./workListView";
@@ -706,7 +706,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         void readAllWriting(store).then((rows) => {
           if (!stillHere()) return;
           const slot = screen.querySelector<HTMLElement>("#statsSlot")!;
-          slot.innerHTML = renderWritingStats(rows);
+          slot.innerHTML = renderWritingStats(rows, statsDayKey(new Date()));
           slot.removeAttribute("aria-busy");
         });
         return;
@@ -1073,7 +1073,7 @@ async function writingOf(store: FileStore, items: readonly WorkListItem[]): Prom
       const root = item.ok ? item.work.root : item.root;
       const title = item.ok ? item.work.title : item.title;
       const days = await readWorkWritingDays(store, root).catch(() => []);
-      return { root, title, summary: writingSummary(days, now), recorded: days.length > 0 };
+      return { root, title, summary: writingSummary(days, now), recorded: days.length > 0, days };
     })
   );
 }

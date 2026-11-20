@@ -33,6 +33,12 @@ test("端末ごとの記録を足して、作品一覧の上に今日の字数�
   await expect(page.locator(".stats-works li", { hasText: "灯台守の手紙_確認用" })).toContainText("今日 +500字");
   await expect(page.locator(".stats-works li", { hasText: "壊れた設定_確認用" })).toContainText("記録なし");
   await expect(page.locator(".stats-note")).toContainText("この端末で書いた分と、パソコンなどで書いた分");
+  // 直近14日のグラフ：今日の棒に全作品の合計。電話の幅で横にはみ出さない
+  await expect(page.locator(".stats-chart rect.stats-bar")).toHaveCount(14);
+  await expect(page.locator(".stats-chart rect.stats-bar.today")).toHaveAttribute("data-net", "560");
+  await expect(page.locator(".stats-chart svg")).toHaveAttribute("aria-label", /今日 \+560字/);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
 });
 
 test("［ほか］→ 執筆統計 で開く", async ({ page }) => {
@@ -40,6 +46,8 @@ test("［ほか］→ 執筆統計 で開く", async ({ page }) => {
   await page.getByRole("button", { name: "執筆統計" }).or(page.getByRole("link", { name: "執筆統計" })).first().click();
   await expect(page).toHaveURL(/#\/stats$/);
   await expect(page.locator(".stats-total")).toContainText("今日0字");
+  // 記録が1つも無ければグラフは出さない
+  await expect(page.locator(".stats-chart")).toHaveCount(0);
 });
 
 /**

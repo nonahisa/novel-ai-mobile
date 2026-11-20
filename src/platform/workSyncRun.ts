@@ -15,7 +15,7 @@ import {
   type ConflictMaterial,
   type IntegrateResult,
 } from "./syncConflict";
-import { workRepo } from "./workSync";
+import { isBaselineOnlyChange, workRepo } from "./workSync";
 import { forgetTouched, readTouched } from "./touchedPaths";
 
 /**
@@ -154,7 +154,11 @@ export async function fetchWork(
   if (deps.fastForwardOnly) {
     const plan = await planIncoming({ fs: deps.fs, dir, theirs, touched });
     if (plan.theirs === plan.base) return { kind: "up_to_date" };
-    if (plan.entries.some((entry) => entry.kind === "ours_only" || entry.kind === "conflict")) return { kind: "held" };
+    if (plan.entries.some((entry) => entry.kind === "conflict")) return { kind: "held" };
+    // こちらの変更があれば取り込まない。ただし字数の記録の基準を置き直しただけの変更は止めない（`workSync.ts`）
+    for (const entry of plan.entries) {
+      if (entry.kind === "ours_only" && !(await isBaselineOnlyChange(deps.fs, dir, entry.path))) return { kind: "held" };
+    }
   }
   return integrateOutcome(await integrateIncoming({ fs: deps.fs, dir, theirs, store: deps.store, storeDir, touched }));
 }

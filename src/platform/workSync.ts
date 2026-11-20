@@ -3,6 +3,7 @@ import git from "isomorphic-git";
 import type { createGitFs } from "./gitFs";
 import { collectChanges } from "./workPush";
 import { readTouched } from "./touchedPaths";
+import { isBaselineOnlyStatsChange, isStatsFilePath } from "./writingStatsRecord";
 
 /**
  * **作品の同期の状態**（設計書 6章「作品一覧と話の一覧に『送っていない話』の数を出す」。画面 A・B）。
@@ -14,6 +15,9 @@ import { readTouched } from "./touchedPaths";
  * - git で持っていない作品（`.git` が無い）は `undefined`（同期の状態を出さない）
  * - 「送っていない話」は原稿（`.txt`）だけを数える。設定などの変更は `otherCount`
  * - 中身の競合の印（`hasConflictMarkers`）とは別のもの。こちらは送っていない変更
+ * - 字数の記録（`.aiwriter/stats/*.json`）の、基準を置き直しただけの変更は数えない（2026-11-20 夜 作者の答え
+ *   「基準も記録のファイルに」。取り込むたびに基準が変わるので、数えると取り込みのたびに「送っていない変更」が出る）。
+ *   日ごとの字数が変わった記録は数える（書いた話と一緒に送る）
  * - 書き戻しの退避（`.novelai-recovery/`）は数えない。端末の中だけの写しで、作者が書き換えたものではない
  *   （ふつうは作品の `.gitignore` で外れるが、外していない作品でも。`collectChanges` が外す）
  */
@@ -57,6 +61,7 @@ export async function readWorkSync(fs: GitFs, root: string, base = ""): Promise<
   let otherCount = 0;
   for (const change of changes) {
     if (!isStory(change.path)) {
+      if (!("deleted" in change && change.deleted) && (await isBaselineOnlyChange(fs, dir, change.path))) continue;
       otherCount += 1;
       continue;
     }
@@ -74,6 +79,29 @@ export async function readWorkSync(fs: GitFs, root: string, base = ""): Promise<
     unsent.push({ path, deleted: false, ...(mtimeMs !== undefined ? { mtimeMs } : {}) });
   }
   return { unsent, otherCount };
+}
+
+/**
+ * 作業の木のこのファイルの変更が、字数の記録の基準を置き直しただけか（最後にそろえた版〈HEAD〉の中身と比べる）。
+ * 記録のファイルでなければ false
+ */
+export async function isBaselineOnlyChange(fs: GitFs, dir: string, path: string): Promise<boolean> {
+  if (!isStatsFilePath(path)) return false;
+  let after: string;
+  try {
+    after = (await fs.promises.readFile(`${dir}/${path}`, "utf8")) as string;
+  } catch {
+    return false;
+  }
+  let before: string | undefined;
+  try {
+    const head = await git.resolveRef({ fs, dir, ref: "HEAD" });
+    const { blob } = await git.readBlob({ fs, dir, oid: head, filepath: path });
+    before = new TextDecoder().decode(blob);
+  } catch {
+    before = undefined;
+  }
+  return isBaselineOnlyStatsChange(before, after);
 }
 
 /** 送っていない話のうち、いちばん新しく書いた時刻（作者の答え 2026-11-16：「最後に書いた日」はこれにする） */

@@ -48,7 +48,9 @@ export function measurementOf(work: ScannedWork): WritingMeasurement {
   const files: FileCountMap = {};
   for (const episode of work.episodes) {
     if (episode.hasConflictMarkers) continue;
-    files[episodeKey(work.root, toStorePath(episode.filePath))] = { net: episode.counts.net, gross: episode.counts.gross };
+    const storePath = toStorePath(episode.filePath);
+    if (storePath === undefined) continue;
+    files[episodeKey(work.root, storePath)] = { net: episode.counts.net, gross: episode.counts.gross };
   }
   return { net: work.stats.totals.net, gross: work.stats.totals.gross, fileCount: work.episodes.length, conflictedCount: work.stats.conflictedCount, files };
 }
@@ -58,7 +60,7 @@ async function loadOwn(store: FileStore, root: string, deviceId: string): Promis
     const bytes = await store.readFile(statsFilePath(root, deviceId));
     return parseDeviceWritingStats(JSON.parse(new TextDecoder().decode(bytes))) ?? emptyDeviceStats(deviceId);
   } catch (error) {
-    // 無い・壊れている（競合の印が混ざったなど）：新しく始める（本体と同じ。原稿は無事）
+    // 無い：新しく始める。壊れている（競合の印が混ざったなど）：本体と同じく新しく始める（原稿は無事）
     if (error instanceof FileNotFoundError) return emptyDeviceStats(deviceId);
     return emptyDeviceStats(deviceId);
   }
@@ -66,7 +68,7 @@ async function loadOwn(store: FileStore, root: string, deviceId: string): Promis
 
 async function save(store: FileStore, root: string, deviceId: string, stats: DeviceWritingStats): Promise<void> {
   await store.createDirectory(joinStorePath(root, WRITING_STATS_FOLDER)).catch(() => undefined);
-  await store.writeFile(statsFilePath(root, deviceId), new TextEncoder().encode(`${JSON.stringify(stats, null, 2)}\n`));
+  await store.writeFile(statsFilePath(root, deviceId), new TextEncoder().encode(`${JSON.stringify(stats, null, 2)}\n`), { mode: "overwrite" });
 }
 
 export interface WritingRecorder {

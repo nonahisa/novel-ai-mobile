@@ -1,0 +1,73 @@
+# 置き場所：.github/workflows/release.yml（ここは下書き。このセッションの GitHub の合言葉には workflow を書き換える許しが無く、
+# .github/workflows へ送れなかった。作者が置くか、許しを広げてから移す。引継ぎ書 155章）
+name: Release
+# 更新の仕組み（2）：タグ v<版> を押したら、配る APK と更新の札 update.json を Release に添える（引継ぎ書 155章。
+# 共通の決まりは統合の docs/更新の仕組み_共通.md）。
+# 配る鍵が Secrets に無ければ、Release を作らずに終わる（試しの鍵で署名した APK は配らない）
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HAS_KEY: ${{ secrets.NOVELAI_KEYSTORE_BASE64 != '' }}
+    steps:
+      - name: 配る鍵があるか
+        if: env.HAS_KEY != 'true'
+        run: echo "::notice::Secrets に NOVELAI_KEYSTORE_BASE64 が無いので、Release は作りません（引継ぎ書 155章）"
+      - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
+      - uses: pnpm/action-setup@v4
+        if: env.HAS_KEY == 'true'
+      - uses: actions/setup-node@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        if: env.HAS_KEY == 'true'
+      - name: 組み立てる
+        if: env.HAS_KEY == 'true'
+        env:
+          NOVELAI_RELEASE: "1"
+          KEYSTORE_BASE64: ${{ secrets.NOVELAI_KEYSTORE_BASE64 }}
+          NOVELAI_KEYSTORE_PASSWORD: ${{ secrets.NOVELAI_KEYSTORE_PASSWORD }}
+          NOVELAI_KEY_ALIAS: ${{ secrets.NOVELAI_KEY_ALIAS }}
+          NOVELAI_KEY_PASSWORD: ${{ secrets.NOVELAI_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          test "$(node -p 'require("./package.json").version')" = "$version"
+          pnpm install --frozen-lockfile
+          pnpm run test
+          pnpm run build
+          npx cap sync android
+          export NOVELAI_KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$NOVELAI_KEYSTORE_FILE"
+          (cd android && chmod +x gradlew && ./gradlew assembleRelease)
+          rm -f "$NOVELAI_KEYSTORE_FILE"
+          node scripts/updateTicket.mjs "$version" android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/out"
+      - name: Release を作る
+        if: env.HAS_KEY == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "$RUNNER_TEMP/out/novel-ai-mobile-$version.apk" \
+            "$RUNNER_TEMP/out/update.json" \
+            --title "モバイル版 $version" \
+            --notes-file "$RUNNER_TEMP/out/release-notes.md"

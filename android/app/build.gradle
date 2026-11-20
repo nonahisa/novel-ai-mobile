@@ -7,8 +7,8 @@ android {
         applicationId "com.nonahisa.novelai"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 140
-        versionName "0.1.138"
+        versionCode 141
+        versionName "0.1.139"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +16,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    /*
+      配る版の署名（引継ぎ書 155章）。鍵は CI の Secrets から環境の変数で渡す（リポジトリには置かない）。
+      変数が無ければ署名の設定を作らない（手元の debug の組み立てはこれまでどおり）
+    */
+    def releaseStore = System.getenv("NOVELAI_KEYSTORE_FILE")
+    if (releaseStore) {
+        signingConfigs {
+            release {
+                storeFile file(releaseStore)
+                storePassword System.getenv("NOVELAI_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("NOVELAI_KEY_ALIAS")
+                keyPassword System.getenv("NOVELAI_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
+            if (releaseStore) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

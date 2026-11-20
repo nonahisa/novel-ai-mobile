@@ -127,6 +127,23 @@ function markTarget(original: string, target: string): string {
   return `${escapeHtml(original.slice(0, at))}<mark>${escapeHtml(target)}</mark>${escapeHtml(original.slice(at + target.length))}`;
 }
 
+/**
+ * 指摘1件の行（［採る］［見送る］つき）。`rowAttrs` は横の板の「校正・メモ」が付ける印（`noteBoard.ts`）
+ */
+export function renderProposalItem(item: TypoProposal, rowAttrs = "", rowClass = "proposal"): string {
+  return (
+    `<li class="${rowClass}" data-proposal="${escapeHtml(item.id)}" data-kind="${kindOf(item)}"${rowAttrs}>` +
+    `<p class="proposal-line">${markTarget(item.original, item.target)}</p>` +
+    // 推敲の語尾単調・視点・長文などは修正案が空（直し方は作者に任せる）。そのときは［採る］を出さない
+    (item.suggestion
+      ? `<p class="proposal-fix"><span class="proposal-from">${escapeHtml(item.target)}</span> → <span class="proposal-to">${escapeHtml(item.suggestion)}</span></p>`
+      : "") +
+    `<p class="proposal-why">${escapeHtml(`${item.line}行・${kindOf(item) === "proofread" ? "推敲・" : ""}${item.reason}${item.explanation ? `：${item.explanation}` : ""}`)}</p>` +
+    `<div class="proposal-actions"><button class="ghost" data-dismiss="${escapeHtml(item.id)}">見送る</button>${item.suggestion ? `<button data-accept="${escapeHtml(item.id)}">採る</button>` : ""}</div>` +
+    `</li>`
+  );
+}
+
 /** ［提案］のタブの誤字脱字。話ごとに束ね、1件ごとに［採る］［見送る］ */
 export function renderProposals(list: readonly TypoProposal[]): string {
   if (list.length === 0) return `<div class="proposal-list"><div class="work-empty" aria-hidden="true"></div></div>`;
@@ -135,18 +152,7 @@ export function renderProposals(list: readonly TypoProposal[]): string {
   const groups = [...byEpisode.entries()].map(([path, items]) => {
     const rows = items
       .sort((a, b) => a.line - b.line)
-      .map(
-        (item) =>
-          `<li class="proposal" data-proposal="${escapeHtml(item.id)}" data-kind="${kindOf(item)}">` +
-          `<p class="proposal-line">${markTarget(item.original, item.target)}</p>` +
-          // 推敲の語尾単調・視点・長文などは修正案が空（直し方は作者に任せる）。そのときは［採る］を出さない
-          (item.suggestion
-            ? `<p class="proposal-fix"><span class="proposal-from">${escapeHtml(item.target)}</span> → <span class="proposal-to">${escapeHtml(item.suggestion)}</span></p>`
-            : "") +
-          `<p class="proposal-why">${escapeHtml(`${item.line}行・${kindOf(item) === "proofread" ? "推敲・" : ""}${item.reason}${item.explanation ? `：${item.explanation}` : ""}`)}</p>` +
-          `<div class="proposal-actions"><button class="ghost" data-dismiss="${escapeHtml(item.id)}">見送る</button>${item.suggestion ? `<button data-accept="${escapeHtml(item.id)}">採る</button>` : ""}</div>` +
-          `</li>`
-      )
+      .map((item) => renderProposalItem(item))
       .join("");
     return `<section class="menu-section proposal-group"><h2>${escapeHtml(`${episodeName(path)}・${items.length}件`)}</h2><ol class="proposal-list">${rows}</ol></section>`;
   });

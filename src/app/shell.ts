@@ -37,11 +37,12 @@ import {
   saveFailureMessage,
   type TrialPrefs,
 } from "./tategakiDraft";
-import { askChoice, askText, chooseFrom, tell } from "./dialog";
+import { askChoice, askText, chooseFrom, chooseMany, tell } from "./dialog";
 import { checkEpisodeName, createEpisode, manuscriptFileNames, suggestEpisodeName } from "./newEpisode";
 import { planChapter, saveChapter } from "./newChapter";
 import { applyBodyFont, parseBodyFont, readBodyFont, renderBodyFontSection, writeBodyFont } from "./bodyFont";
 import { renameWork } from "../platform/workRename";
+import { readWorkSeries, seriesNeighbors, writeWorkSeries } from "../platform/workSeries";
 import { checkRemovable, removeWorkFolder } from "../platform/workRemove";
 import { watchLongPress } from "./longPress";
 import { mountOrphanDrafts } from "./orphanDrafts";
@@ -373,14 +374,16 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
 
   /*
     作品の一覧で作品を長押し → 題を変える・登録から外す（設計書 4.4.1。作者の答え 2026-11-18）。
-    シリーズ・作品の設定はまだ作っていない（作ってあるものだけ並べる）
+    ［シリーズ］はつなぐ・外すまで（2026-11-20 夜 作者の答え。`workSeries.ts`）。作品の設定はまだ作っていない（作ってあるものだけ並べる）
   */
   watchLongPress(root, ".work-card[data-work]", (item) => {
     const workRoot = item.dataset.work!;
     void chooseFrom([
       { id: "rename", label: "題を変える" },
+      { id: "series", label: "シリーズ" },
       { id: "remove", label: "登録から外す" },
     ]).then(async (picked) => {
+      if (picked === "series") return void linkSeries(workRoot);
       if (picked === "rename") {
         const current = await readWorkLayout(store, workRoot).then((layout) => layout.title).catch(() => undefined);
         if (current === undefined) return toast("作品の設定を読めないので、題を変えられません");
@@ -405,6 +408,30 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       }
     });
   });
+
+  /** 作品の長押し → シリーズ：隣の作品を選んでつなぐ・全部外して解く（本体の `features/setSeries.ts` と同じ流れ） */
+  const linkSeries = async (workRoot: string): Promise<void> => {
+    const current = await readWorkSeries(store, workRoot);
+    if (current.kind === "failed") return tell(current.message);
+    const neighbors = await seriesNeighbors(store, workRoot);
+    if (neighbors.length === 0) return tell("この端末に、つなげるほかの作品がありません。つなげるのは、同じ置き場に並んでいる作品だけです");
+    const already = new Set(current.series?.related ?? []);
+    const picked = await chooseMany(
+      "同じ世界・同じ人物の作品を選んでください。全部外すと、つながりを解きます",
+      neighbors.map((n) => ({ id: n.folderName, label: n.title === n.folderName ? n.title : `${n.title}（${n.folderName}）`, checked: already.has(n.folderName) }))
+    );
+    if (picked === undefined) return;
+    const title = await readWorkLayout(store, workRoot).then((layout) => layout.title).catch(() => workRoot);
+    if (picked.length === 0) {
+      if (!current.series) return;
+      const outcome = await writeWorkSeries(store, workRoot, undefined);
+      return toast(outcome.ok ? `「${title}」のシリーズのつながりを解きました` : outcome.message);
+    }
+    const name = await askText("シリーズの呼び名", { initial: current.series?.name ?? "", okLabel: "つなぐ", validate: (value) => (value.trim() ? undefined : "シリーズの呼び名を入れてください") });
+    if (name === undefined || !name.trim()) return;
+    const outcome = await writeWorkSeries(store, workRoot, { name: name.trim(), related: picked });
+    toast(outcome.ok ? `「${title}」を${name.trim()}としてつなぎました` : outcome.message);
+  };
 
   root.addEventListener("click", (event) => {
     const target = (event.target as HTMLElement).closest<HTMLElement>("[data-screen],[data-planned],[data-tab],[data-back],[data-work],[data-episode],[data-sync],[data-conflict]");

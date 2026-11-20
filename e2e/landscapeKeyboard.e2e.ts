@@ -239,3 +239,34 @@ test.describe("一覧の下の端", () => {
     await expect.poll(() => sideBottom(page)).toBe(360);
   });
 });
+
+/**
+ * **見える所がとても低いときは、上のバーも道具帯も隠す**（2026-11-20 夜 作者の答え「上のバーも道具帯も隠す」。AQUOS の横向きで
+ * Gboard が出ると見える高さは 123px で、細いバーと道具帯で尽き、本文の欄は1行の上半分しか見えなかった。引継ぎ書 151章）
+ */
+test("見える所がとても低いと、上のバーと道具帯を隠して欄を広げる。キーボードが閉じれば戻す", async ({ page }) => {
+  await openFirst(page);
+  const editor = page.locator("textarea#msEditor");
+  await editor.click();
+  // そこまで低くなければ（150）、バーは細くして出したまま
+  await page.setViewportSize({ width: 780, height: 150 });
+  await expect(editor).toHaveCSS("writing-mode", "horizontal-tb");
+  await expect(page.locator(".appbar")).toBeVisible();
+  // AQUOS と同じ 123
+  await page.setViewportSize({ width: 780, height: 123 });
+  await expect(page.locator("html")).toHaveAttribute("data-kb-bare", "on");
+  await expect(page.locator(".appbar")).toBeHidden();
+  await expect(page.locator(".ms-tools")).toBeHidden();
+  await expect(editor).toBeFocused();
+  const box = await editor.boundingBox();
+  expect(box!.y).toBeLessThan(20);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(124);
+  expect(box!.height).toBeGreaterThan(90);
+  await page.keyboard.type("い");
+  await expect(editor).toHaveValue(/い/);
+  // キーボードが閉じた（窓が戻った）ら、バーも戻る
+  await page.setViewportSize({ width: 780, height: 360 });
+  await expect(page.locator("html")).not.toHaveAttribute("data-kb-bare", "on");
+  await expect(page.locator(".appbar")).toBeVisible();
+  await expect(editor).toHaveCSS("writing-mode", "vertical-rl");
+});

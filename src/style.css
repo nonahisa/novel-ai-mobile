@@ -1499,6 +1499,24 @@ a.gh-open {
   font-weight: 400;
   text-align: left;
 }
+/* いくつか選ぶ窓（`chooseMany`。作品の長押しの［シリーズ］）：行ごとに印の箱と名前。行のどこを押しても印が替わる */
+.dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.dialog-check input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
 .dialog-list button.planned {
   color: var(--muted);
 }
@@ -1674,6 +1692,21 @@ a.gh-open {
   min-height: 0;
 }
 
+/*
+  横向きの電話でキーボードが出て、見える所がとても低いとき（140px 未満。`src/app/landscapeKeyboard.ts`）は、
+  上のバーも道具帯も隠し、本文の欄（と一覧）を見える所いっぱいにする（2026-11-20 夜 作者の答え。AQUOS の横向き＋Gboard は 123px）
+*/
+:root[data-kb-bare] .appbar,
+:root[data-kb-bare] .ms-tools {
+  display: none !important;
+}
+:root[data-kb-bare] .ms-editor {
+  height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top));
+}
+:root[data-kb-bare] .ms-side {
+  height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top));
+}
+
 /* ---------- 誤字脱字（段2）：走らせる前の見積もり（F）と提案（D） ---------- */
 .estimate {
   display: block;
@@ -1717,6 +1750,32 @@ a.gh-open {
 }
 .proposal p {
   margin: 0;
+}
+/* 横の板の「校正・メモ」の付箋・編集者の提案の行（`noteBoard.ts`）。AI の指摘の行（.proposal）と同じ札の形で、押すとその行へ */
+.note-memo,
+.note-editor {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.note-memo p,
+.note-editor p {
+  margin: 0;
+}
+.note-head {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.note-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--line);
 }
 .proposal-line {
   font-family: var(--font-ms);

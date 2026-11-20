@@ -45,3 +45,40 @@ test("長押しする一覧の行と、長押しで出す窓の字は、端末�
   await expect(choice).toBeVisible();
   expect(await choice.evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
 });
+
+/**
+ * **作品を長押し → シリーズ：つなぐ・外す**（2026-11-20 夜 作者の答え「つなぐ・外すまで」。本体の `features/setSeries.ts` と同じ）。
+ * 相手は同じ置き場に並ぶほかの作品（フォルダー名で書く）。呼び名は作者が書く（推さない）。相手の設定ファイルは触らない
+ */
+test("作品を長押し → シリーズ：隣の作品を選んで呼び名を入れるとつながり、全部外すと解ける。相手は書き換えない", async ({ page }) => {
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  const other = "雨の駅でいつまでも待ち続けている人と、その人を見送る駅員の長い長い物語_確認用";
+  const before = await readFakeFile(page, `${other}/.aiwriter/config.json`);
+  await longPressWork(page, "灯台守の手紙_確認用");
+  await page.locator(".dialog-choices button", { hasText: "シリーズ" }).click();
+  const picks = page.locator(".dialog-many input[type=checkbox]");
+  // 自分は出さない。ほかの作品が並ぶ
+  await expect(page.locator(".dialog-many label", { hasText: "灯台守の手紙_確認用" })).toHaveCount(0);
+  await expect(page.locator(".dialog-many label", { hasText: other })).toHaveCount(1);
+  await page.locator(".dialog-many label", { hasText: other }).locator("input").check();
+  await page.locator('.dialog-many [data-answer="yes"]').click();
+  await expect(page.locator("#dialogInput")).toHaveValue("");
+  await page.locator("#dialogInput").fill("灯台と駅_確認用");
+  await page.locator('[data-answer="yes"]').click();
+  await expect(page.locator(".toast")).toContainText("つなぎました");
+  const config = JSON.parse((await readFakeFile(page, "灯台守_確認用/.aiwriter/config.json"))!);
+  expect(config).toEqual({ workTitle: "灯台守の手紙_確認用", series: { name: "灯台と駅_確認用", related: [other] } });
+  expect(await readFakeFile(page, `${other}/.aiwriter/config.json`)).toBe(before);
+
+  // もう一度開くと、つないだ作品に印・呼び名が入っている。全部外すと解ける
+  await longPressWork(page, "灯台守の手紙_確認用");
+  await page.locator(".dialog-choices button", { hasText: "シリーズ" }).click();
+  await expect(picks.first()).toBeVisible();
+  const box = page.locator(".dialog-many label", { hasText: other }).locator("input");
+  await expect(box).toBeChecked();
+  await box.uncheck();
+  await page.locator('.dialog-many [data-answer="yes"]').click();
+  await expect(page.locator(".toast")).toContainText("解きました");
+  const after = JSON.parse((await readFakeFile(page, "灯台守_確認用/.aiwriter/config.json"))!);
+  expect(after).toEqual({ workTitle: "灯台守の手紙_確認用" });
+});

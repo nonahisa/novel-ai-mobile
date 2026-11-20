@@ -47,4 +47,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 新しい版の APK を端末のインストーラーへ渡す（作者が［入れる］を押したときだけ。引継ぎ書 156章）。
+         Google Play で配るときは、Play の決まり（Play の更新の道のほかで自分を入れ替えない）に当たるので外す -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

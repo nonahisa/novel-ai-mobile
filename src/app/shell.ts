@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import { defaultUpdateFetch, fetchLatestTicket } from "../platform/appUpdate";
+import { AppUpdateNative, installUpdate, snapshotSettings } from "../platform/appInstaller";
 import { mountUpdateScreen, runAutoUpdateCheck, type UpdateDeps } from "./updateScreen";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { createTrialLog } from "./trialLogFile";
@@ -680,7 +681,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "update":
         lastTabHash = "#/other";
         screen.innerHTML = `${renderAppBar("更新", { back: true })}<div id="updateSlot"></div>`;
-        mountUpdateScreen(screen.querySelector<HTMLElement>("#updateSlot")!, updateDeps(), stillHere);
+        mountUpdateScreen(screen.querySelector<HTMLElement>("#updateSlot")!, updateDeps(toast), stillHere);
         return;
       case "licenses":
         lastTabHash = "#/other";
@@ -746,7 +747,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     });
   autoFetchNow();
   // 新しい版の確かめ（設定がオンのとき、1日1回まで。引継ぎ書 154章）
-  const updateCheckNow = () => void runAutoUpdateCheck(updateDeps());
+  const updateCheckNow = () => void runAutoUpdateCheck(updateDeps(toast));
   updateCheckNow();
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
@@ -756,8 +757,8 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   });
 }
 
-/** 更新の確かめに渡すもの。GitHub への GET だけ（合言葉は付けない） */
-function updateDeps(): UpdateDeps {
+/** 更新の確かめに渡すもの。GitHub への GET だけ（合言葉は付けない）。Android は［入れる］で取り寄せて端末のインストーラーへ（引継ぎ書 156章） */
+function updateDeps(toast: (text: string) => void): UpdateDeps {
   const native = Capacitor.isNativePlatform();
   const net = defaultUpdateFetch(native, async (url) => {
     const response = await CapacitorHttp.get({ url, responseType: "text" });
@@ -769,6 +770,22 @@ function updateDeps(): UpdateDeps {
     current: __APP_VERSION__,
     platform: Capacitor.getPlatform(),
     check: () => fetchLatestTicket(net),
+    ...(Capacitor.getPlatform() === "android"
+      ? {
+          install: (asset) =>
+            installUpdate(asset, {
+              current: __APP_VERSION__,
+              settingsSnapshot: () => snapshotSettings(globalThis.localStorage),
+              saveBackup: async (name, text) => {
+                await Filesystem.writeFile({ path: `update-backup/${name}`, data: text, directory: Directory.Data, encoding: Encoding.UTF8, recursive: true });
+              },
+              plugin: AppUpdateNative,
+              ask: askChoice,
+              tell: (message) => tell(message),
+              toast,
+            }),
+        }
+      : {}),
   };
 }
 

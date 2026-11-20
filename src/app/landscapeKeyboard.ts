@@ -8,6 +8,9 @@
  *   原稿の欄に焦点がある」。iPad（短い辺 744 以上）は替えない
  * - **作者の選び（縦・横）は書き換えない。** 見た目だけを替え、条件が外れたら作者の選びへ戻す
  * - 変換中は替えない（打っている最中に面が変わると変換が崩れる。設計書 5.3）。確定してから替える
+ * - **見える所がとても低いとき（{@link BARE_MAX_HEIGHT} 未満）は、上のバーも道具帯も隠す**（2026-11-20 夜 作者の答え
+ *   「上のバーも道具帯も隠す」。AQUOS の横向きで Gboard が出ると見える高さは 123px で、細いバー 61px と道具帯 52px で尽き、
+ *   本文の欄は横書きの1行の上半分しか見えなかった。引継ぎ書 151章の気づき1）。キーボードが閉じれば戻す
  */
 
 export interface ViewSize {
@@ -26,6 +29,12 @@ export const PHONE_SHORT_SIDE = 600;
 /** キーボードが出ているとみなす、見える高さの割合 */
 export const KEYBOARD_RATIO = 0.7;
 
+/**
+ * 上のバーと道具帯を隠す、見える高さ（CSS の px）。AQUOS の横向き＋Gboard（123）は隠し、
+ * それより高い電話（iPhone の横向き＋キーボードなど）は細くするだけ（`compactMode.ts`）
+ */
+export const BARE_MAX_HEIGHT = 140;
+
 /** 横向きの電話で、キーボードが出ているか */
 export function phoneLandscapeKeyboard(view: ViewSize): boolean {
   const shortSide = Math.min(view.screenWidth, view.screenHeight);
@@ -34,11 +43,18 @@ export function phoneLandscapeKeyboard(view: ViewSize): boolean {
   return view.visibleHeight < shortSide * KEYBOARD_RATIO;
 }
 
+/** 横向きの電話でキーボードが出ていて、見える所がとても低いか（上のバーも道具帯も隠す） */
+export function barelyVisible(view: ViewSize): boolean {
+  return phoneLandscapeKeyboard(view) && view.visibleHeight < BARE_MAX_HEIGHT;
+}
+
 export interface LandscapeKeyboardDeps {
   /** 原稿の欄（焦点がこの中にあるときだけ） */
   host: HTMLElement;
   /** 自動の横書きを当てる・外す */
   apply(horizontal: boolean): void;
+  /** 上のバーと道具帯を隠す・戻す（見える所がとても低いあいだ） */
+  bare?(on: boolean): void;
 }
 
 function measure(): ViewSize {
@@ -55,11 +71,19 @@ function measure(): ViewSize {
 export function watchLandscapeKeyboard(deps: LandscapeKeyboardDeps): () => void {
   let composing = false;
   let applied = false;
+  let bared = false;
   let pending: number | undefined;
   const update = () => {
     pending = undefined;
     if (composing) return;
-    const want = deps.host.contains(document.activeElement) && phoneLandscapeKeyboard(measure());
+    const focused = deps.host.contains(document.activeElement);
+    const view = measure();
+    const want = focused && phoneLandscapeKeyboard(view);
+    const wantBare = focused && barelyVisible(view);
+    if (wantBare !== bared) {
+      bared = wantBare;
+      deps.bare?.(wantBare);
+    }
     if (want === applied) return;
     applied = want;
     deps.apply(want);
@@ -90,6 +114,7 @@ export function watchLandscapeKeyboard(deps: LandscapeKeyboardDeps): () => void 
     deps.host.removeEventListener("focusout", soon);
     deps.host.removeEventListener("compositionstart", onCompStart);
     deps.host.removeEventListener("compositionend", onCompEnd);
+    if (bared) deps.bare?.(false);
     if (applied) deps.apply(false);
   };
 }

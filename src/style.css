@@ -1674,6 +1674,21 @@ a.gh-open {
   min-height: 0;
 }
 
+/*
+  横向きの電話でキーボードが出て、見える所がとても低いとき（140px 未満。`src/app/landscapeKeyboard.ts`）は、
+  上のバーも道具帯も隠し、本文の欄（と一覧）を見える所いっぱいにする（2026-11-20 夜 作者の答え。AQUOS の横向き＋Gboard は 123px）
+*/
+:root[data-kb-bare] .appbar,
+:root[data-kb-bare] .ms-tools {
+  display: none !important;
+}
+:root[data-kb-bare] .ms-editor {
+  height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top));
+}
+:root[data-kb-bare] .ms-side {
+  height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top));
+}
+
 /* ---------- 誤字脱字（段2）：走らせる前の見積もり（F）と提案（D） ---------- */
 .estimate {
   display: block;

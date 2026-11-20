@@ -604,6 +604,11 @@ export function mountEpisodeScreen(
       autoHorizontal = horizontal;
       pane?.setOrientation(shownOrientation());
     },
+    // 見える所がとても低いあいだは、上のバーも道具帯も隠す（2026-11-20 夜 作者の答え。CSS の `:root[data-kb-bare]`）
+    bare(on) {
+      if (on) document.documentElement.dataset.kbBare = "on";
+      else delete document.documentElement.dataset.kbBare;
+    },
   });
   // 空いた所（一覧の側・上のバーの余白など）を押したら、欄の焦点を外してキーボードを閉じる（2026-11-20 iPhone 17
   // シミュレーターの T7：横向きの iPhone のキーボードには閉じるキーが無く、空いた所を押しても閉じなかった。iOS は焦点の

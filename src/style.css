@@ -1499,6 +1499,24 @@ a.gh-open {
   font-weight: 400;
   text-align: left;
 }
+/* いくつか選ぶ窓（`chooseMany`。作品の長押しの［シリーズ］）：行ごとに印の箱と名前。行のどこを押しても印が替わる */
+.dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.dialog-check input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
 .dialog-list button.planned {
   color: var(--muted);
 }

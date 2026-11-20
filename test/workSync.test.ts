@@ -114,3 +114,27 @@ describe("同期の状態の印", () => {
     expect(syncFlag({ unsent: [], otherCount: 0 }, 0)).toEqual({ text: "同期済み", tone: "ok" });
   });
 });
+
+/** 字数の記録（2026-11-20 夜 作者の答え「基準も記録のファイルに」）：基準を置き直しただけの記録は送っていない変更に数えない */
+describe("字数の記録", () => {
+  const stats = (days: unknown[], net: number) =>
+    `${JSON.stringify({ schemaVersion: "1", deviceId: "phone1", days, baseline: { net, gross: net, fileCount: 1, conflictedCount: 0, measuredAt: "2026-11-20T10:00:00.000Z" } }, null, 2)}\n`;
+  const day = { date: "2026-11-20", net: 12, gross: 12, saves: 1 };
+  const PATH = "灯台守_確認用/.aiwriter/stats/phone1.json";
+
+  test("基準だけを置き直した記録・初めて置いた基準は数えない。日の字数が変わった記録と壊れた記録は数える", async () => {
+    const fs = await repo("灯台守_確認用", { "本文/第1話.txt": "一\n", ".aiwriter/stats/phone1.json": stats([day], 100) });
+    await write(fs, PATH, stats([day], 250));
+    expect(await readWorkSync(fs, "灯台守_確認用", BASE)).toEqual({ unsent: [], otherCount: 0 });
+    await write(fs, PATH, stats([{ ...day, net: 30, gross: 30, saves: 2 }], 250));
+    expect((await readWorkSync(fs, "灯台守_確認用", BASE))!.otherCount).toBe(1);
+    await write(fs, PATH, "<<<<<<< 壊れた\n");
+    expect((await readWorkSync(fs, "灯台守_確認用", BASE))!.otherCount).toBe(1);
+
+    const fresh = await repo("灯台守_確認用", { "本文/第1話.txt": "一\n" });
+    await write(fresh, PATH, stats([], 100));
+    expect(await readWorkSync(fresh, "灯台守_確認用", BASE)).toEqual({ unsent: [], otherCount: 0 });
+    await write(fresh, PATH, stats([day], 100));
+    expect((await readWorkSync(fresh, "灯台守_確認用", BASE))!.otherCount).toBe(1);
+  });
+});

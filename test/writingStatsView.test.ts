@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { NOT_RECORDED_HERE, renderWritingStats, todayLineHtml, totalOf, type WorkWriting } from "../src/app/writingStatsView";
+import { RECORD_NOTE, renderWritingStats, todayLineHtml, totalOf, type WorkWriting } from "../src/app/writingStatsView";
 
 const row = (title: string, today: number, week: number, recorded = true): WorkWriting => ({
   root: `${title}_確認用`,
@@ -29,6 +29,6 @@ describe("執筆統計（I）の見せ方", () => {
     const html = renderWritingStats([row("灯台守", 300, 900), row("雪の駅", 0, 0, false)]);
     expect(html).toContain("今週</dt><dd>+900字");
     expect(html).toContain("記録なし");
-    expect(html).toContain(NOT_RECORDED_HERE);
+    expect(html).toContain(RECORD_NOTE);
   });
 });

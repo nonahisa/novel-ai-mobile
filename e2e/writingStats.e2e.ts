@@ -32,7 +32,7 @@ test("端末ごとの記録を足して、作品一覧の上に今日の字数�
   await expect(page.locator(".stats-total")).toContainText("+560字");
   await expect(page.locator(".stats-works li", { hasText: "灯台守の手紙_確認用" })).toContainText("今日 +500字");
   await expect(page.locator(".stats-works li", { hasText: "壊れた設定_確認用" })).toContainText("記録なし");
-  await expect(page.locator(".stats-note")).toContainText("この端末で書いた分は、まだ数えていません");
+  await expect(page.locator(".stats-note")).toContainText("この端末で書いた分と、パソコンなどで書いた分");
 });
 
 test("［ほか］→ 執筆統計 で開く", async ({ page }) => {
@@ -40,4 +40,24 @@ test("［ほか］→ 執筆統計 で開く", async ({ page }) => {
   await page.getByRole("button", { name: "執筆統計" }).or(page.getByRole("link", { name: "執筆統計" })).first().click();
   await expect(page).toHaveURL(/#\/stats$/);
   await expect(page.locator(".stats-total")).toContainText("今日0字");
+});
+
+/**
+ * **この端末で書いた分も数える**（2026-11-20 夜 作者の答え「パソコンと同じく基準も記録のファイルに」。`writingStatsRecord.ts`）。
+ * 開いたときに基準を置き、保存したら差をその日に積む。パソコンの記録と足して出す
+ */
+test("この端末で打って保存した字が、今日の字数に足される（パソコンの記録と合わせて）", async ({ page }) => {
+  await openWithWorks(page, "#/works", { ...FAKE_WORKS, "灯台守_確認用/.aiwriter/stats/pc-home.json": record("pc-home", 300) });
+  await expect(page.locator(".today-amount")).toHaveText("今日 +300字");
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("textarea#msEditor");
+  await expect(editor).toBeVisible();
+  await expect(page.locator("#saveState")).toHaveText("保存済み");
+  await editor.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 0));
+  await editor.focus();
+  await page.keyboard.type("霧笛");
+  await expect(page.locator("#saveState")).toHaveText("保存済み", { timeout: 5000 });
+  await page.evaluate(() => (location.hash = "#/stats"));
+  await expect(page.locator(".stats-total")).toContainText("+302字", { timeout: 5000 });
 });

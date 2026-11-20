@@ -68,7 +68,14 @@ async function loadOwn(store: FileStore, root: string, deviceId: string): Promis
 
 async function save(store: FileStore, root: string, deviceId: string, stats: DeviceWritingStats): Promise<void> {
   await store.createDirectory(joinStorePath(root, WRITING_STATS_FOLDER)).catch(() => undefined);
-  await store.writeFile(statsFilePath(root, deviceId), new TextEncoder().encode(`${JSON.stringify(stats, null, 2)}\n`), { mode: "overwrite" });
+  const bytes = new TextEncoder().encode(`${JSON.stringify(stats, null, 2)}\n`);
+  try {
+    await store.writeFile(statsFilePath(root, deviceId), bytes, { mode: "overwrite" });
+  } catch (error) {
+    // 初めての記録（置き場の決まりで、無いファイルは overwrite では書けない）
+    if (!(error instanceof FileNotFoundError)) throw error;
+    await store.writeFile(statsFilePath(root, deviceId), bytes, { mode: "create" });
+  }
 }
 
 export interface WritingRecorder {

@@ -54,8 +54,8 @@ const appVersion: string = JSON.parse(readFileSync(new URL("./package.json", imp
  *                          日本語入力と縦書きの確認はここでやる
  * 3. APK                 … `npm run android`
  *
- * `host: true` が2段階目の肝。既定（localhost限定）のままだと、
- * スマホからは決してつながらない。
+ * 2段階目は `pnpm run dev:lan`（`--host` で同じ Wi-Fi に開く）。ふだんの `pnpm run dev` は
+ * このパソコンだけ（2026-11-21 セキュリティチェックの 4：開いたままだと、同じ Wi-Fi の機械から開発サーバーの穴を突かれうる）
  */
 export default defineConfig({
   plugins: [substituteSharedParts()],
@@ -73,7 +73,6 @@ export default defineConfig({
     ],
   },
   server: {
-    host: true,
     port: 5173,
     strictPort: true,
   },

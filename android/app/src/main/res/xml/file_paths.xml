@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  端末のほかのアプリへ渡してよい置き場（FileProvider）。いま渡すのは、新しい版の APK（キャッシュの updates/。
+  AppUpdatePlugin.java が端末のインストーラーへ渡す）だけ。2026-11-21 セキュリティチェックの 5 で、
+  雛形の「外の置き場の根（external-path .）・キャッシュ全体」から狭めた。ほかを渡すときは、その置き場だけを足す
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <cache-path name="updates" path="updates/" />
 </paths>

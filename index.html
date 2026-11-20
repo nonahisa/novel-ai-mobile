@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!--
+      読み込んでよい相手の決まり（CSP。2026-11-21 セキュリティチェックの 9）。escape が1か所漏れても、差し込まれた字の
+      スクリプト・外のスクリプトは動かない（script-src 'self'）。通信してよい相手は、GitHub・AI の4社・書体の置き場と、
+      動作確認ページの httpbin だけ（git と札の取り寄せは端末の口〈CapacitorHttp〉なので、ここに掛からない）。
+      style の 'unsafe-inline' は、ルビ・傍点の印と画面の組み立てが style の属性を使うため。送り先を足したら connect-src にも足す
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self' https://api.github.com https://github.com https://raw.githubusercontent.com https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com https://api.ai.sakura.ad.jp https://httpbin.org; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'" />
     <title>統合小説執筆環境（モバイル版）</title>
   </head>
   <body>

@@ -25,10 +25,12 @@
 | 段階 | やり方 | 何を見るか |
 |---|---|---|
 | 1 | `pnpm run dev` → <http://localhost:5173> | 画面と処理のほとんど。Claudeが自分で開いて確認できる |
-| 2 | 同じWi-Fiのスマホで `http://<パソコンのIP>:5173` | **ビルド不要**。日本語入力・縦書き・指の操作 |
+| 2 | `pnpm run dev:lan` → 同じWi-Fiのスマホで `http://<パソコンのIP>:5173` | **ビルド不要**。日本語入力・縦書き・指の操作 |
 | 3 | `pnpm run android`（実機をUSBで接続） | ファイル保存・Git・共有など、ネイティブが要る部分 |
 
-段階2のURLは `pnpm run dev` の出力の「Network:」に出る。`vite.config.ts` の `host: true` がこれを支えているので、外さないこと。
+段階2のURLは `pnpm run dev:lan` の出力の「Network:」に出る。ふだんの `pnpm run dev` はこのパソコンだけに開く（同じWi-Fiの機械から開発サーバーを突かれないように。2026-11-21）。
+
+実機の WebView を覗いて調べる（chrome://inspect・adb の `webview_devtools_remote`）ときは、`NOVELAI_WEBVIEW_DEBUG=1` を付けて組む（`NOVELAI_WEBVIEW_DEBUG=1 pnpm run apk`）。付けなければ覗けない（`capacitor.config.ts`）。
 
 ---
 

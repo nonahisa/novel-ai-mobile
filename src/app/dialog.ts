@@ -177,3 +177,49 @@ export function chooseFrom(
     no.focus({ preventScroll: true });
   });
 }
+
+/**
+ * **画面の中に出す、いくつか選ぶ窓**（作品の長押しの［シリーズ］で、つなぐ作品を選ぶ。2026-11-20 夜）。
+ * 印を付けたものの `id` を並べて返す（何も付けなければ空の並び＝「全部外す」）。［やめる］・背景を押すと undefined
+ */
+export function chooseMany(
+  message: string,
+  options: readonly { id: string; label: string; checked?: boolean }[],
+  okLabel = "決める",
+  cancelLabel = "やめる"
+): Promise<string[] | undefined> {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "dialog-backdrop";
+    backdrop.innerHTML = `<div class="dialog dialog-many" role="dialog" aria-modal="true"><p class="dialog-message"></p><div class="dialog-list"></div><div class="dialog-actions"><button type="button" data-answer="no"></button><button type="button" class="primary" data-answer="yes"></button></div></div>`;
+    backdrop.querySelector<HTMLElement>(".dialog-message")!.textContent = message;
+    const list = backdrop.querySelector<HTMLElement>(".dialog-list")!;
+    for (const option of options) {
+      const label = document.createElement("label");
+      label.className = "dialog-check";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = option.id;
+      box.checked = option.checked === true;
+      const text = document.createElement("span");
+      text.textContent = option.label;
+      label.append(box, text);
+      list.appendChild(label);
+    }
+    const yes = backdrop.querySelector<HTMLButtonElement>('[data-answer="yes"]')!;
+    const no = backdrop.querySelector<HTMLButtonElement>('[data-answer="no"]')!;
+    yes.textContent = okLabel;
+    no.textContent = cancelLabel;
+    const close = (value: string[] | undefined) => {
+      backdrop.remove();
+      resolve(value);
+    };
+    yes.addEventListener("click", () => close([...list.querySelectorAll<HTMLInputElement>("input:checked")].map((box) => box.value)));
+    no.addEventListener("click", () => close(undefined));
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) close(undefined);
+    });
+    document.body.appendChild(backdrop);
+    no.focus({ preventScroll: true });
+  });
+}

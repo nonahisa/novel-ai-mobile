@@ -45,7 +45,7 @@ export function fitToVisible(box: HTMLElement, active: () => boolean): () => voi
   window.addEventListener("scroll", schedule, { passive: true });
   // `data-compact` は見える所の大きさで付け外しされる（`compactMode.ts`）。付け外しのあとにも合わせ直す
   const observer = new MutationObserver(schedule);
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-compact"] });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-compact", "data-kb-bare"] });
   return () => {
     cancelAnimationFrame(frame);
     observer.disconnect();

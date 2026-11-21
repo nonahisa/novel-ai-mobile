@@ -43,6 +43,7 @@ import { planChapter, saveChapter } from "./newChapter";
 import { applyBodyFont, parseBodyFont, readBodyFont, renderBodyFontSection, writeBodyFont } from "./bodyFont";
 import { renameWork } from "../platform/workRename";
 import { openWorkSettings } from "./workSettingsMenu";
+import { followRenameOnDevice } from "./episodeRenameFollow";
 import { createWritingRecorder, type WritingRecorder } from "../platform/writingStatsRecord";
 import { deviceId as readDeviceId } from "../platform/deviceSettings";
 import { readWorkSeries, seriesNeighbors, writeWorkSeries } from "../platform/workSeries";
@@ -681,6 +682,12 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         lastTabHash = "#/works";
         const stop = mountSynopsisRun(screen, {
           undecidedConflicts: () => undecidedConflictPaths(store, route.root),
+          ...(touchedRecorder(store) ? { beforeWrite: touchedRecorder(store)! } : {}),
+          // サブタイトル案でファイル名を変えたら、端末の中の記録を新しい名前へ・字数の基準を置き直す（名前だけでは字は増えない）
+          afterRename: async (from, to) => {
+            followRenameOnDevice(globalThis.localStorage, route.root, from, to);
+            await recorderOf(store).rebaseline(route.root);
+          },
           // 画面の試験だけ、iOS の「裏に回ったら止める」を確かめられるようにする（端末では使わない）
           ...(!Capacitor.isNativePlatform() && (globalThis as { __novelaiTestPauseWhenHidden?: boolean }).__novelaiTestPauseWhenHidden ? { pauseWhenHidden: true } : {}),
           store,

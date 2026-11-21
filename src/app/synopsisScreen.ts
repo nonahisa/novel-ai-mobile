@@ -18,6 +18,8 @@ import { confirmPaidUsage } from "./paidConfirm";
 import { episodeName, mountEpisodePicker, pickedEpisodesText, renderTypoEstimate, type PickRow } from "./typoScreen";
 import { findSynopsis } from "../shared";
 import { chooseAiForRun } from "./aiChoose";
+import { askChoice } from "./dialog";
+import { renameEpisodeWithLedgers, renamedEpisodeFileName } from "../platform/episodeRename";
 import { Capacitor } from "@capacitor/core";
 
 /**
@@ -28,7 +30,9 @@ import { Capacitor } from "@capacitor/core";
  * サブタイトル案は見せるだけ（ファイル名は変えない）。AI は機能ごとの割り当ての「生成」（本体と同じ区分）。
  * **何話かまとめて**（2026-11-21）：誤字脱字・推敲と同じ［話を選ぶ］（1話ずつの印・［すべて］・範囲。2026-11-18 作者の答え）。
  * 話の一覧の並びで1話ずつ作り、**話ごとに台帳へ書く**（途中で止めても作れた話は残る）。前の話のあらすじには、その回で作ったものも渡す。
- * 誤字脱字・推敲とそろえて、見積もりの AI の行でその回だけ AI を替えられ、iOS で裏に回したら1区切りで止める（2026-11-18 作者の答え 案A。引継ぎ書 120章）
+ * 誤字脱字・推敲とそろえて、見積もりの AI の行でその回だけ AI を替えられ、iOS で裏に回したら1区切りで止める（2026-11-18 作者の答え 案A。引継ぎ書 120章）。
+ * **サブタイトル案を押すと、話のファイル名にする**（2026-11-21 作者の答え「パソコンと同じにする」）：「この名前にします」と確かめてから
+ * ファイル名を変え、パスで話を指す台帳を付け替える（`platform/episodeRename.ts`）。1話ずつ。まとめて自動では変えない（本体と同じ）
  */
 
 export interface SynopsisRunDeps {
@@ -48,16 +52,31 @@ export interface SynopsisRunDeps {
   background?: BackgroundWork;
   /** 裏に回ったら、いまの1回を終えたところで止める（既定は iOS のとき。画面の試験で差し替える） */
   pauseWhenHidden?: boolean;
+  /** 書く直前に、その道をアプリが書いた控えへ（`touchedPaths.ts`） */
+  beforeWrite?: (path: string) => Promise<void>;
+  /** 話の名前を変えたあと（端末の中の記録を新しい名前へ・字数の基準を置き直す） */
+  afterRename?: (from: string, to: string) => Promise<void>;
 }
 
 /** いまの台帳の、この話のあらすじ（作者が書いたものには印） */
-export function renderSynopsisList(rows: readonly { label: string; synopsis: string; byAuthor?: boolean; subtitles?: readonly string[] }[]): string {
+export function renderSynopsisList(
+  rows: readonly { label: string; synopsis: string; byAuthor?: boolean; subtitles?: readonly string[]; path?: string }[]
+): string {
   if (rows.length === 0) return "";
+  const subtitlesOf = (row: (typeof rows)[number]) => {
+    if (!row.subtitles || row.subtitles.length === 0) return "";
+    // 話の場所が分かるときは、押すとファイル名にする（確かめてから）。分からなければ見せるだけ
+    if (!row.path) return `<span class="synopsis-subtitles">${escapeHtml(`サブタイトル案：${row.subtitles.join("／")}`)}</span>`;
+    const buttons = row.subtitles
+      .map((subtitle) => `<button type="button" class="synopsis-subtitle" data-rename-path="${escapeHtml(row.path!)}" data-rename-subtitle="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</button>`)
+      .join("");
+    return `<span class="synopsis-subtitles">サブタイトル案（押すとファイル名にします）${buttons}</span><span class="synopsis-renamed" role="status"></span>`;
+  };
   const items = rows
     .map(
       (row) =>
         `<div class="synopsis-row"><dt>${escapeHtml(row.label)}${row.byAuthor ? `<span class="flag">作者</span>` : ""}</dt>` +
-        `<dd>${escapeHtml(row.synopsis)}${row.subtitles && row.subtitles.length > 0 ? `<span class="synopsis-subtitles">${escapeHtml(`サブタイトル案：${row.subtitles.join("／")}`)}</span>` : ""}</dd></div>`
+        `<dd>${escapeHtml(row.synopsis)}${subtitlesOf(row)}</dd></div>`
     )
     .join("");
   return `<dl class="synopsis-list">${items}</dl>`;
@@ -142,6 +161,58 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
     };
     let selected: string[] = [deps.path];
 
+    /*
+      サブタイトル案を押す → 「この名前にします」→ ファイル名を変え、台帳を付け替える（1話ずつ）。名前が変わったら、この画面の
+      話の一覧・選び・見積もりの元を新しい名前で読み直す（古い名前のまま走らせ直さない）
+    */
+    now.addEventListener("click", (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-rename-path]");
+      if (!button) return;
+      void (async () => {
+        const from = button.dataset.renamePath!;
+        const subtitle = button.dataset.renameSubtitle!;
+        const fileName = from.slice(from.lastIndexOf("/") + 1);
+        const next = renamedEpisodeFileName(fileName, subtitle);
+        if (!next) return deps.toast("サブタイトルが空になりました");
+        const ok = await askChoice(
+          `「${fileName}」を「${next}」にします。本文は変えません。章立て・投稿状態・あらすじなど、この話を指す台帳も合わせます。名前を変えたことは、次の同期でパソコンへ送られます`,
+          "この名前にします",
+          "やめる"
+        );
+        if (!ok || !deps.stillHere()) return;
+        const row = button.closest<HTMLElement>(".synopsis-row");
+        const undecidedNow = await (deps.undecidedConflicts?.() ?? Promise.resolve<readonly string[]>([])).catch((): readonly string[] => []);
+        const outcome = await renameEpisodeWithLedgers({
+          store: deps.store,
+          root: deps.root,
+          path: from,
+          subtitle,
+          undecidedConflicts: undecidedNow,
+          ...(deps.beforeWrite ? { beforeWrite: deps.beforeWrite } : {}),
+        });
+        if (!outcome.ok) return deps.toast(outcome.message);
+        await deps.afterRename?.(from, outcome.newPath).catch(() => undefined);
+        if (!deps.stillHere()) return;
+        // この話のほかの案は、もう押せない（名前は1つ）
+        row?.querySelectorAll<HTMLButtonElement>("[data-rename-path]").forEach((other) => (other.disabled = true));
+        const status = row?.querySelector<HTMLElement>(".synopsis-renamed");
+        if (status) status.textContent = [`ファイル名を「${outcome.newFileName}」にしました`, ...outcome.notes].join("。");
+        // 古い名前で走らせ直さないよう、話の一覧と選びを読み直す
+        selected = selected.map((path) => (path === from ? outcome.newPath : path));
+        plans.clear();
+        try {
+          work = await scanWorkFolder(deps.store, deps.root);
+          loaded = await loadSynopses(deps.store, settingsDir);
+          rows = work.episodes.flatMap((episode) => {
+            const path = toStorePath(episode.filePath);
+            return path ? [{ path, name: episodeName(path), conflicted: episode.hasConflictMarkers === true || undecided.has(path) }] : [];
+          });
+        } catch {
+          /* 読み直せなくても名前は変わっている。画面を開き直せば読む */
+        }
+      })();
+    });
+
     const runAll = async (
       run: HTMLButtonElement,
       list: EpisodePlan[],
@@ -166,7 +237,7 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
       const caller = typoCallerFor(chosenProvider.id, key, chosen.model);
       let done = 0;
       progress.textContent = `AI に見せています（0/${calls}）`;
-      const made: { label: string; synopsis: string; subtitles: string[] }[] = [];
+      const made: { label: string; synopsis: string; subtitles: string[]; path: string }[] = [];
       const failures: { label: string; reason: string }[] = [];
       let saveFailure: string | undefined;
       // 止める印：画面を離れた（abort）か、iOS で裏に回った（paused）。頼んでいる1回は、画面を離れたときだけ止める（案A）
@@ -212,7 +283,7 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
               saveFailure = saveFailureText(saved);
               break;
             }
-            made.push(...result.made.map((item) => ({ label: item.label, synopsis: item.synopsis, subtitles: item.subtitles.map((s) => s.text) })));
+            made.push(...result.made.map((item) => ({ label: item.label, synopsis: item.synopsis, subtitles: item.subtitles.map((s) => s.text), path: plan.path })));
             // 次の話を書くときの照らし合わせのため、いま書いた台帳を読み直す
             loaded = await loadSynopses(deps.store, settingsDir);
           }

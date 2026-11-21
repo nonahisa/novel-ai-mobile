@@ -88,7 +88,18 @@ export {
   type EntryKind,
   type Listing,
 } from "novel-ai-assistant/src/core/manuscriptFolderRule";
-export { nextChapterNumber, nextDatedName, nextUntitledName, parseEpisodeFileName } from "novel-ai-assistant/src/core/episodeParser";
+export { nextChapterNumber, nextDatedName, nextUntitledName, parseEpisodeFileName, sanitizeFileName } from "novel-ai-assistant/src/core/episodeParser";
+/*
+  話の名前を変えたとき、パスで話を指す台帳を付け替える決まり（本体 1.0.38〜。`core/episodeRenumber.ts` が vscode を読まなくなった。
+  サブタイトル案でファイル名を変える：2026-11-21 作者の答え「パソコンと同じにする」。`platform/episodeRename.ts`）
+*/
+export { renameUnnumberedSynopses, renumberBookPositions, renumberChapterSet, renumberPostingPosts, renumberTimelineEpisodes } from "novel-ai-assistant/src/core/episodeRenumber";
+export { READINGS_DIRECTORY, readingDictionaryMoveConflictMessage } from "novel-ai-assistant/src/core/readingDictionaryPlace";
+export { readingDictionaryFileName } from "novel-ai-assistant/src/core/readingDictionary";
+export { normalizeEpisodePath } from "novel-ai-assistant/src/models/chapter";
+export { BOOK_DIR, BOOK_FILE, BOOK_SCHEMA_VERSION } from "novel-ai-assistant/src/models/book";
+export { POSTING_FILE, POSTING_SCHEMA_VERSION } from "novel-ai-assistant/src/models/posting";
+export { TIMELINE_SCHEMA_VERSION } from "novel-ai-assistant/src/models/timeline";
 export { findLatestEpisode } from "novel-ai-assistant/src/core/latestEpisode";
 export { parseEpisodeMetadata } from "novel-ai-assistant/src/core/metadataParser";
 export { parseCollectedFile } from "novel-ai-assistant/src/core/collectedFile";

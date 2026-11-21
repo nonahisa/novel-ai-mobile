@@ -176,3 +176,76 @@ test("見積もりの AI の行を押すと、その回だけ別の AI であら
   await page.evaluate(() => (location.hash = "#/ai"));
   await expect(page.locator("#aiDefault")).toContainText("claude-a");
 });
+
+/**
+ * **サブタイトル案を押すと、話のファイル名にする**（2026-11-21 作者の答え「パソコンと同じにする」）。
+ * 「この名前にします」と確かめてから、`<元の名前>_<サブタイトル>` に変え、章立てなど話を指す台帳も合わせる。本文は変えない
+ */
+test("サブタイトル案を押して「この名前にします」と答えると、ファイル名と章立て・あらすじの台帳が変わる。本文はそのまま", async ({ page }) => {
+  await page.route("https://api.anthropic.com/v1/models**", (route) =>
+    route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ data: [{ id: "claude-a" }] }) })
+  );
+  await page.route("https://api.anthropic.com/v1/messages", (route) => {
+    if (route.request().method() === "OPTIONS") return route.fulfill({ headers: CORS });
+    const answer = {
+      synopsis: "霧の朝、姉の手紙を読み返す。",
+      subtitles: [{ text: "霧の朝", kind: "情景", reason: "冒頭" }, { text: "姉の手紙", kind: "物", reason: "中心" }],
+      confidence: "high",
+      emotion: { intensity: 2, valence: 0, dominant: "静", reason: "朝" },
+    };
+    return route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ content: [{ type: "text", text: JSON.stringify(answer) }], stop_reason: "end_turn" }) });
+  });
+  const episode = "灯台守_確認用/本文/第5話.txt";
+  const chapters = "灯台守_確認用/設定/章立て.json";
+  await openWithWorks(page, "#/ai", {
+    ...FAKE_WORKS,
+    [episode]: "霧の朝、姉の手紙を読み返した。\n",
+    [chapters]: JSON.stringify({ schemaVersion: "1", chapters: [{ name: "第一章　灯", startEpisodePath: "本文/第1話 手紙.txt" }, { name: "第三章　霧", startEpisodePath: "本文/第5話.txt" }] }),
+  });
+  await page.locator('[data-ai-set="claude"]').click();
+  await page.locator("#dialogInput").fill("sk-ant-tukurimono-subtitle");
+  await page.locator('[data-answer="yes"]').click();
+  await page.locator("[data-ai-default]").click();
+  await page.locator('[data-choice="claude"]').click();
+  await page.locator('[data-choice="claude-a"]').click();
+  await page.evaluate((path) => (location.hash = `#/synopsis/${encodeURIComponent("灯台守_確認用")}/${encodeURIComponent(path)}`), "本文/第5話.txt");
+  await page.locator("#typoRun").click();
+  await page.locator('[data-answer="yes"]').click();
+  await expect(page.locator("#typoProgress")).toHaveText("1話のあらすじを書きました");
+  await page.locator(".synopsis-subtitle", { hasText: "霧の朝" }).click();
+  await expect(page.locator(".dialog-message")).toContainText("「第5話.txt」を「第5話_霧の朝.txt」にします");
+  await page.locator('[data-answer="yes"]').click();
+  await expect(page.locator(".synopsis-renamed")).toHaveText("ファイル名を「第5話_霧の朝.txt」にしました");
+  await expect(page.locator(".synopsis-subtitle", { hasText: "姉の手紙" })).toBeDisabled();
+  expect(await readFakeFile(page, episode)).toBeUndefined();
+  expect(await readFakeFile(page, "灯台守_確認用/本文/第5話_霧の朝.txt")).toBe("霧の朝、姉の手紙を読み返した。\n");
+  expect(JSON.parse((await readFakeFile(page, chapters))!).chapters[1]).toEqual({ name: "第三章　霧", startEpisodePath: "本文/第5話_霧の朝.txt" });
+  const ledger = JSON.parse((await readFakeFile(page, LEDGER))!);
+  expect(ledger.episodes.find((e: { chapter: number }) => e.chapter === 5)).toMatchObject({ fileName: "第5話_霧の朝.txt", title: "霧の朝" });
+});
+
+test("サブタイトル案を押しても「やめる」なら、名前も台帳も変えない", async ({ page }) => {
+  await page.route("https://api.anthropic.com/v1/models**", (route) =>
+    route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ data: [{ id: "claude-a" }] }) })
+  );
+  await page.route("https://api.anthropic.com/v1/messages", (route) => {
+    if (route.request().method() === "OPTIONS") return route.fulfill({ headers: CORS });
+    const answer = { synopsis: "霧の朝。", subtitles: [{ text: "霧の朝", kind: "情景", reason: "冒頭" }], confidence: "high", emotion: { intensity: 2, valence: 0, dominant: "静", reason: "朝" } };
+    return route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ content: [{ type: "text", text: JSON.stringify(answer) }], stop_reason: "end_turn" }) });
+  });
+  const episode = "灯台守_確認用/本文/第5話.txt";
+  await openWithWorks(page, "#/ai", { ...FAKE_WORKS, [episode]: "霧の朝。\n" });
+  await page.locator('[data-ai-set="claude"]').click();
+  await page.locator("#dialogInput").fill("sk-ant-tukurimono-subtitle");
+  await page.locator('[data-answer="yes"]').click();
+  await page.locator("[data-ai-default]").click();
+  await page.locator('[data-choice="claude"]').click();
+  await page.locator('[data-choice="claude-a"]').click();
+  await page.evaluate((path) => (location.hash = `#/synopsis/${encodeURIComponent("灯台守_確認用")}/${encodeURIComponent(path)}`), "本文/第5話.txt");
+  await page.locator("#typoRun").click();
+  await page.locator('[data-answer="yes"]').click();
+  await page.locator(".synopsis-subtitle", { hasText: "霧の朝" }).click();
+  await page.locator('[data-answer="no"]').click();
+  expect(await readFakeFile(page, episode)).toBe("霧の朝。\n");
+  expect(await readFakeFile(page, "灯台守_確認用/本文/第5話_霧の朝.txt")).toBeUndefined();
+});

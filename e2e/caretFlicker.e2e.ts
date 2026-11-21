@@ -60,6 +60,22 @@ test("短く押すと、印はこちらが置いた所に1度だけ出て、跳�
   }
 });
 
+test("指を置いているあいだ（離す前）にも、端末の置いた所へ印を描かない（2026-11-21 CI：押して離すまでに1こま挟まると、端末の所→こちらの所と跳んだ）", async ({ page }) => {
+  const editor = await open(page);
+  const kami = await charBox(editor, 4);
+  const before = await resetSeen(page);
+  await page.mouse.move(kami.x + kami.w / 2, kami.y + kami.h * 0.2);
+  await page.mouse.down();
+  // 本物の指は数十〜百ミリ秒置いたまま。そのあいだに何こまも描かれる
+  await page.waitForTimeout(120);
+  await page.mouse.up();
+  await page.waitForTimeout(450);
+  await editor.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 0));
+  await page.waitForTimeout(400);
+  const positions = (await seen(page)).filter((at, i) => !(i === 0 && at === before));
+  expect(positions.length, `${before} | ${positions.join(" → ")}`).toBe(1);
+});
+
 test("短く押すと、2度押しの間を待たずに、こちらが置く所へすぐ印が出る", async ({ page }) => {
   // 2026-11-20 Mac のシミュレーター（0.1.136）：置くまで印を出さない作りで、押してから印が出るまで 0.6〜1.5秒空いた
   const editor = await open(page);

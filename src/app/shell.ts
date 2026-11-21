@@ -66,6 +66,7 @@ import type { ConflictChoice, ConflictMaterial } from "../platform/syncConflict"
 import { fetchGithubLogin, pickGithubClientId, mountGithubScreen, readGithubUser, writeGithubUser } from "./githubScreen";
 import { createTouchedRecorder } from "../platform/touchedPaths";
 import { createAutoFetch } from "./autoFetch";
+import { materialsHash, mountMaterialsScreen } from "./materialsScreen";
 import { createNewWork, newWorkResultText, repoNameProblem } from "../platform/newWork";
 import { DeviceFontShelf } from "../platform/fontShelf";
 import { CLOUD_PROVIDERS, checkApiKey, keyCheckText, saveApiKey, validateApiKeyFormat, type CloudProviderId } from "../platform/aiKeys";
@@ -112,6 +113,7 @@ import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLe
  * | `#/display` | 表示（書体の取り寄せ） |
  * | `#/licenses` | ライセンス |
  * | `#/stats` | 執筆統計（I。今日・今週の字数。読むだけ） |
+ * | `#/materials[/<作品>[/<種類>/<id>]]` | 設定資料（E。作品を選ぶ・種類ごとの一覧・1件。読むだけ） |
  * | `#/ai` | 設定 → AI（クラウドの AI の鍵） |
  * | `#/drafts` | 設定 → 書きかけの控え（どの話にも合わない控えを見て消す） |
  * | `#/update` | 設定 → 更新（新しい版の確かめ。引継ぎ書 154章） |
@@ -141,6 +143,7 @@ type Route =
   | { kind: "ai" }
   | { kind: "drafts" }
   | { kind: "stats" }
+  | { kind: "materials"; root?: string; materialKind?: string; id?: string }
   | { kind: "update" };
 
 /** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
@@ -207,6 +210,17 @@ export function parseRoute(hash: string): Route {
   if (name === "ai") return { kind: "ai" };
   if (name === "drafts") return { kind: "drafts" };
   if (name === "stats") return { kind: "stats" };
+  if (name === "materials" || name.startsWith("materials/")) {
+    const pieces = name === "materials" ? [] : name.slice("materials/".length).split("/");
+    try {
+      const [root, kind, id] = pieces.map((piece) => decodeURIComponent(piece));
+      if (pieces.length === 1 && isWorkRoot(root!)) return { kind: "materials", root };
+      if (pieces.length === 3 && isWorkRoot(root!)) return { kind: "materials", root, materialKind: kind, id };
+    } catch {
+      /* 読めない名前は作品を選ぶ所へ */
+    }
+    return { kind: "materials" };
+  }
   if (name === "update") return { kind: "update" };
   if (name.startsWith("conflict/")) {
     const pieces = name.slice("conflict/".length).split("/");
@@ -243,7 +257,7 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", materials: "#/materials", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update" } as const;
 
 /**
  * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。
@@ -563,7 +577,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "stats" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "stats" || route.kind === "materials" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab, tabBadges());
@@ -725,6 +739,11 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
           slot.innerHTML = renderWritingStats(rows, statsDayKey(new Date()));
           slot.removeAttribute("aria-busy");
         });
+        return;
+      case "materials":
+        // ［←］：1件 → 一覧 → 作品を選ぶ → ［ほか］
+        lastTabHash = route.root === undefined ? "#/other" : route.id === undefined ? materialsHash() : materialsHash(route.root);
+        mountMaterialsScreen(screen, store, { root: route.root, kind: route.materialKind, id: route.id }, stillHere);
         return;
       case "update":
         lastTabHash = "#/other";

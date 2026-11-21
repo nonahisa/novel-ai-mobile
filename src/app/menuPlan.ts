@@ -14,7 +14,7 @@ import { ACTION_TREE, isItemShownInActionList, type ActionGroup, type ActionItem
 
 /** 開ける画面 */
 /** `proposals` は［提案］のタブ（頭に、最後に開いた話の誤字脱字の入口がある） */
-export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals" | "stats" | "update";
+export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals" | "stats" | "update" | "materials";
 
 /** メニューの1項目 */
 export interface PlannedItem {
@@ -132,7 +132,7 @@ export const TABS: readonly PlannedTab[] = [
         title: "作品の資料",
         items: [
           { label: "プロット", action: "プロット自力作成" },
-          { label: "設定資料", action: "設定資料集閲覧" },
+          { label: "設定資料", action: "設定資料集閲覧", built: "materials" },
           { label: "執筆統計", action: "執筆統計", built: "stats" },
           { label: "書き出し・広報", action: "新話投稿" },
         ],

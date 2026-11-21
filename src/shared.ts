@@ -155,6 +155,23 @@ export { parseAbility, type Ability } from "novel-ai-assistant/src/models/abilit
 export { parseLocation, type Location } from "novel-ai-assistant/src/models/location";
 export { parseOrganization, type Organization } from "novel-ai-assistant/src/models/organization";
 
+/* 設定資料（E）を見る（読むだけ。`platform/workMaterials.ts`）：欄の並びと名前は本体の `settingsSummary.ts` の describe* と同じ */
+export { membersOf } from "novel-ai-assistant/src/models/organization";
+export { parseWorldItem, WORLD_CATEGORY_LABELS, type WorldItem } from "novel-ai-assistant/src/models/world";
+export { parseForeshadow, type Foreshadow } from "novel-ai-assistant/src/models/foreshadow";
+export { FORESHADOW_STATUS_LABELS } from "novel-ai-assistant/src/core/ledgerProposalPlan";
+export { formatChapters } from "novel-ai-assistant/src/core/settingsMarkdown";
+export {
+  KIND_LABELS,
+  SETTINGS_KINDS,
+  describeAbility,
+  describeCharacter,
+  describeLocation,
+  describeOrganization,
+  describeWorldItem,
+  type SettingsKind,
+} from "novel-ai-assistant/src/core/settingsSummary";
+
 /*
   誤字脱字（段2。設計書 7章）：区切り・行番号・頼みの文・答えの読み方と確かめ・当て方は本体と同じものを使う。
   AI への頼みの部品（本体の ai/*Provider.ts）は vscode に頼るので借りられない（`platform/typoCheck.ts` で写す）

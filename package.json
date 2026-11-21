@@ -1,7 +1,7 @@
 {
   "name": "novel-ai-mobile",
   "private": true,
-  "version": "0.1.158",
+  "version": "0.1.159",
   "description": "統合小説執筆環境の Android 版（移植作業中）",
   "license": "MIT",
   "packageManager": "pnpm@10.34.9",
@@ -49,7 +49,7 @@
     "@capacitor/status-bar": "^8.0.3",
     "buffer": "^6.0.3",
     "isomorphic-git": "^1.41.9",
-    "novel-ai-assistant": "github:nonahisa/novel-ai-assistant#v1.0.39",
+    "novel-ai-assistant": "github:nonahisa/novel-ai-assistant#v1.0.41",
     "path-browserify": "^1.0.1"
   },
   "pnpm": {

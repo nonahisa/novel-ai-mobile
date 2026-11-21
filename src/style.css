@@ -1989,6 +1989,14 @@ a.gh-open {
   font-family: var(--font-ui);
   font-size: 0.85rem;
 }
+/* 名前の紹介から設定資料の1件へ */
+.term-sheet-open {
+  display: inline-block;
+  margin: 4px 0 8px;
+  padding: 8px 0;
+  color: var(--accent, inherit);
+  font-weight: 600;
+}
 /* 設定資料（E。`src/app/materialsScreen.ts`）。読むだけ */
 .materials {
   padding: 0 16px 24px;

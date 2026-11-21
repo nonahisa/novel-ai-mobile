@@ -91,3 +91,22 @@ test("資料の無い作品：何も無いと言う。知らない作品・種�
   await page.evaluate(() => (location.hash = `#/materials/${encodeURIComponent("../外")}`));
   await expect(page.locator(".materials-work").first()).toBeVisible();
 });
+
+test("原稿の名前の札 → 紹介の［資料を開く］でその1件へ。［戻る］キーで原稿へ戻る", async ({ page }) => {
+  await openWithWorks(page, "#/display", MATERIALS);
+  await page.locator('[data-line="right"]').click();
+  await page.evaluate(() => (location.hash = "#/works"));
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("#msEditor");
+  await expect(editor.locator(".term-character")).toHaveCount(1);
+  await editor.locator(".term-character").click();
+  await page.locator("#termTag").click();
+  await expect(page.locator("#termSheet")).toBeVisible();
+  await page.locator("#termSheetOpen").click();
+  await expect(page.locator(".materials-detail h2")).toHaveText("姉");
+  await expect(page.locator(".materials-detail")).toContainText("妹には甘い");
+  await pressBack(page);
+  await expect(page.locator("#msEditor")).toBeVisible();
+  await expect(page).toHaveURL(/#\/episode\//);
+});

@@ -354,6 +354,8 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   let leaveConfirmed = false;
   /** いちばん最近に開いた下のタブ（［←］はここへ戻る） */
   let lastTabHash = "#/works";
+  /** 原稿の名前の札から設定資料の1件を開いたとき、［←］で戻る原稿 */
+  let materialsReturn: string | undefined;
   /** 描くたびに増やす。作品を読み終えたとき、もう別の画面へ移っていたら描かない */
   let renderSeq = 0;
   /**
@@ -570,6 +572,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     leaveConfirmed = false;
     leaveGuard?.destroy();
     leaveGuard = undefined;
+    const previousHash = currentHash;
     currentHash = location.hash;
     // 前の画面の知らせを次の画面へ持ち越さない
     toastEl.classList.remove("shown");
@@ -741,8 +744,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         });
         return;
       case "materials":
-        // ［←］：1件 → 一覧 → 作品を選ぶ → ［ほか］
-        lastTabHash = route.root === undefined ? "#/other" : route.id === undefined ? materialsHash() : materialsHash(route.root);
+        // ［←］：1件 → 一覧 → 作品を選ぶ → ［ほか］。原稿の名前の札から来た1件は、原稿へ戻る
+        if (route.id !== undefined && parseRoute(previousHash).kind === "episode") materialsReturn = previousHash;
+        else if (route.id === undefined) materialsReturn = undefined;
+        lastTabHash = route.root === undefined ? "#/other" : route.id === undefined ? materialsHash() : (materialsReturn ?? materialsHash(route.root));
         mountMaterialsScreen(screen, store, { root: route.root, kind: route.materialKind, id: route.id }, stillHere);
         return;
       case "update":

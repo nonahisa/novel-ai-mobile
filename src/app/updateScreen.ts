@@ -2,6 +2,7 @@ import { escapeHtml } from "./menuScreen";
 import {
   decideNotice,
   dueForCheck,
+  NO_RELEASE,
   readUpdateSettings,
   writeUpdateSettings,
   type Notice,
@@ -24,8 +25,8 @@ export interface UpdateDeps {
   current: string;
   /** "android" | "ios" | "web" */
   platform: string;
-  /** 最新の札を取ってきて照らす（落ちたら undefined） */
-  check(): Promise<UpdateTicket | undefined>;
+  /** 最新の札を取ってきて照らす（配った版がまだ無ければ `NO_RELEASE`、落ちたら undefined） */
+  check(): Promise<UpdateTicket | typeof NO_RELEASE | undefined>;
   /** Android：APK を取ってきて照らし、端末のインストーラーへ渡す。無ければ［入れる］を出さない */
   install?(asset: UpdateAsset): Promise<void>;
   now?(): number;
@@ -88,7 +89,8 @@ export async function runAutoUpdateCheck(deps: UpdateDeps): Promise<boolean> {
   // 先に時を書く（落ちても、次の確かめまで黙る）
   writeUpdateSettings(deps.storage, { ...settings, lastCheck: now });
   const ticket = await deps.check();
-  if (!ticket) return false;
+  // 配った版がまだ無いときも黙る（自動の確かめは、新しい版があるときだけ知らせる）
+  if (!ticket || ticket === NO_RELEASE) return false;
   const notice = decideNotice(ticket, deps.current, readUpdateSettings(deps.storage, deps.autoDefault).skipped, deps.platform);
   if (notice.kind !== "new") return false;
   await answerNotice(notice, deps);
@@ -128,6 +130,11 @@ export function mountUpdateScreen(slot: HTMLElement, deps: UpdateDeps, stillHere
       if (!stillHere()) return;
       button.disabled = false;
       writeUpdateSettings(deps.storage, { ...readUpdateSettings(deps.storage, deps.autoDefault), lastCheck: (deps.now ?? Date.now)() });
+      if (ticket === NO_RELEASE) {
+        // 2026-11-21 作者の答え「分ける」：GitHub が「Release は無い」と答えたときだけ
+        result.textContent = "まだ配った版がありません。いまの版のままで大丈夫です";
+        return;
+      }
       if (!ticket) {
         result.textContent = "確かめられませんでした。通信のあるところで、もう一度押してください";
         return;

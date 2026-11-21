@@ -114,4 +114,20 @@ test.describe("更新", () => {
     await expect(page.locator(".update-result")).toContainText("確かめられませんでした");
     await expect(page.locator(".update-notice")).toHaveCount(0);
   });
+
+  /** 2026-11-21 作者の答え「分ける」：配った版がまだ無い（GitHub が 404）ときと、通信が切れているときで文言を分ける */
+  test("配った版がまだ無いときは「まだ配った版がありません」。通信が切れているときは前の文言", async ({ page }) => {
+    let offline = false;
+    await page.route(LATEST, (route) =>
+      offline ? route.abort("internetdisconnected") : route.fulfill({ status: 404, headers: CORS, contentType: "application/json", body: '{"message":"Not Found"}' })
+    );
+    await openWithWorks(page, "#/update");
+    await page.locator('[data-update="check"]').click();
+    await expect(page.locator(".update-result")).toHaveText("まだ配った版がありません。いまの版のままで大丈夫です");
+    await expect(page.locator(".update-notice")).toHaveCount(0);
+    offline = true;
+    await page.locator('[data-update="check"]').click();
+    await expect(page.locator(".update-result")).toHaveText("確かめられませんでした。通信のあるところで、もう一度押してください");
+  });
 });
+

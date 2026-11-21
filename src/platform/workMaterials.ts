@@ -22,7 +22,7 @@ import {
   type SettingsKind,
 } from "../shared";
 import { FileNotFoundError, joinStorePath, type FileStore } from "./fileStore";
-import { readKind, type WorkTerms } from "./workTerms";
+import { readErrorMessage, readKind, type WorkTerms } from "./workTerms";
 
 /**
  * **作品の設定資料を、見る形にして読む**（設計書 4章の画面 E。2026-11-21。読むだけで `設定/` へは書かない）。
@@ -67,7 +67,7 @@ async function readCustomFieldSet(store: FileStore, settingsDir: string, errors:
     return parseCustomFieldSet(raw);
   } catch (error) {
     if (error instanceof FileNotFoundError) return undefined;
-    errors.push({ file: CUSTOM_FIELDS_FILE, message: error instanceof Error ? error.message : String(error) });
+    errors.push({ file: CUSTOM_FIELDS_FILE, message: readErrorMessage(error) });
     return undefined;
   }
 }

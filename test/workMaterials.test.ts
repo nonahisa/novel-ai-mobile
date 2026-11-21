@@ -54,6 +54,8 @@ describe("設定資料（E）を見る形にして読む（読むだけ）", () 
     const materials = await readWorkMaterials(store, SET);
     expect(materials.groups[0]!.items.map((i) => i.name)).toEqual(["姉"]);
     expect(materials.errors.map((e) => e.file)).toEqual(["characters/char_009.json", "characters/char_010.json"]);
+    // 壊れた JSON の訳は日本語で（端末の JSON.parse の英語をそのまま出さない。2026-11-21 AQUOS で見つけた）
+    expect(materials.errors[0]!.message).toBe("JSON の書き方が崩れていて読めません");
     expect(new TextDecoder().decode(await store.readFile(`${SET}/characters/char_009.json`))).toBe("{ こわれている");
   });
 

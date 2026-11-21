@@ -369,7 +369,7 @@ async function readChapters(store: FileStore, settings: string): Promise<{ chapt
 }
 
 /** 作品の形式（プロットの `## 形式`）。読めなければ「決めていない」（本体の `readWorkFormat` と同じ） */
-async function readFormat(store: FileStore, settings: string): Promise<WorkFormatKey | undefined> {
+export async function readFormat(store: FileStore, settings: string): Promise<WorkFormatKey | undefined> {
   try {
     const bytes = await store.readFile(joinStorePath(settings, PLOT_FILE));
     return matchWorkFormat(parsePlotMarkdown(decodeBytes(bytes).text).sections.format);

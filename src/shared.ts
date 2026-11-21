@@ -50,10 +50,18 @@ export { countChars, formatCount } from "novel-ai-assistant/src/core/charCount";
 export {
   DEFAULT_MEMO_MARKERS,
   MemoMarkersConfigError,
+  MEMO_MARKER_DEFS,
+  MEMO_MARKER_IDS,
+  memoMarkerLabels,
   memoMarkersOf,
   memoMarkersOfConfigText,
+  sameMemoMarkers,
+  type MemoMarkerId,
   type MemoMarkers,
 } from "novel-ai-assistant/src/core/memoMarkers";
+/* 作品の設定（作品の長押し → 作品の設定。2026-11-21 作者の答え「形式・ジャンルも」）：作品の種類の定義と、メモの印を切り替える前に数える行 */
+export { WORK_KINDS, parseWorkKind, resolveWorkKind, workKindDef, type WorkKindKey } from "novel-ai-assistant/src/core/workKind";
+export { linesStartingWithMarkers } from "novel-ai-assistant/src/core/sceneMemo";
 /*
   用語の色付け：索引（Aho-Corasick）・名前の広げ方・種類ごとの色は本体と同じものを使う
   （本体の決まり「画面ごとに違う色にしない」「索引の作り方を2つに分けない」）

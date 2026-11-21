@@ -85,7 +85,7 @@ export function typoResultText(result: TypoCheckResult): string {
   return `${head}。${result.failures.length}か所は AI に見てもらえませんでした：${result.failures.map((f) => f.reason).join("／")}`;
 }
 
-function episodeName(path: string): string {
+export function episodeName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1).replace(/\.txt$/i, "");
 }
 
@@ -139,6 +139,44 @@ export function pathsInRange(rows: readonly PickRow[], a: number, b: number): st
 export function pickedEpisodesText(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? "";
   return `${names.length}話（${names[0]} ほか）`;
+}
+
+/**
+ * ［話を選ぶ］の画面を `slot` に出し、［決める］で選んだ話（話の一覧の並びのまま）を `done` へ渡す。
+ * 誤字脱字・推敲とあらすじで同じ選び方（1話ずつの印・［すべて］・範囲）を使う
+ */
+export function mountEpisodePicker(slot: HTMLElement, rows: readonly PickRow[], initial: readonly string[], done: (picked: string[]) => void): void {
+  const picked = new Set(initial);
+  const paint = () => {
+    slot.innerHTML = renderEpisodePicker(rows, picked);
+  };
+  paint();
+  slot.onchange = (event) => {
+    const box = event.target as HTMLInputElement;
+    // 範囲の頭と末を選んだだけでは描き直さない（描き直すと、もう片方の選びが戻る）
+    if (box.tagName === "SELECT") return;
+    if (box.id === "pickAll") {
+      for (const row of rows) if (!row.conflicted) box.checked ? picked.add(row.path) : picked.delete(row.path);
+    } else if (box.dataset.pick) {
+      box.checked ? picked.add(box.dataset.pick) : picked.delete(box.dataset.pick);
+    }
+    paint();
+  };
+  slot.onclick = (event) => {
+    if ((event.target as HTMLElement).id === "pickRangeApply") {
+      // 選んだ範囲の話だけにする（競合の話は飛ばす）。頭と末が逆でも並びのまま
+      const a = Number(slot.querySelector<HTMLSelectElement>("#pickFrom")!.value);
+      const b = Number(slot.querySelector<HTMLSelectElement>("#pickTo")!.value);
+      picked.clear();
+      for (const path of pathsInRange(rows, a, b)) picked.add(path);
+      paint();
+      return;
+    }
+    if ((event.target as HTMLElement).id !== "pickDone" || picked.size === 0) return;
+    slot.onchange = null;
+    slot.onclick = null;
+    done(rows.filter((row) => picked.has(row.path)).map((row) => row.path));
+  };
 }
 
 export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void {
@@ -331,41 +369,11 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
       run.addEventListener("click", () => void runAll(run, loaded.map((item) => item.input), calls, chars, chosen, chosenProvider));
     };
 
-    const showPicker = () => {
-      const picked = new Set(selected);
-      const paint = () => {
-        slot.innerHTML = renderEpisodePicker(rows, picked);
-      };
-      paint();
-      slot.onchange = (event) => {
-        const box = event.target as HTMLInputElement;
-        // 範囲の頭と末を選んだだけでは描き直さない（描き直すと、もう片方の選びが戻る）
-        if (box.tagName === "SELECT") return;
-        if (box.id === "pickAll") {
-          for (const row of rows) if (!row.conflicted) box.checked ? picked.add(row.path) : picked.delete(row.path);
-        } else if (box.dataset.pick) {
-          box.checked ? picked.add(box.dataset.pick) : picked.delete(box.dataset.pick);
-        }
-        paint();
-      };
-      slot.onclick = (event) => {
-        if ((event.target as HTMLElement).id === "pickRangeApply") {
-          // 選んだ範囲の話だけにする（競合の話は飛ばす）。頭と末が逆でも並びのまま
-          const a = Number(slot.querySelector<HTMLSelectElement>("#pickFrom")!.value);
-          const b = Number(slot.querySelector<HTMLSelectElement>("#pickTo")!.value);
-          picked.clear();
-          for (const path of pathsInRange(rows, a, b)) picked.add(path);
-          paint();
-          return;
-        }
-        if ((event.target as HTMLElement).id !== "pickDone" || picked.size === 0) return;
-        // 話の一覧の並びのまま
-        selected = rows.filter((row) => picked.has(row.path)).map((row) => row.path);
-        slot.onchange = null;
-        slot.onclick = null;
+    const showPicker = () =>
+      mountEpisodePicker(slot, rows, selected, (picked) => {
+        selected = picked;
         void showEstimate();
-      };
-    };
+      });
 
     await showEstimate();
   })();

@@ -82,3 +82,37 @@ test("作品を長押し → シリーズ：隣の作品を選んで呼び名を
   const after = JSON.parse((await readFakeFile(page, "灯台守_確認用/.aiwriter/config.json"))!);
   expect(after).toEqual({ workTitle: "灯台守の手紙_確認用" });
 });
+
+/**
+ * **作品を長押し → 作品の設定**（2026-11-21 作者の答え「形式・ジャンルも」。本体の［作品管理 → 作品別設定］と同じ流れ）。
+ * メモの印・作品の種類は作品の設定ファイルに書く。本文は1字も書き換えない
+ */
+test("作品の設定 → メモの印：新しくオンにする印で始まる行を数えて見せてから切り替え、字数がその行のぶん減る。本文はそのまま", async ({ page }) => {
+  const episode = "灯台守_確認用/本文/第3話 霧笛.txt";
+  await openWithWorks(page, "#/works", { ...FAKE_WORKS, [episode]: "霧が出た。\n%% 港の場面はあとで\n" });
+  await longPressWork(page, "灯台守の手紙_確認用");
+  await page.locator(".dialog-choices button", { hasText: "作品の設定" }).click();
+  await page.locator(".dialog-choices button", { hasText: "メモの印" }).click();
+  const percent = page.locator(".dialog-check", { hasText: "%% と ％％" }).locator("input");
+  await expect(page.locator(".dialog-check", { hasText: "// と ／／" }).locator("input")).toBeChecked();
+  await percent.check();
+  await page.locator('.dialog-many [data-answer="yes"]').click();
+  await expect(page.locator(".dialog-message")).toContainText("%% と ％％ で始まる行が1か所あります（第3話 2行目）");
+  await page.locator('[data-answer="yes"]').click();
+  await expect(page.locator(".toast").last()).toContainText("メモの印を「// と ／／・%% と ％％」にしました");
+  const config = JSON.parse((await readFakeFile(page, "灯台守_確認用/.aiwriter/config.json"))!);
+  expect(config).toMatchObject({ workTitle: "灯台守の手紙_確認用", memoMarkers: ["slash", "percent"] });
+  expect(await readFakeFile(page, episode)).toBe("霧が出た。\n%% 港の場面はあとで\n");
+});
+
+test("作品の設定 → 作品の種類：いまの種類に印、選ぶと設定ファイルの kind が替わる", async ({ page }) => {
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await longPressWork(page, "灯台守の手紙_確認用");
+  await page.locator(".dialog-choices button", { hasText: "作品の設定" }).click();
+  await page.locator(".dialog-choices button", { hasText: "作品の種類" }).click();
+  await expect(page.locator(".dialog-choices button", { hasText: "（いまの種類）" })).toContainText("小説");
+  await page.locator(".dialog-choices button", { hasText: "台本（脚本・シナリオ）" }).click();
+  await expect(page.locator(".toast").last()).toContainText("種類を「台本（脚本・シナリオ）」にしました");
+  const config = JSON.parse((await readFakeFile(page, "灯台守_確認用/.aiwriter/config.json"))!);
+  expect(config).toMatchObject({ workTitle: "灯台守の手紙_確認用", kind: "script" });
+});

@@ -19,9 +19,11 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
 
-    /* 本体の core/writingStats.ts は型検査を通らないので、型だけ src/types の写しで見る（組み立ては本体のまま。引継ぎ書 161章） */
+    /* 本体の core/writingStats.ts・core/settingsSummary.ts（settingsMarkdown.ts）は型検査を通らないので、型だけ src/types の写しで見る（組み立ては本体のまま。引継ぎ書 161章・174章） */
     "paths": {
-      "novel-ai-assistant/src/core/writingStats": ["./src/types/writingStatsCore.d.ts"]
+      "novel-ai-assistant/src/core/writingStats": ["./src/types/writingStatsCore.d.ts"],
+      "novel-ai-assistant/src/core/settingsSummary": ["./src/types/settingsSummaryCore.d.ts"],
+      "novel-ai-assistant/src/core/settingsMarkdown": ["./src/types/settingsMarkdownCore.d.ts"]
     }
   },
   "include": ["src", "test"]

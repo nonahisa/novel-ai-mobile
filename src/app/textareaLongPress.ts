@@ -37,6 +37,18 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   /** 押したときの本文（道具帯の［貼り付け］などで本文が変わったら、もう戻さない） */
   let tappedValue = "";
   const trace = (what: string) => traceTap(what, area);
+  /**
+   * 指を置いているあいだ（`data-tap-pressing`）は、印（`textareaCaret.ts`）を描き直さない（2026-11-21 CI の e2e で見つけた）。
+   * 端末は指を置いた時点でカーソルを置くことがあり、離す前に1こまでも描くと、端末の所→（離してから）こちらの所と跳ぶ。
+   * 離したら・動かして送り始めたら・長押しで語を選んだら外し、描き直させる
+   */
+  const setPressing = (on: boolean) => {
+    if (on) area.dataset.tapPressing = "1";
+    else if (area.dataset.tapPressing !== undefined) {
+      delete area.dataset.tapPressing;
+      area.dispatchEvent(new Event(TAP_PLACED_EVENT));
+    }
+  };
 
   const choose = () => {
     if (composing || !pressAt) return;
@@ -46,6 +58,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     if (word.start === word.end) return;
     chosen = word;
     area.setSelectionRange(word.start, word.end);
+    setPressing(false);
   };
   const cancel = () => {
     window.clearTimeout(timer);
@@ -58,6 +71,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     if (composing || e.button > 0) return;
     pressAt = { x: e.clientX, y: e.clientY };
     pressedAtTime = e.timeStamp;
+    setPressing(true);
     moved = false;
     cancel();
     timer = window.setTimeout(() => {
@@ -70,6 +84,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     if (Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > MOVE_TOLERANCE_PX) {
       moved = true;
       cancel();
+      setPressing(false);
     }
   };
   /**
@@ -171,6 +186,8 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   };
   const onUp = (e: PointerEvent) => {
     trace(`up moved=${moved} long=${timer === undefined}`);
+    // 先に外す（短く押したならこのあと placeTap がこちらの所を描かせる。同じこまで描くので跳ばない）
+    if (area.dataset.tapPressing !== undefined) delete area.dataset.tapPressing;
     // 時計が遅れていても、押していた長さが足りていれば選ぶ（右の線の欄と同じ）
     if (timer !== undefined && e.timeStamp - pressedAtTime >= LONG_PRESS_MS) {
       cancel();
@@ -206,6 +223,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
   const onPointerCancel = () => {
     trace("cancel");
     cancel();
+    setPressing(false);
   };
   area.addEventListener("pointercancel", onPointerCancel);
   area.addEventListener("compositionstart", onCompStart);
@@ -228,6 +246,7 @@ export function watchTextareaLongPress(area: HTMLTextAreaElement): () => void {
     document.removeEventListener("pointerdown", onDocDown, true);
     cancel();
     forgetTap();
+    setPressing(false);
     area.removeEventListener("keydown", onKey);
     area.removeEventListener("beforeinput", onKey);
     area.removeEventListener("blur", forgetTap);

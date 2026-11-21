@@ -42,6 +42,8 @@ import { checkEpisodeName, createEpisode, manuscriptFileNames, suggestEpisodeNam
 import { planChapter, saveChapter } from "./newChapter";
 import { applyBodyFont, parseBodyFont, readBodyFont, renderBodyFontSection, writeBodyFont } from "./bodyFont";
 import { renameWork } from "../platform/workRename";
+import { openWorkSettings } from "./workSettingsMenu";
+import { followRenameOnDevice } from "./episodeRenameFollow";
 import { createWritingRecorder, type WritingRecorder } from "../platform/writingStatsRecord";
 import { deviceId as readDeviceId } from "../platform/deviceSettings";
 import { readWorkSeries, seriesNeighbors, writeWorkSeries } from "../platform/workSeries";
@@ -376,16 +378,22 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
 
   /*
     作品の一覧で作品を長押し → 題を変える・登録から外す（設計書 4.4.1。作者の答え 2026-11-18）。
-    ［シリーズ］はつなぐ・外すまで（2026-11-20 夜 作者の答え。`workSeries.ts`）。作品の設定はまだ作っていない（作ってあるものだけ並べる）
+    ［シリーズ］はつなぐ・外すまで（2026-11-20 夜 作者の答え。`workSeries.ts`）。
+    ［作品の設定］はメモの印・作品の種類・形式・ジャンル（2026-11-21 作者の答え「形式・ジャンルも」。`workSettingsMenu.ts`）
   */
   watchLongPress(root, ".work-card[data-work]", (item) => {
     const workRoot = item.dataset.work!;
     void chooseFrom([
       { id: "rename", label: "題を変える" },
       { id: "series", label: "シリーズ" },
+      { id: "settings", label: "作品の設定" },
       { id: "remove", label: "登録から外す" },
     ]).then(async (picked) => {
       if (picked === "series") return void linkSeries(workRoot);
+      if (picked === "settings") {
+        await openWorkSettings({ store, toast }, workRoot);
+        return render();
+      }
       if (picked === "rename") {
         const current = await readWorkLayout(store, workRoot).then((layout) => layout.title).catch(() => undefined);
         if (current === undefined) return toast("作品の設定を読めないので、題を変えられません");
@@ -674,6 +682,14 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         lastTabHash = "#/works";
         const stop = mountSynopsisRun(screen, {
           undecidedConflicts: () => undecidedConflictPaths(store, route.root),
+          ...(touchedRecorder(store) ? { beforeWrite: touchedRecorder(store)! } : {}),
+          // サブタイトル案でファイル名を変えたら、端末の中の記録を新しい名前へ・字数の基準を置き直す（名前だけでは字は増えない）
+          afterRename: async (from, to) => {
+            followRenameOnDevice(globalThis.localStorage, route.root, from, to);
+            await recorderOf(store).rebaseline(route.root);
+          },
+          // 画面の試験だけ、iOS の「裏に回ったら止める」を確かめられるようにする（端末では使わない）
+          ...(!Capacitor.isNativePlatform() && (globalThis as { __novelaiTestPauseWhenHidden?: boolean }).__novelaiTestPauseWhenHidden ? { pauseWhenHidden: true } : {}),
           store,
           root: route.root,
           path: route.path,

@@ -8,7 +8,8 @@ import {
   sameBaseline,
   shouldPersist,
 } from "novel-ai-assistant/src/core/writingStats";
-import type { DeviceWritingStats, FileCountMap, WritingMeasurement } from "novel-ai-assistant/src/models/writingStats";
+import { WRITING_STATS_SCHEMA_VERSION, type DeviceWritingStats, type FileCountMap, type WritingMeasurement } from "novel-ai-assistant/src/models/writingStats";
+import { ledgerShapeProblem } from "./ledgerShapeGate";
 import { FileNotFoundError, joinStorePath, type FileStore } from "./fileStore";
 import { toStorePath } from "./paths";
 import { scanWorkFolder, type ScannedWork } from "./workScan";
@@ -56,9 +57,22 @@ export function measurementOf(work: ScannedWork): WritingMeasurement {
 }
 
 async function loadOwn(store: FileStore, root: string, deviceId: string): Promise<DeviceWritingStats> {
+  let text: string;
   try {
-    const bytes = await store.readFile(statsFilePath(root, deviceId));
-    return parseDeviceWritingStats(JSON.parse(new TextDecoder().decode(bytes))) ?? emptyDeviceStats(deviceId);
+    text = new TextDecoder().decode(await store.readFile(statsFilePath(root, deviceId)));
+  } catch {
+    // 無い・読めない：新しく始める
+    return emptyDeviceStats(deviceId);
+  }
+  /*
+    **知らない新しい形の記録は、空から始め直して上書きしない**（2026-11-21 作者の答え「台帳の形が変わったときだけ止める」）。
+    本体の `parseDeviceWritingStats` は形の版が違うと読まない（undefined）ので、そのまま空から始めると記録を消してしまう。
+    投げて、記録の口（record・noteOpened・rebaseline）に書かずに終わらせる
+  */
+  const newer = ledgerShapeProblem("この端末の字数の記録", text, WRITING_STATS_SCHEMA_VERSION);
+  if (newer) throw new Error(newer);
+  try {
+    return parseDeviceWritingStats(JSON.parse(text)) ?? emptyDeviceStats(deviceId);
   } catch (error) {
     // 無い：新しく始める。壊れている（競合の印が混ざったなど）：本体と同じく新しく始める（原稿は無事）
     if (error instanceof FileNotFoundError) return emptyDeviceStats(deviceId);

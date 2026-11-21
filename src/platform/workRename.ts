@@ -1,7 +1,8 @@
-import { AIWRITER_DIR, CONFIG_FILE, detectJsonFileFormat, formatJsonForFile } from "../shared";
+import { AIWRITER_DIR, CONFIG_FILE, CONFIG_SCHEMA_VERSION, detectJsonFileFormat, formatJsonForFile } from "../shared";
 import { FileExistsError, FileNotFoundError, joinStorePath, type FileStore } from "./fileStore";
 import { readTextFile, writeTextFilePreservingFormat } from "./textFile";
 import { readWorkLayout } from "./workScan";
+import { ledgerShapeProblem } from "./ledgerShapeGate";
 
 /**
  * **作品の題を変える**（作品の長押し → 題を変える。設計書 4.4.1。本体の `features/renameWork.ts` と同じ考え）。
@@ -48,6 +49,9 @@ export async function renameWork(store: FileStore, root: string, rawTitle: strin
     if (!(error instanceof FileNotFoundError)) return { kind: "failed", message: "作品の設定ファイルを読めませんでした" };
   }
   if (existing) {
+    // モバイル版の知らない新しい形なら書かない（2026-11-21 作者の答え「台帳の形が変わったときだけ止める」）
+    const newer = ledgerShapeProblem("作品の設定", existing.text, CONFIG_SCHEMA_VERSION);
+    if (newer) return { kind: "failed", message: newer };
     const value = JSON.parse(existing.text) as Record<string, unknown>;
     const text = formatJsonForFile({ ...value, workTitle: newTitle }, detectJsonFileFormat(await store.readFile(configPath)));
     const written = await writeTextFilePreservingFormat(store, configPath, text, existing, existing.hash);

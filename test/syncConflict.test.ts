@@ -143,6 +143,16 @@ describe("話ごとに分ける", () => {
     expect(plan.conflicts[0]).toMatchObject({ theirs: null });
   });
 
+  test("こちらで話の名前を変え（サブタイトル案。2026-11-21）、あちらが古い名前の話を直したら、競合として見せる（あちらの直しを黙って落とさない）", async () => {
+    const { fs, theirs, io } = await setup();
+    await theirs({ "本文/第2話.txt": "どこで生れたか、パソコンで書き足した\n" });
+    await writeWork(fs, "本文/第2話_生れ.txt", "どこで生れたか\n");
+    await fs.promises.unlink(`${DIR}/本文/第2話.txt`);
+    const plan = await planIncoming(io);
+    expect(kinds(plan)).toMatchObject({ "本文/第2話.txt": "conflict", "本文/第2話_生れ.txt": "ours_only" });
+    expect(plan.undecided.map((entry) => entry.path)).toEqual(["本文/第2話.txt"]);
+  });
+
   test("あちらの版が手元と同じなら、何も無い", async () => {
     const { base, io } = await setup();
     expect(await planIncoming({ ...io, theirs: base })).toMatchObject({ entries: [], conflicts: [] });

@@ -50,10 +50,18 @@ export { countChars, formatCount } from "novel-ai-assistant/src/core/charCount";
 export {
   DEFAULT_MEMO_MARKERS,
   MemoMarkersConfigError,
+  MEMO_MARKER_DEFS,
+  MEMO_MARKER_IDS,
+  memoMarkerLabels,
   memoMarkersOf,
   memoMarkersOfConfigText,
+  sameMemoMarkers,
+  type MemoMarkerId,
   type MemoMarkers,
 } from "novel-ai-assistant/src/core/memoMarkers";
+/* 作品の設定（作品の長押し → 作品の設定。2026-11-21 作者の答え「形式・ジャンルも」）：作品の種類の定義と、メモの印を切り替える前に数える行 */
+export { WORK_KINDS, parseWorkKind, resolveWorkKind, workKindDef, type WorkKindKey } from "novel-ai-assistant/src/core/workKind";
+export { linesStartingWithMarkers } from "novel-ai-assistant/src/core/sceneMemo";
 /*
   用語の色付け：索引（Aho-Corasick）・名前の広げ方・種類ごとの色は本体と同じものを使う
   （本体の決まり「画面ごとに違う色にしない」「索引の作り方を2つに分けない」）
@@ -80,7 +88,18 @@ export {
   type EntryKind,
   type Listing,
 } from "novel-ai-assistant/src/core/manuscriptFolderRule";
-export { nextChapterNumber, nextDatedName, nextUntitledName, parseEpisodeFileName } from "novel-ai-assistant/src/core/episodeParser";
+export { nextChapterNumber, nextDatedName, nextUntitledName, parseEpisodeFileName, sanitizeFileName } from "novel-ai-assistant/src/core/episodeParser";
+/*
+  話の名前を変えたとき、パスで話を指す台帳を付け替える決まり（本体 1.0.38〜。`core/episodeRenumber.ts` が vscode を読まなくなった。
+  サブタイトル案でファイル名を変える：2026-11-21 作者の答え「パソコンと同じにする」。`platform/episodeRename.ts`）
+*/
+export { renameUnnumberedSynopses, renumberBookPositions, renumberChapterSet, renumberPostingPosts, renumberTimelineEpisodes } from "novel-ai-assistant/src/core/episodeRenumber";
+export { READINGS_DIRECTORY, readingDictionaryMoveConflictMessage } from "novel-ai-assistant/src/core/readingDictionaryPlace";
+export { readingDictionaryFileName } from "novel-ai-assistant/src/core/readingDictionary";
+export { normalizeEpisodePath } from "novel-ai-assistant/src/models/chapter";
+export { BOOK_DIR, BOOK_FILE, BOOK_SCHEMA_VERSION } from "novel-ai-assistant/src/models/book";
+export { POSTING_FILE, POSTING_SCHEMA_VERSION } from "novel-ai-assistant/src/models/posting";
+export { TIMELINE_SCHEMA_VERSION } from "novel-ai-assistant/src/models/timeline";
 export { findLatestEpisode } from "novel-ai-assistant/src/core/latestEpisode";
 export { parseEpisodeMetadata } from "novel-ai-assistant/src/core/metadataParser";
 export { parseCollectedFile } from "novel-ai-assistant/src/core/collectedFile";
@@ -92,14 +111,17 @@ export { addCounts, emptyCounts } from "novel-ai-assistant/src/core/charCount";
 export { compareEpisodes } from "novel-ai-assistant/src/core/episodeOrder";
 export { detectEol } from "novel-ai-assistant/src/core/eolAudit";
 export { decodeBytes } from "novel-ai-assistant/src/core/textDecode";
-export { parsePlotMarkdown } from "novel-ai-assistant/src/core/plotDoc";
-export { matchWorkFormat, type WorkFormatKey } from "novel-ai-assistant/src/core/workFormat";
+export { parsePlotMarkdown, updatePlotMarkdown, type PlotSections } from "novel-ai-assistant/src/core/plotDoc";
+export { matchWorkFormat, selectableWorkFormats, suggestWorkFormat, type WorkFormatDef, type WorkFormatKey } from "novel-ai-assistant/src/core/workFormat";
+/* 形式・ジャンル（作品の設定。本体の `features/setPlotBasics.ts`）：投稿先ごとのジャンル体系 */
+export { GENRE_SITES, formatGenres, listGenres, type GenreChoice, type GenreSite } from "novel-ai-assistant/src/core/genre";
 export { CHAPTERS_FILE, CHAPTERS_SCHEMA_VERSION, assertUniqueStarts, findChapterStartingAt, parseChapterSet, withChapterStartingAt, type Chapter, type ChapterSet } from "novel-ai-assistant/src/models/chapter";
 export { groupEpisodesByChapter, type ChapterGrouping } from "novel-ai-assistant/src/core/chapterGrouping";
 export { episodeTitle, formatChapterLabel, episodeListLabel, isCollectedFile } from "novel-ai-assistant/src/core/episodeLabel";
 export {
   AIWRITER_DIR,
   CONFIG_FILE,
+  CONFIG_SCHEMA_VERSION,
   DEFAULT_MANUSCRIPT_DIR,
   DEFAULT_SETTINGS_DIR,
   PLOT_FILE,

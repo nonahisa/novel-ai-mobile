@@ -165,3 +165,17 @@ describe("送る", () => {
     expect(await git.resolveRef({ fs, dir, ref: "HEAD" })).toBe(remote.commit);
   });
 });
+
+/** 話のファイル名を変えた（2026-11-21 サブタイトル案でファイル名を変える）：古い名前を消し、新しい名前を足す、の2つで送る */
+describe("名前を変えた話", () => {
+  test("古い名前は消した話、新しい名前は新しい話として拾う（中身は同じ）", async () => {
+    const { fs, dir } = await setup();
+    await fs.promises.writeFile(`${dir}/原稿/第2話_名前.txt`, "名前はまだ無い。\n");
+    await fs.promises.unlink(`${dir}/原稿/第2話.txt`);
+    const changes = await collectChanges(fs, dir);
+    expect(changes.map((change) => [change.path, "deleted" in change])).toEqual([
+      ["原稿/第2話.txt", true],
+      ["原稿/第2話_名前.txt", false],
+    ]);
+  });
+});

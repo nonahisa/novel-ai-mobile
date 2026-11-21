@@ -1,8 +1,23 @@
-import { MEMO_MARKER_DEFS, WORK_KINDS, memoMarkerLabels, memoMarkersOf, sameMemoMarkers, workKindDef, type MemoMarkerId, type WorkKindKey } from "../shared";
+import {
+  GENRE_SITES,
+  MEMO_MARKER_DEFS,
+  WORK_KINDS,
+  formatGenres,
+  listGenres,
+  memoMarkerLabels,
+  memoMarkersOf,
+  sameMemoMarkers,
+  selectableWorkFormats,
+  suggestWorkFormat,
+  workKindDef,
+  type GenreChoice,
+  type MemoMarkerId,
+  type WorkKindKey,
+} from "../shared";
 import type { FileStore } from "../platform/fileStore";
 import { readWorkMemoMarkers } from "../platform/memoMarkers";
-import { readWorkLayout } from "../platform/workScan";
-import { findMarkedLines, readWorkKindOf, writeWorkKind, writeWorkMemoMarkers } from "../platform/workSettings";
+import { readWorkLayout, scanWorkFolder } from "../platform/workScan";
+import { findMarkedLines, readPlotSections, readWorkKindOf, writePlotBasics, writeWorkKind, writeWorkMemoMarkers } from "../platform/workSettings";
 import { askChoice, chooseFrom, chooseMany, tell } from "./dialog";
 
 /**
@@ -19,9 +34,77 @@ export async function openWorkSettings(deps: WorkSettingsDeps, root: string): Pr
   const picked = await chooseFrom([
     { id: "memo", label: "メモの印" },
     { id: "kind", label: "作品の種類" },
+    { id: "plot", label: "形式・ジャンル" },
   ]);
   if (picked === "memo") return chooseMemoMarkers(deps, root);
   if (picked === "kind") return chooseWorkKind(deps, root);
+  if (picked === "plot") return chooseFormatAndGenres(deps, root);
+}
+
+/**
+ * 形式・ジャンル（本体の `setPlotBasics`）。形式 → ジャンル（投稿先を先に選び、その体系から いくつでも。投稿先を替えて続けられる）→ プロットへ書く。
+ * 形式は、いまプロットに書かれているものと、いまの分量の目安に印（決めつけない。「脚本」は種類で選ぶので並べない）。
+ * ジャンルは決めないまま進める（書いてあるジャンルは消さない）。［やめる］は全部を取りやめる（何も書かない）
+ */
+export async function chooseFormatAndGenres(deps: WorkSettingsDeps, root: string): Promise<void> {
+  let current;
+  try {
+    current = await readPlotSections(deps.store, root);
+  } catch (error) {
+    return tell(`形式・ジャンルを選べませんでした。${error instanceof Error ? error.message : String(error)}`);
+  }
+  const written = current.sections.format.trim();
+  const work = await scanWorkFolder(deps.store, root).catch(() => undefined);
+  const suggested = work ? suggestWorkFormat(work.stats.totals.net, work.episodes.length) : undefined;
+  const formats = selectableWorkFormats();
+  const formatId = await chooseFrom(
+    formats.map((format) => ({
+      id: format.key,
+      label:
+        written === format.label
+          ? `${format.label}（いまプロットに書かれています）`
+          : suggested?.key === format.key && work
+            ? `${format.label}（いまの分量の目安：${work.episodes.length}話 / ${work.stats.totals.net.toLocaleString("ja-JP")}字）`
+            : format.label,
+    }))
+  );
+  const format = formats.find((candidate) => candidate.key === formatId);
+  if (!format) return;
+
+  const chosen: GenreChoice[] = [];
+  for (;;) {
+    const siteId = await chooseFrom(
+      [
+        ...GENRE_SITES.map((site) => ({ id: site.key, label: `${site.label}（${listGenres(site).length}件から選ぶ）` })),
+        { id: "done", label: chosen.length > 0 ? `これで決める（${chosen.map((choice) => choice.genre).join("、")}）` : "ジャンルは決めない" },
+      ],
+      "すべてやめる"
+    );
+    if (!siteId) return;
+    if (siteId === "done") break;
+    const site = GENRE_SITES.find((candidate) => candidate.key === siteId)!;
+    const genres = listGenres(site);
+    const picked = await chooseMany(
+      `${site.label}のジャンル（いくつでも）`,
+      genres.map((choice, index) => ({
+        id: String(index),
+        // 大ジャンルを持つ体系では、どちらの「異世界」かが分からないと選べない
+        label: choice.group ? `${choice.group} > ${choice.genre}` : choice.genre,
+        checked: chosen.some((already) => already.site === choice.site && already.genre === choice.genre && already.group === choice.group),
+      }))
+    );
+    if (!picked) continue;
+    for (const index of picked) {
+      const choice = genres[Number(index)]!;
+      if (!chosen.some((already) => already.site === choice.site && already.genre === choice.genre && already.group === choice.group)) chosen.push(choice);
+    }
+  }
+
+  const outcome = await writePlotBasics(deps.store, root, format.label, chosen.length > 0 ? formatGenres(chosen) : undefined);
+  if (!outcome.ok) return tell(`形式・ジャンルをプロットへ書けませんでした。${outcome.message}`);
+  deps.toast(
+    chosen.length > 0 ? `形式を「${format.label}」、ジャンルを${chosen.length}件、プロットへ書きました` : `形式を「${format.label}」としてプロットへ書きました`
+  );
 }
 
 async function titleOf(deps: WorkSettingsDeps, root: string): Promise<string> {

@@ -100,8 +100,10 @@ export { addCounts, emptyCounts } from "novel-ai-assistant/src/core/charCount";
 export { compareEpisodes } from "novel-ai-assistant/src/core/episodeOrder";
 export { detectEol } from "novel-ai-assistant/src/core/eolAudit";
 export { decodeBytes } from "novel-ai-assistant/src/core/textDecode";
-export { parsePlotMarkdown } from "novel-ai-assistant/src/core/plotDoc";
-export { matchWorkFormat, type WorkFormatKey } from "novel-ai-assistant/src/core/workFormat";
+export { parsePlotMarkdown, updatePlotMarkdown, type PlotSections } from "novel-ai-assistant/src/core/plotDoc";
+export { matchWorkFormat, selectableWorkFormats, suggestWorkFormat, type WorkFormatDef, type WorkFormatKey } from "novel-ai-assistant/src/core/workFormat";
+/* 形式・ジャンル（作品の設定。本体の `features/setPlotBasics.ts`）：投稿先ごとのジャンル体系 */
+export { GENRE_SITES, formatGenres, listGenres, type GenreChoice, type GenreSite } from "novel-ai-assistant/src/core/genre";
 export { CHAPTERS_FILE, CHAPTERS_SCHEMA_VERSION, assertUniqueStarts, findChapterStartingAt, parseChapterSet, withChapterStartingAt, type Chapter, type ChapterSet } from "novel-ai-assistant/src/models/chapter";
 export { groupEpisodesByChapter, type ChapterGrouping } from "novel-ai-assistant/src/core/chapterGrouping";
 export { episodeTitle, formatChapterLabel, episodeListLabel, isCollectedFile } from "novel-ai-assistant/src/core/episodeLabel";

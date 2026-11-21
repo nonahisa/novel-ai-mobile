@@ -9,11 +9,16 @@ import {
   memoMarkersOf,
   parseWorkKind,
   resolveWorkKind,
+  PLOT_FILE,
+  matchWorkFormat,
+  parsePlotMarkdown,
+  updatePlotMarkdown,
   type MemoMarkerId,
   type MemoMarkers,
+  type PlotSections,
   type WorkKindKey,
 } from "../shared";
-import { FileNotFoundError, joinStorePath, type FileStore } from "./fileStore";
+import { FileExistsError, FileNotFoundError, joinStorePath, type FileStore } from "./fileStore";
 import { toStorePath } from "./paths";
 import { readTextFile, writeTextFilePreservingFormat, type TextFileContent } from "./textFile";
 import { readFormat, readWorkLayout, scanWorkFolder } from "./workScan";
@@ -139,4 +144,64 @@ export async function findMarkedLines(store: FileStore, root: string, added: Mem
     for (const line of linesStartingWithMarkers(text, added)) places.push(`${label} ${line}行目`);
   }
   return { places, unreadable };
+}
+
+/**
+ * **形式・ジャンル**（本体の `features/setPlotBasics.ts`・`core/plotFile.ts` の `writePlotSections`）。在り処はプロット（`設定/plot.md`）の
+ * `## 形式`・`## ジャンル`。**作者の文書なので、ほかの節・作者が立てた見出しには触れない**（本体の `updatePlotMarkdown`）。
+ * ジャンルを決めないまま進んだときは、**書いてあるジャンルを消さない**（空で上書きしない）。
+ * 形式が「脚本」だった作品は、形式を書き換える前に種類「台本」を作品の設定へ書き留める（本体の `keepScriptKind`。
+ * 種類の軸ができる前の作品で、読み替えの根拠が消えて台本の組み方が黙って外れるのを防ぐ。書けなくても形式の決め直しは続ける）
+ */
+export async function readPlotSections(store: FileStore, root: string): Promise<{ sections: PlotSections; title: string }> {
+  const layout = await readWorkLayout(store, root);
+  try {
+    const plot = await readTextFile(store, joinStorePath(layout.settings, PLOT_FILE));
+    return { sections: parsePlotMarkdown(plot.text).sections, title: layout.title };
+  } catch (error) {
+    if (error instanceof FileNotFoundError) return { sections: parsePlotMarkdown("").sections, title: layout.title };
+    throw error;
+  }
+}
+
+export async function writePlotBasics(store: FileStore, root: string, format: string, genres: string | undefined): Promise<SettingsOutcome> {
+  let layout;
+  try {
+    layout = await readWorkLayout(store, root);
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
+  const path = joinStorePath(layout.settings, PLOT_FILE);
+  let existing: TextFileContent | undefined;
+  try {
+    existing = await readTextFile(store, path);
+  } catch (error) {
+    if (!(error instanceof FileNotFoundError)) return { ok: false, message: "プロット（plot.md）を読めませんでした" };
+  }
+  const current = existing ? existing.text.replace(/\r\n?/g, "\n") : "";
+  // 書き換える前に、形式が「脚本」だった作品の種類を書き留める（設定に種類が書かれていれば何もしない）
+  if (matchWorkFormat(parsePlotMarkdown(current).sections.format) === "script") {
+    const kind = await readWorkKindOf(store, root);
+    if (!kind.configured) await writeWorkKind(store, root, "script").catch(() => undefined);
+  }
+  const updates: Partial<PlotSections> = { format, ...(genres ? { genre: genres } : {}) };
+  const next = updatePlotMarkdown(current, updates, { workTitle: layout.title });
+  if (existing) {
+    if (next === current) return { ok: true };
+    const written = await writeTextFilePreservingFormat(store, path, next, existing, existing.hash);
+    if (!written.ok) {
+      return {
+        ok: false,
+        message: written.reason === "modified_externally" ? "読んだあとでプロットが変わったので、書きませんでした。同期のあとでもう一度" : "プロット（plot.md）に書けませんでした",
+      };
+    }
+    return { ok: true };
+  }
+  try {
+    await store.createDirectory(layout.settings);
+    await store.writeFile(path, new TextEncoder().encode(next), { mode: "create" });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: error instanceof FileExistsError ? "プロットが外でできたので、書きませんでした。同期のあとでもう一度" : "プロット（plot.md）を作れませんでした" };
+  }
 }

@@ -116,3 +116,36 @@ test("作品の設定 → 作品の種類：いまの種類に印、選ぶと設
   const config = JSON.parse((await readFakeFile(page, "灯台守_確認用/.aiwriter/config.json"))!);
   expect(config).toMatchObject({ workTitle: "灯台守の手紙_確認用", kind: "script" });
 });
+
+test("作品の設定 → 形式・ジャンル：形式を選び、投稿先ごとにジャンルを選んでプロットへ書く。作者が書いたほかの節はそのまま", async ({ page }) => {
+  const plot = "灯台守_確認用/設定/plot.md";
+  await openWithWorks(page, "#/works", { ...FAKE_WORKS, [plot]: "# 灯台守の手紙_確認用\n\n## ログライン\n\n姉の手紙を追う。\n" });
+  await longPressWork(page, "灯台守の手紙_確認用");
+  await page.locator(".dialog-choices button", { hasText: "作品の設定" }).click();
+  await page.locator(".dialog-choices button", { hasText: "形式・ジャンル" }).click();
+  await page.locator(".dialog-choices button", { hasText: /^長編/ }).click();
+  await page.locator(".dialog-choices button", { hasText: "カクヨム" }).click();
+  await page.locator(".dialog-check", { hasText: "現代ドラマ" }).locator("input").check();
+  await page.locator('.dialog-many [data-answer="yes"]').click();
+  await expect(page.locator(".dialog-choices button", { hasText: "これで決める" })).toContainText("現代ドラマ");
+  await page.locator(".dialog-choices button", { hasText: "小説家になろう" }).click();
+  await page.locator(".dialog-check", { hasText: "文芸 > ヒューマンドラマ" }).locator("input").check();
+  await page.locator('.dialog-many [data-answer="yes"]').click();
+  await page.locator(".dialog-choices button", { hasText: "これで決める" }).click();
+  await expect(page.locator(".toast").last()).toContainText("形式を「長編」、ジャンルを2件、プロットへ書きました");
+  const after = (await readFakeFile(page, plot))!;
+  expect(after).toContain("## ログライン\n\n姉の手紙を追う。");
+  expect(after).toMatch(/## 形式\s+長編/);
+  expect(after).toContain("- 現代ドラマ（カクヨム）");
+  expect(after).toContain("- 文芸 > ヒューマンドラマ（小説家になろう）");
+});
+
+test("作品の設定 → 形式・ジャンル：ジャンルの所で［すべてやめる］を押すと、何も書かない", async ({ page }) => {
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await longPressWork(page, "灯台守の手紙_確認用");
+  await page.locator(".dialog-choices button", { hasText: "作品の設定" }).click();
+  await page.locator(".dialog-choices button", { hasText: "形式・ジャンル" }).click();
+  await page.locator(".dialog-choices button", { hasText: /^短編/ }).first().click();
+  await page.locator('.dialog-choices [data-answer="no"]', { hasText: "すべてやめる" }).click();
+  expect(await readFakeFile(page, "灯台守_確認用/設定/plot.md")).toBeUndefined();
+});

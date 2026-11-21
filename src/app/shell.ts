@@ -378,7 +378,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
   /*
     作品の一覧で作品を長押し → 題を変える・登録から外す（設計書 4.4.1。作者の答え 2026-11-18）。
     ［シリーズ］はつなぐ・外すまで（2026-11-20 夜 作者の答え。`workSeries.ts`）。
-    ［作品の設定］はメモの印・作品の種類（2026-11-21 作者の答え「形式・ジャンルも」。`workSettingsMenu.ts`）
+    ［作品の設定］はメモの印・作品の種類・形式・ジャンル（2026-11-21 作者の答え「形式・ジャンルも」。`workSettingsMenu.ts`）
   */
   watchLongPress(root, ".work-card[data-work]", (item) => {
     const workRoot = item.dataset.work!;

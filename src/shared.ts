@@ -110,6 +110,7 @@ export { episodeTitle, formatChapterLabel, episodeListLabel, isCollectedFile } f
 export {
   AIWRITER_DIR,
   CONFIG_FILE,
+  CONFIG_SCHEMA_VERSION,
   DEFAULT_MANUSCRIPT_DIR,
   DEFAULT_SETTINGS_DIR,
   PLOT_FILE,

@@ -1,6 +1,7 @@
 import {
   AIWRITER_DIR,
   CONFIG_FILE,
+  CONFIG_SCHEMA_VERSION,
   MEMO_MARKER_IDS,
   detectJsonFileFormat,
   formatChapterLabel,
@@ -22,6 +23,7 @@ import { FileExistsError, FileNotFoundError, joinStorePath, type FileStore } fro
 import { toStorePath } from "./paths";
 import { readTextFile, writeTextFilePreservingFormat, type TextFileContent } from "./textFile";
 import { readFormat, readWorkLayout, scanWorkFolder } from "./workScan";
+import { ledgerShapeProblem } from "./ledgerShapeGate";
 
 /**
  * **作品の設定**（作品の長押し → 作品の設定。設計書 4.4.1。2026-11-21 作者の答え「形式・ジャンルも」）のうち、
@@ -73,6 +75,9 @@ async function loadConfig(store: FileStore, root: string): Promise<LoadedConfig 
 async function writeConfigFields(store: FileStore, root: string, patch: (value: Record<string, unknown>) => Record<string, unknown>): Promise<SettingsOutcome> {
   const loaded = await loadConfig(store, root);
   if ("failed" in loaded) return { ok: false, message: loaded.failed };
+  // モバイル版の知らない新しい形なら書かない（2026-11-21 作者の答え「台帳の形が変わったときだけ止める」）
+  const newer = ledgerShapeProblem("作品の設定", loaded.content.text, CONFIG_SCHEMA_VERSION);
+  if (newer) return { ok: false, message: newer };
   const text = formatJsonForFile(patch(loaded.value), detectJsonFileFormat(loaded.bytes));
   const written = await writeTextFilePreservingFormat(store, loaded.path, text, loaded.content, loaded.content.hash);
   if (!written.ok) {

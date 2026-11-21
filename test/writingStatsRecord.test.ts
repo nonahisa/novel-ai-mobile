@@ -75,3 +75,18 @@ describe("この端末の字数の記録", () => {
     expect(isBaselineOnlyStatsChange(file([day], 1), undefined)).toBe(false);
   });
 });
+
+/** 台帳の形の関所（2026-11-21 作者の答え「台帳の形が変わったときだけ止める」）：知らない新しい形の記録を、空から始め直して上書きしない */
+describe("この端末の字数の記録：新しい形なら書かない", () => {
+  it("記録のファイルがモバイル版の知らない形の版なら、開いても保存しても取り込んでも書き換えない", async () => {
+    const { store, recorder } = await setup("姉から手紙が届いた。");
+    await store.createDirectory(`${ROOT}/.aiwriter/stats`);
+    const newer = JSON.stringify({ schemaVersion: "2", deviceId: "phone1", days: [{ date: "2026-11-19", net: 900 }], future: true });
+    await store.writeFile(statsFilePath(ROOT, "phone1"), enc(newer), { mode: "create" });
+    await recorder.noteOpened(ROOT, `${ROOT}/本文/第1話.txt`);
+    await store.writeFile(`${ROOT}/本文/第1話.txt`, enc("姉から手紙が届いた。霧笛が鳴った。"), { mode: "overwrite" });
+    expect(await recorder.record(ROOT)).toBe(0);
+    await recorder.rebaseline(ROOT);
+    expect(new TextDecoder().decode(await store.readFile(statsFilePath(ROOT, "phone1")))).toBe(newer);
+  });
+});

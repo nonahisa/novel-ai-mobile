@@ -1,7 +1,8 @@
-import { AIWRITER_DIR, CONFIG_FILE, detectJsonFileFormat, formatJsonForFile, isPlainFolderName, parseSeriesConfig } from "../shared";
+import { AIWRITER_DIR, CONFIG_FILE, CONFIG_SCHEMA_VERSION, detectJsonFileFormat, formatJsonForFile, isPlainFolderName, parseSeriesConfig } from "../shared";
 import { FileNotFoundError, joinStorePath, type FileStore } from "./fileStore";
 import { readTextFile, writeTextFilePreservingFormat } from "./textFile";
 import { findWorkRoots, readWorkLayout } from "./workScan";
+import { ledgerShapeProblem } from "./ledgerShapeGate";
 
 /**
  * **作品の長押し → シリーズ：つなぐ・外す**（2026-11-20 夜 作者の答え「つなぐ・外すまで」。本体の `features/setSeries.ts`、
@@ -72,6 +73,9 @@ export async function writeWorkSeries(store: FileStore, root: string, series: Wo
   } catch (error) {
     return { ok: false, message: error instanceof FileNotFoundError ? CONFIG_MISSING : CONFIG_BROKEN };
   }
+  // モバイル版の知らない新しい形なら書かない（2026-11-21 作者の答え「台帳の形が変わったときだけ止める」）
+  const newer = ledgerShapeProblem("作品の設定", existing.text, CONFIG_SCHEMA_VERSION);
+  if (newer) return { ok: false, message: newer };
   if (series) value.series = { name: series.name, related: series.related };
   else delete value.series;
   const text = formatJsonForFile(value, detectJsonFileFormat(await store.readFile(configPath)));

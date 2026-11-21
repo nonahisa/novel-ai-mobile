@@ -1,6 +1,7 @@
 import { CHAPTERS_FILE, CHAPTERS_SCHEMA_VERSION, assertUniqueStarts, findChapterStartingAt, parseChapterSet, withChapterStartingAt, type Chapter } from "../shared";
 import { FileNotFoundError, type FileStore } from "../platform/fileStore";
 import { readWorkLayout } from "../platform/workScan";
+import { ledgerShapeProblem } from "../platform/ledgerShapeGate";
 
 /**
  * **章を立てる**（原稿エディターの上のバーの［…］→ 章を立てる。設計書 4.4「［…］：作品と話の操作（新しい話・章を立てる・…）」）。
@@ -53,6 +54,9 @@ const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.e
 
 /** 章を置いて書く。読んだあとで外で変わっていれば書かずに投げる。改名なら "renamed"、新しく立てたなら "added" */
 export async function saveChapter(store: FileStore, plan: ChapterPlan, name: string): Promise<"added" | "renamed"> {
+  // モバイル版の知らない新しい形なら書かない（2026-11-21 作者の答え「台帳の形が変わったときだけ止める」）
+  const newer = ledgerShapeProblem("章立て", plan.before ? new TextDecoder().decode(plan.before) : undefined, CHAPTERS_SCHEMA_VERSION);
+  if (newer) throw new Error(newer);
   const chapters = withChapterStartingAt(plan.chapters, plan.start, name);
   assertUniqueStarts(chapters);
   const bytes = chapterFileBytes(plan.schemaVersion, chapters);

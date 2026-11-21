@@ -1,6 +1,7 @@
 import { SYNOPSIS_SCHEMA_VERSION, decodeByteFallback, dedupeSynopsisEpisodes, emptySynopsisSet, parseSynopsisSet, type ChapterSynopsisSet } from "../shared";
 import { FileExistsError, FileNotFoundError, dirname, joinStorePath, type FileStore } from "./fileStore";
 import { readTextFile, writeTextFilePreservingFormat, type TextFileContent, type WriteTextFailureReason } from "./textFile";
+import { ledgerShapeProblem } from "./ledgerShapeGate";
 
 /**
  * **各話あらすじの台帳**（`設定/chapter_synopses.json`。本体の `core/synopsisStore.ts` と同じ置き場・同じ形）。
@@ -27,7 +28,7 @@ export interface LoadedSynopses {
 
 export type SaveSynopsesResult =
   | { ok: true; recoveryPath?: string }
-  | { ok: false; reason: WriteTextFailureReason | "created_externally" | "write_failed"; detail?: string };
+  | { ok: false; reason: WriteTextFailureReason | "created_externally" | "write_failed" | "newer_shape"; detail?: string };
 
 export function synopsesPath(settingsDir: string): string {
   return joinStorePath(settingsDir, CHAPTER_SYNOPSES_FILE);
@@ -60,6 +61,9 @@ export function synopsesText(set: ChapterSynopsisSet): string {
 export async function saveSynopses(store: FileStore, settingsDir: string, set: ChapterSynopsisSet, loaded: LoadedSynopses): Promise<SaveSynopsesResult> {
   const path = synopsesPath(settingsDir);
   const text = synopsesText(set);
+  // モバイル版の知らない新しい形なら書かない（2026-11-21 作者の答え「台帳の形が変わったときだけ止める」）
+  const newer = ledgerShapeProblem("各話あらすじ", loaded.content?.text, SYNOPSIS_SCHEMA_VERSION);
+  if (newer) return { ok: false, reason: "newer_shape", detail: newer };
   if (loaded.content) {
     const written = await writeTextFilePreservingFormat(store, path, text, loaded.content, loaded.content.hash);
     if (!written.ok) return { ok: false, reason: written.reason, ...(written.detail !== undefined ? { detail: written.detail } : {}) };
@@ -77,6 +81,7 @@ export async function saveSynopses(store: FileStore, settingsDir: string, set: C
 
 /** 作者に出す一言（書けなかったとき） */
 export function saveFailureText(result: Extract<SaveSynopsesResult, { ok: false }>): string {
+  if (result.reason === "newer_shape" && result.detail) return result.detail;
   return result.reason === "modified_externally" || result.reason === "created_externally"
     ? `読んだあとで ${CHAPTER_SYNOPSES_FILE} が変わったので、書きませんでした（同期のあとでもう一度）`
     : `${CHAPTER_SYNOPSES_FILE} に書けませんでした`;

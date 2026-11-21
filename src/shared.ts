@@ -205,6 +205,8 @@ export {
 } from "novel-ai-assistant/src/core/proofreadValidation";
 export { collectWorkStyle, buildStyleNote } from "novel-ai-assistant/src/core/workStyleFacts";
 export { parseKeepWordSet, type KeepWord } from "novel-ai-assistant/src/models/keepWord";
+// 作者が足した項目の定義（`設定/custom_fields.json`。設定資料の1件に出す。2026-11-21）
+export { parseCustomFieldSet, fieldsFor, type CustomFieldDefinition, type CustomFieldSet } from "novel-ai-assistant/src/models/customField";
 // 各話あらすじ（段2。2026-11-18）：台帳の形・差し込み・頼みの文・答えの確かめ・本文の分け方とハッシュ
 export {
   SYNOPSIS_SCHEMA_VERSION,

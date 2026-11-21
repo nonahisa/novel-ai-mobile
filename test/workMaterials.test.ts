@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacter } from "novel-ai-assistant/src/models/character";
 import { emptyOrganization } from "novel-ai-assistant/src/models/organization";
+import { emptyLocation } from "novel-ai-assistant/src/models/location";
 import { emptyWorldItem } from "novel-ai-assistant/src/models/world";
 import { emptyForeshadow } from "novel-ai-assistant/src/models/foreshadow";
 import { MemoryFileStore } from "../src/platform/memoryFileStore";
@@ -54,6 +55,37 @@ describe("設定資料（E）を見る形にして読む（読むだけ）", () 
     expect(materials.groups[0]!.items.map((i) => i.name)).toEqual(["姉"]);
     expect(materials.errors.map((e) => e.file)).toEqual(["characters/char_009.json", "characters/char_010.json"]);
     expect(new TextDecoder().decode(await store.readFile(`${SET}/characters/char_009.json`))).toBe("{ こわれている");
+  });
+
+  it("作者が足した項目（custom_fields.json）を、定義の順に登場話・作者メモの前へ並べる。値の無い項目は出さない。壊れていれば訳を残して足した項目なしで読む", async () => {
+    const store = new MemoryFileStore();
+    const put = (path: string, value: unknown) => store.putExternally(`${SET}/${path}`, encode(value));
+    put("custom_fields.json", {
+      schemaVersion: "0.1",
+      fields: [
+        { key: "birthday", label: "誕生日", hint: "", multiline: false },
+        { key: "food", label: "好きな食べ物", hint: "", multiline: false },
+        { key: "memo", label: "作者メモ", hint: "", multiline: false },
+      ],
+      byKind: { location: [{ key: "climate", label: "気候", hint: "", multiline: false }] },
+    });
+    put("characters/char_001.json", { ...emptyCharacter("char_001", "姉"), summary: "灯台に住む姉", appearedChapters: [1], authorNotes: "妹には甘い", customFields: { birthday: "三月三日", food: "", memo: "AI が書いた" } });
+    put("locations/loc_001.json", { ...emptyLocation("loc_001", "灯台"), description: "岬の先", authorNotes: "白い", customFields: { climate: "霧が多い" } });
+    const materials = await readWorkMaterials(store, SET);
+    const sister = findMaterial(materials, "character", "char_001")!;
+    expect(sister.lines.map((l) => l.label)).toEqual(["紹介", "誕生日", "作者メモ", "登場話", "作者メモ"]);
+    expect(sister.lines[1]).toEqual({ label: "誕生日", value: "三月三日" });
+    // 作者が足した項目は、見出しが「作者メモ」でも作者の印を付けない（中身は AI が書くこともある）
+    expect(sister.lines[2]).toEqual({ label: "作者メモ", value: "AI が書いた" });
+    expect(sister.lines[4]).toEqual({ label: "作者メモ", value: "妹には甘い", byAuthor: true });
+    expect(findMaterial(materials, "location", "loc_001")!.lines.map((l) => l.label)).toEqual(["説明", "気候", "作者メモ"]);
+    expect(materials.errors).toEqual([]);
+
+    put("custom_fields.json", "{ こわれている");
+    const broken = await readWorkMaterials(store, SET);
+    expect(findMaterial(broken, "character", "char_001")!.lines.map((l) => l.label)).toEqual(["紹介", "登場話", "作者メモ"]);
+    expect(broken.errors.map((e) => e.file)).toEqual(["custom_fields.json"]);
+    expect(new TextDecoder().decode(await store.readFile(`${SET}/custom_fields.json`))).toBe("{ こわれている");
   });
 
   it("知らない種類・id は見つからない（道の id から置き場の道を作らない）", async () => {

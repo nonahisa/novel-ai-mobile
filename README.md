@@ -2,7 +2,7 @@
 
 パソコン版（`../novel-ai-assistant` のVSCode拡張機能）を Android と iOS へ移す作業場。iOS 版もこのリポジトリで作る（2026-11-02 作者「同じリポジトリで、iOS版まで開発します」）。Capacitor を使い、1つのプロジェクトから Android と iOS の両方を組み立てる。
 
-- **元にしている統合の版：v1.0.39**（`package.json` の `novel-ai-assistant` の `#v1.0.39`。統合の版を上げるたびにこの行も直す。段取りは [`docs/引継ぎ書.md`](docs/引継ぎ書.md) 1・2章）
+- **元にしている統合の版：v1.0.41**（`package.json` の `novel-ai-assistant` の `#v1.0.41`。統合の版を上げるたびにこの行も直す。段取りは [`docs/引継ぎ書.md`](docs/引継ぎ書.md) 1・2章）
 - このアプリの版：`package.json` の `version`（変えたことは [`CHANGELOG.md`](CHANGELOG.md)）
 
 - GitHub：<https://github.com/nonahisa/novel-ai-mobile>（公開。拡張機能のリポジトリにならった）。2026-11-02 に `novel-ai-android` から改名した。古い URL は GitHub が新しい名前へ転送する。手元のフォルダー名は `novel-ai-android` のまま

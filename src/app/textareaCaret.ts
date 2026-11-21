@@ -36,6 +36,8 @@ export function watchOwnCaret(area: HTMLTextAreaElement): () => void {
     frame = 0;
     const parent = host();
     const pending = area.dataset.tapPending;
+    // 指を置いているあいだは描き直さない（端末が置いた所へ1こま描くと、離してからこちらの所へ跳ぶ。`textareaLongPress.ts`）
+    if (area.dataset.tapPressing !== undefined && pending === undefined) return;
     const offset = pending !== undefined ? Math.min(Number(pending), area.value.length) : area.selectionStart;
     if (!parent || document.activeElement !== area || (pending === undefined && area.selectionStart !== area.selectionEnd)) return hide();
     if (caret.parentElement !== parent) parent.appendChild(caret);

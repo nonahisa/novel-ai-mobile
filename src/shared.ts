@@ -205,6 +205,7 @@ export {
   SYNOPSIS_TEMPERATURE,
   buildSynopsisPrompt,
   synopsisPromptVersion,
+  synopsisVersionIsCurrent,
   type SubtitleSuggestion,
 } from "novel-ai-assistant/src/prompts/synopsis";
 export { parseSynopsisResult, validateSynopsisResult } from "novel-ai-assistant/src/core/synopsisValidation";

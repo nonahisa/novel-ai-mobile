@@ -37,6 +37,17 @@ describe("どの話を作るか", () => {
     expect(plain[0]!.needsSubtitle).toBe(true);
     expect(plain[0]!.version).toContain("reader:none");
   });
+  test("サブタイトル案で名前を付けた話は、本文が同じなら作り直さない（本体 v1.0.39 の synopsisVersionIsCurrent）", () => {
+    const before = { ...EPISODE, fileName: "001.txt", title: null, isInitialName: true };
+    const made = planSynopses(before, emptySynopsisSet(), "m", DEFAULT_MEMO_MARKERS)[0]!;
+    expect(made.needsSubtitle).toBe(true);
+    // 名前を変えると初期の名前ではなくなり、サブタイトル案は頼まない（版の文字が変わる）が、本文は同じ
+    const after = { ...before, fileName: "001_霧の朝.txt", isInitialName: false };
+    const set = upsertSynopsis(emptySynopsisSet(), entry({ fileName: after.fileName, title: "", sourceHash: made.hash, promptVersion: made.version })).set;
+    const again = planSynopses(after, set, "m", DEFAULT_MEMO_MARKERS)[0]!;
+    expect(again.needsSubtitle).toBe(false);
+    expect(again.plan).toBe("fresh");
+  });
 });
 
 describe("作る", () => {

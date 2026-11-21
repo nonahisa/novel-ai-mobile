@@ -181,12 +181,14 @@ test("見積もりの AI の行を押すと、その回だけ別の AI であら
  * **サブタイトル案を押すと、話のファイル名にする**（2026-11-21 作者の答え「パソコンと同じにする」）。
  * 「この名前にします」と確かめてから、`<元の名前>_<サブタイトル>` に変え、章立てなど話を指す台帳も合わせる。本文は変えない
  */
-test("サブタイトル案を押して「この名前にします」と答えると、ファイル名と章立て・あらすじの台帳が変わる。本文はそのまま", async ({ page }) => {
+test("サブタイトル案を押して「この名前にします」と答えると、ファイル名と章立て・あらすじの台帳が変わる。本文はそのまま。開き直しても作り直さない", async ({ page }) => {
   await page.route("https://api.anthropic.com/v1/models**", (route) =>
     route.fulfill({ headers: CORS, contentType: "application/json", body: JSON.stringify({ data: [{ id: "claude-a" }] }) })
   );
+  let calls = 0;
   await page.route("https://api.anthropic.com/v1/messages", (route) => {
     if (route.request().method() === "OPTIONS") return route.fulfill({ headers: CORS });
+    calls++;
     const answer = {
       synopsis: "霧の朝、姉の手紙を読み返す。",
       subtitles: [{ text: "霧の朝", kind: "情景", reason: "冒頭" }, { text: "姉の手紙", kind: "物", reason: "中心" }],
@@ -222,6 +224,12 @@ test("サブタイトル案を押して「この名前にします」と答え�
   expect(JSON.parse((await readFakeFile(page, chapters))!).chapters[1]).toEqual({ name: "第三章　霧", startEpisodePath: "本文/第5話_霧の朝.txt" });
   const ledger = JSON.parse((await readFakeFile(page, LEDGER))!);
   expect(ledger.episodes.find((e: { chapter: number }) => e.chapter === 5)).toMatchObject({ fileName: "第5話_霧の朝.txt", title: "霧の朝" });
+  expect(calls).toBe(1);
+
+  // 新しい名前で開き直しても、本文が同じなので作り直さない（名前を付けるとサブタイトル案を頼まなくなり版の文字が変わるが、本体 v1.0.39 と同じく作り直さない）
+  await page.evaluate((path) => (location.hash = `#/synopsis/${encodeURIComponent("灯台守_確認用")}/${encodeURIComponent(path)}`), "本文/第5話_霧の朝.txt");
+  await expect(page.locator("#typoProblem")).toHaveText("本文が変わっていないので、作り直しません");
+  expect(calls).toBe(1);
 });
 
 test("サブタイトル案を押しても「やめる」なら、名前も台帳も変えない", async ({ page }) => {

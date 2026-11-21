@@ -90,3 +90,16 @@ describe("この端末の字数の記録：新しい形なら書かない", () =
     expect(new TextDecoder().decode(await store.readFile(statsFilePath(ROOT, "phone1")))).toBe(newer);
   });
 });
+
+/** 話の名前を変えた（2026-11-21 サブタイトル案でファイル名を変える）：名前だけでは字は増えない。基準を置き直さなくても +0 */
+describe("この端末の字数の記録：話の名前を変えた", () => {
+  it("開いたあとで話の名前を変えて保存しても、今日の字数は増えない", async () => {
+    const { store, recorder, read } = await setup("姉から手紙が届いた。");
+    await recorder.noteOpened(ROOT, `${ROOT}/本文/第1話.txt`);
+    const bytes = await store.readFile(`${ROOT}/本文/第1話.txt`);
+    await store.writeFile(`${ROOT}/本文/第1話_手紙.txt`, bytes, { mode: "create" });
+    await store.deleteFile(`${ROOT}/本文/第1話.txt`);
+    expect(await recorder.record(ROOT)).toBe(0);
+    expect((await read()).days.every((day: { net: number }) => day.net === 0)).toBe(true);
+  });
+});

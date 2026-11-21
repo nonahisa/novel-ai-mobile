@@ -18,7 +18,7 @@ import { confirmPaidUsage } from "./paidConfirm";
 import { episodeName, mountEpisodePicker, pickedEpisodesText, renderTypoEstimate, type PickRow } from "./typoScreen";
 import { findSynopsis } from "../shared";
 import { chooseAiForRun } from "./aiChoose";
-import { askChoice } from "./dialog";
+import { askChoice, tell } from "./dialog";
 import { renameEpisodeWithLedgers, renamedEpisodeFileName } from "../platform/episodeRename";
 import { Capacitor } from "@capacitor/core";
 
@@ -190,7 +190,8 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
           undecidedConflicts: undecidedNow,
           ...(deps.beforeWrite ? { beforeWrite: deps.beforeWrite } : {}),
         });
-        if (!outcome.ok) return deps.toast(outcome.message);
+        // 断った訳は次の手を添えて長いので、閉じるまで残す窓で（控え・形の版・校閲中など）
+        if (!outcome.ok) return tell(outcome.message);
         await deps.afterRename?.(from, outcome.newPath).catch(() => undefined);
         if (!deps.stillHere()) return;
         // この話のほかの案は、もう押せない（名前は1つ）

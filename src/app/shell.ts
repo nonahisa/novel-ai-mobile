@@ -674,6 +674,8 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         lastTabHash = "#/works";
         const stop = mountSynopsisRun(screen, {
           undecidedConflicts: () => undecidedConflictPaths(store, route.root),
+          // 画面の試験だけ、iOS の「裏に回ったら止める」を確かめられるようにする（端末では使わない）
+          ...(!Capacitor.isNativePlatform() && (globalThis as { __novelaiTestPauseWhenHidden?: boolean }).__novelaiTestPauseWhenHidden ? { pauseWhenHidden: true } : {}),
           store,
           root: route.root,
           path: route.path,

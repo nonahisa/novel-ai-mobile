@@ -17,6 +17,8 @@ import { backgroundWork, whileWorking, type BackgroundWork } from "../platform/b
 import { confirmPaidUsage } from "./paidConfirm";
 import { episodeName, mountEpisodePicker, pickedEpisodesText, renderTypoEstimate, type PickRow } from "./typoScreen";
 import { findSynopsis } from "../shared";
+import { chooseAiForRun } from "./aiChoose";
+import { Capacitor } from "@capacitor/core";
 
 /**
  * **各話あらすじを作る画面**（段2。2026-11-18。話の長押し → あらすじ）。
@@ -25,7 +27,8 @@ import { findSynopsis } from "../shared";
  * 指摘ではないので［提案］へは出さない（本体と同じく台帳へ直に書く。作者が書いたものは触らない）。
  * サブタイトル案は見せるだけ（ファイル名は変えない）。AI は機能ごとの割り当ての「生成」（本体と同じ区分）。
  * **何話かまとめて**（2026-11-21）：誤字脱字・推敲と同じ［話を選ぶ］（1話ずつの印・［すべて］・範囲。2026-11-18 作者の答え）。
- * 話の一覧の並びで1話ずつ作り、**話ごとに台帳へ書く**（途中で止めても作れた話は残る）。前の話のあらすじには、その回で作ったものも渡す
+ * 話の一覧の並びで1話ずつ作り、**話ごとに台帳へ書く**（途中で止めても作れた話は残る）。前の話のあらすじには、その回で作ったものも渡す。
+ * 誤字脱字・推敲とそろえて、見積もりの AI の行でその回だけ AI を替えられ、iOS で裏に回したら1区切りで止める（2026-11-18 作者の答え 案A。引継ぎ書 120章）
  */
 
 export interface SynopsisRunDeps {
@@ -43,6 +46,8 @@ export interface SynopsisRunDeps {
   stillHere: () => boolean;
   /** 裏に回っても続けるための口（試験で差し替える） */
   background?: BackgroundWork;
+  /** 裏に回ったら、いまの1回を終えたところで止める（既定は iOS のとき。画面の試験で差し替える） */
+  pauseWhenHidden?: boolean;
 }
 
 /** いまの台帳の、この話のあらすじ（作者が書いたものには印） */
@@ -89,8 +94,9 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
     const usable = new Set<CloudProviderId>();
     for (const provider of CLOUD_PROVIDERS) if ((await deps.vault.get(provider.secret)) !== undefined) usable.add(provider.id);
     const { assignments, defaultChoice } = readAiChoices(settings);
-    const choice = decideFeatureAI("generate", assignments, defaultChoice, (id) => usable.has(id)).choice;
-    const provider = choice ? CLOUD_PROVIDERS.find((candidate) => candidate.id === choice.provider) : undefined;
+    // その回だけ替えられる（見積もりの AI の行を押す。設定は変えない）
+    let choice = decideFeatureAI("generate", assignments, defaultChoice, (id) => usable.has(id)).choice;
+    let provider = choice ? CLOUD_PROVIDERS.find((candidate) => candidate.id === choice!.provider) : undefined;
     try {
       const content = await readTextFile(deps.store, deps.path);
       if (containsConflictMarkers(content.text)) return fail("競合が残っている話には AI を当てません");
@@ -136,68 +142,104 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
     };
     let selected: string[] = [deps.path];
 
-    const runAll = async (run: HTMLButtonElement, list: EpisodePlan[], calls: number, chars: number) => {
-      if (!choice || !provider) return;
+    const runAll = async (
+      run: HTMLButtonElement,
+      list: EpisodePlan[],
+      calls: number,
+      chars: number,
+      chosen: NonNullable<typeof choice>,
+      chosenProvider: NonNullable<typeof provider>
+    ) => {
       const ok = await confirmPaidUsage({
         actionLabel: "あらすじ",
-        providerId: provider.id,
-        providerName: provider.displayName,
-        model: choice.model,
+        providerId: chosenProvider.id,
+        providerName: chosenProvider.displayName,
+        model: chosen.model,
         notice: { sends: `本文 約${chars.toLocaleString("ja-JP")}字（${list.length}話）`, calls },
       });
       if (!ok || !deps.stillHere()) return;
-      const key = await deps.vault.get(provider.secret);
+      const key = await deps.vault.get(chosenProvider.secret);
       if (!key) return deps.toast("APIキーが見つかりません");
       run.disabled = true;
       slot.querySelector<HTMLButtonElement>("#typoPick")?.setAttribute("disabled", "");
       const progress = slot.querySelector<HTMLElement>("#typoProgress")!;
-      const caller = typoCallerFor(provider.id, key, choice.model);
+      const caller = typoCallerFor(chosenProvider.id, key, chosen.model);
       let done = 0;
       progress.textContent = `AI に見せています（0/${calls}）`;
       const made: { label: string; synopsis: string; subtitles: string[] }[] = [];
       const failures: { label: string; reason: string }[] = [];
       let saveFailure: string | undefined;
-      await whileWorking(deps.background ?? backgroundWork(), list.length > 1 ? `あらすじ（${list.length}話）` : "あらすじ", calls, async (step) => {
-        const counted: ModelCall = async (request) => {
-          try {
-            return await caller(request);
-          } finally {
-            done++;
-            step(done);
-            if (deps.stillHere()) progress.textContent = `AI に見せています（${done}/${calls}）`;
+      // 止める印：画面を離れた（abort）か、iOS で裏に回った（paused）。頼んでいる1回は、画面を離れたときだけ止める（案A）
+      const stopRun = new AbortController();
+      const stopWithScreen = () => stopRun.abort();
+      abort.signal.addEventListener("abort", stopWithScreen);
+      let paused = false;
+      /** 止めたときに、まだ作り終えていない最初の話（list の番号） */
+      let interrupted = list.length;
+      const onHidden = () => {
+        if (document.visibilityState !== "hidden" || !(deps.pauseWhenHidden ?? Capacitor.getPlatform() === "ios")) return;
+        paused = true;
+        stopRun.abort();
+      };
+      document.addEventListener("visibilitychange", onHidden);
+      try {
+        await whileWorking(deps.background ?? backgroundWork(), list.length > 1 ? `あらすじ（${list.length}話）` : "あらすじ", calls, async (step) => {
+          const counted: ModelCall = async (request) => {
+            try {
+              return await caller({ ...request, signal: abort.signal });
+            } finally {
+              done++;
+              step(done);
+              if (deps.stillHere()) progress.textContent = `AI に見せています（${done}/${calls}）`;
+            }
+          };
+          for (const [index, plan] of list.entries()) {
+            if (!plan.parts.some((part) => part.plan === "make")) continue;
+            if (stopRun.signal.aborted) {
+              interrupted = Math.min(interrupted, index);
+              break;
+            }
+            // 前の話で書いた台帳の上に作る（前の話のあらすじに、この回で作ったものも渡る）
+            const result = await runSynopses(plan.parts, { fileName: plan.fileName }, loaded.set, chosen.model, characterNames, counted, stopRun.signal);
+            failures.push(...result.failures);
+            // 合本で、区切りを全部頼む前に止めたなら、この話から走らせ直す（作れた区切りは下で書いて残す）
+            const asked = plan.parts.filter((part) => part.plan === "make").length;
+            if (stopRun.signal.aborted && result.calls < asked) interrupted = Math.min(interrupted, index);
+            if (result.made.length === 0) continue;
+            // 話ごとに書く（途中で止めても、作れた話は残る。呼んだ分を捨てない。本体と同じ）
+            const saved = await saveSynopses(deps.store, settingsDir, result.set, loaded);
+            if (!saved.ok) {
+              saveFailure = saveFailureText(saved);
+              break;
+            }
+            made.push(...result.made.map((item) => ({ label: item.label, synopsis: item.synopsis, subtitles: item.subtitles.map((s) => s.text) })));
+            // 次の話を書くときの照らし合わせのため、いま書いた台帳を読み直す
+            loaded = await loadSynopses(deps.store, settingsDir);
           }
-        };
-        for (const plan of list) {
-          if (abort.signal.aborted) break;
-          if (!plan.parts.some((part) => part.plan === "make")) continue;
-          // 前の話で書いた台帳の上に作る（前の話のあらすじに、この回で作ったものも渡る）
-          const result = await runSynopses(plan.parts, { fileName: plan.fileName }, loaded.set, choice.model, characterNames, counted, abort.signal);
-          failures.push(...result.failures);
-          if (result.made.length === 0) continue;
-          // 話ごとに書く（途中で止めても、作れた話は残る。呼んだ分を捨てない。本体と同じ）
-          const saved = await saveSynopses(deps.store, settingsDir, result.set, loaded);
-          if (!saved.ok) {
-            saveFailure = saveFailureText(saved);
-            break;
-          }
-          made.push(...result.made.map((item) => ({ label: item.label, synopsis: item.synopsis, subtitles: item.subtitles.map((s) => s.text) })));
-          // 次の話を書くときの照らし合わせのため、いま書いた台帳を読み直す
-          loaded = await loadSynopses(deps.store, settingsDir);
-        }
-      });
+        });
+      } finally {
+        document.removeEventListener("visibilitychange", onHidden);
+        abort.signal.removeEventListener("abort", stopWithScreen);
+      }
       plans.clear();
       if (!deps.stillHere()) return;
       if (saveFailure) {
         progress.textContent = made.length > 0 ? `${made.length}話のあらすじを書きました。${saveFailure}` : saveFailure;
-      } else {
-        if (abort.signal.aborted) return;
-        progress.textContent =
-          `${made.length}話のあらすじを書きました` + (failures.length > 0 ? `。${failures.map((f) => `${f.label}：${f.reason}`).join("／")}` : "");
+        now.innerHTML = renderSynopsisList(made);
+        return;
       }
+      if (abort.signal.aborted) return;
+      if (paused && interrupted < list.length) {
+        // 残りの話だけを選び直して、見積もりから（払う前にもう一度確かめる）。作れた区切りは台帳にあるので作り直さない
+        selected = list.slice(interrupted).map((plan) => plan.path);
+        return showEstimate(`裏に回したので「${episodeName(list[interrupted]!.path)}」の前で止めました。続きを作りますか`);
+      }
+      progress.textContent =
+        `${made.length}話のあらすじを書きました` + (failures.length > 0 ? `。${failures.map((f) => `${f.label}：${f.reason}`).join("／")}` : "");
       now.innerHTML = renderSynopsisList(made);
     };
 
-    const showEstimate = async (): Promise<void> => {
+    const showEstimate = async (notice?: string): Promise<void> => {
       let list: EpisodePlan[];
       try {
         list = await Promise.all(selected.map(planOf));
@@ -225,7 +267,15 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
       const priceLine = choice && provider ? paidUsageNotice(provider.displayName, choice.model, { sends: "", calls }).lines[2]?.replace(/^料金[:：]\s*/, "") : undefined;
       slot.removeAttribute("aria-busy");
       slot.innerHTML =
-        renderTypoEstimate({ episode: pickedEpisodesText(selected.map(episodeName)), chars, ai: choice ? describeChoice(choice) : undefined, priceLine, ...(problem ? { problem } : {}) }) +
+        (notice ? `<p class="flag warn long" id="typoPaused">${escapeHtml(notice)}</p>` : "") +
+        renderTypoEstimate({
+          episode: pickedEpisodesText(selected.map(episodeName)),
+          chars,
+          ai: choice ? describeChoice(choice) : undefined,
+          priceLine,
+          aiSwitch: usable.size > 0,
+          ...(problem ? { problem } : {}),
+        }) +
         (rows.length > 1 ? `<div class="menu-items"><button class="menu-item built" id="typoPick">話を選ぶ</button></div>` : "");
       slot.querySelector<HTMLButtonElement>("#typoPick")?.addEventListener("click", () =>
         mountEpisodePicker(slot, rows, selected, (picked) => {
@@ -233,9 +283,22 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
           void showEstimate();
         })
       );
+      slot.querySelector<HTMLButtonElement>("#typoAi")?.addEventListener("click", () => {
+        void chooseAiForRun(deps.vault, deps.toast).then((next) => {
+          if (!next || !deps.stillHere()) return;
+          choice = next;
+          provider = CLOUD_PROVIDERS.find((candidate) => candidate.id === next.provider);
+          // 作り直すかはモデルでも変わる（モデルが違えば作り直す。本体と同じ）
+          plans.clear();
+          void showEstimate(notice);
+        });
+      });
       const run = slot.querySelector<HTMLButtonElement>("#typoRun");
-      if (!run || problem) return;
-      run.addEventListener("click", () => void runAll(run, list, calls, chars));
+      if (!run || !choice || !provider || problem) return;
+      // いまの選びで走らせる（押す前に AI の行で替えても、描き直してから押すので食い違わない）
+      const chosen = choice;
+      const chosenProvider = provider;
+      run.addEventListener("click", () => void runAll(run, list, calls, chars, chosen, chosenProvider));
     };
 
     await showEstimate();

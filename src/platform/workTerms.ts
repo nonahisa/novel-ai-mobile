@@ -41,6 +41,15 @@ export interface WorkTerms {
 type Named = { id: string; name: string; aliases: string[]; summary?: string | null };
 
 /**
+ * 読めなかった訳。JSON の書き方の崩れは、端末の `JSON.parse` が英語で言うので日本語に替える（2026-11-21 AQUOS で見つけた）。
+ * 本体の検証の訳（日本語）はそのまま
+ */
+export function readErrorMessage(error: unknown): string {
+  if (error instanceof SyntaxError) return "JSON の書き方が崩れていて読めません";
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
  * 設定フォルダーの1種類（`characters` など）を、本体の検証を通して読む。壊れた1件は `errors` へ積んで飛ばす。
  * 用語の色と設定資料の画面（`workMaterials.ts`）で同じ読み方にする
  */
@@ -73,7 +82,7 @@ export async function readKind<T extends { id: string }>(
       seen.add(record.id);
       records.push(record);
     } catch (error) {
-      errors.push({ file: `${directory}/${name}`, message: error instanceof Error ? error.message : String(error) });
+      errors.push({ file: `${directory}/${name}`, message: readErrorMessage(error) });
     }
   }
   return records.sort((a, b) => a.id.localeCompare(b.id));

@@ -1,11 +1,14 @@
-# 統合小説執筆環境 — スマホ・タブレット版（Android を移植中。iOS も同じリポジトリで作る）
+# 統合小説執筆環境 — スマホ・タブレット版（Android・iOS。同じリポジトリで作る）
 
 パソコン版（`../novel-ai-assistant` のVSCode拡張機能）を Android と iOS へ移す作業場。iOS 版もこのリポジトリで作る（2026-11-02 作者「同じリポジトリで、iOS版まで開発します」）。Capacitor を使い、1つのプロジェクトから Android と iOS の両方を組み立てる。
 
+- **元にしている統合の版：v1.0.37**（`package.json` の `novel-ai-assistant` の `#v1.0.37`。統合の版を上げるたびにこの行も直す。段取りは [`docs/引継ぎ書.md`](docs/引継ぎ書.md) 1・2章）
+- このアプリの版：`package.json` の `version`（変えたことは [`CHANGELOG.md`](CHANGELOG.md)）
+
 - GitHub：<https://github.com/nonahisa/novel-ai-mobile>（公開。拡張機能のリポジトリにならった）。2026-11-02 に `novel-ai-android` から改名した。古い URL は GitHub が新しい名前へ転送する。手元のフォルダー名は `novel-ai-android` のまま
-- iOS の組み立て：Mac（Xcode）か、GitHub Actions の macOS の機械が要る。**どちらにするかは作者がまだ決めていない**（詳細設計書 11章・12章）。土台の `ios/` は生成済み（`@capacitor/ios` 8.5.0、Android と同じ版）
+- iOS の組み立て：**作者の手元の Mac の Xcode で組む**（2026-11-05 作者の答え。手順は [`docs/iOS組み立て手順.md`](docs/iOS組み立て手順.md)）。土台の `ios/` は生成済み（`@capacitor/ios` 8.6.2、Android と同じ版）
 - ライセンス：MIT（`LICENSE`。拡張機能のコードを流用するので、著作権の行も拡張機能と同じにしている）
-- CI：`main` への push と PR のたびに、Windows で `pnpm run apk`（型の検査 → ビルド → APK）を走らせる。macOS では `pnpm run sync:ios` を走らせる（`.github/workflows/ci.yml`）
+- CI：`main` への push と PR のたびに、Windows で `pnpm run apk`（型の検査 → ビルド → APK）を走らせる。macOS では `pnpm run sync:ios` を走らせる（`.github/workflows/ci.yml`）。タグ `v<版>` を押すと、配る APK と更新の札 `update.json` を GitHub Release に添える（`.github/workflows/release.yml`。配る鍵が Secrets に無い間は Release を作らない。鍵の作り方は [`docs/配る鍵の手順.md`](docs/配る鍵の手順.md)）
 
 ---
 
@@ -110,7 +113,7 @@ Android Studio に同梱されているJDKは **25** で、これを `JAVA_HOME`
 
 ---
 
-## 移植の見積り（実測）
+## 移植の見積り（2026-08-31 時点の実測。移植を始める前の記録）
 
 パソコン版のソースを解析した結果。
 
@@ -130,18 +133,24 @@ Android Studio に同梱されているJDKは **25** で、これを `JAVA_HOME`
 
 ### 先に潰すべき問題
 
-| # | 問題 | 対策 |
+| # | 問題 | 対策（いま） |
 |---|---|---|
-| a | **縦書きtextareaに日本語変換で入力できるか**（Android WebViewでの実績が不明） | **最優先で実機確認**。動作確認ページで試せる |
+| a | **縦書きtextareaに日本語変換で入力できるか**（Android WebViewでの実績が不明） | AQUOS・iPad の実機で、Gboard・iPad の日本語入力の変換と確定を確かめた（[`docs/実機確認リスト.md`](docs/実機確認リスト.md)） |
 | b | Androidは好きなフォルダを自由に読み書きできない | アプリ専用領域（`Directory.Data`）に置き、**GitHub同期でパソコンと行き来する** |
-| c | `git` コマンドがない | `isomorphic-git`（導入済み）に差し替え |
-| d | WebViewから直接AIを叩くとCORSで弾かれる | `CapacitorHttp` を使う。`ai/httpClient.ts` の差し替えで済む |
-| e | Ollamaはスマホで動かない | パソコンのOllamaをLAN越しに叩くか、クラウドAIのみ |
+| c | `git` コマンドがない | `isomorphic-git` で取得・送信・競合の扱いを作った |
+| d | WebViewから直接AIを叩くとCORSで弾かれる | `CapacitorHttp` を使う（`ai/httpClient.ts` の差し替え）。クラウドの AI 4社（Anthropic・OpenAI・Gemini・さくら）につなぐ |
+| e | Ollamaはスマホで動かない | いまはクラウドの AI だけ。手元の AI は Tailscale の道だけで呼ぶ予定（家の Wi-Fi で直に `http://` は作らない。2026-10-31 作者の裁定） |
 
 ---
 
 ## いまあるもの
 
-`src/main.ts` は**動作確認ページ**であって、製品の画面ではない。
-移植で最初に壊れそうな3点（縦書き入力・ルビと傍点・ファイルの往復）を、
-3段階のどこからでも同じ画面で確かめられるようにしてある。
+`src/main.ts` が製品の入口で、画面の中身は `src/app/`、端末の口は `src/platform/` にある。下のタブは4つ（作品・書く・提案・ほか）。
+
+- 作品一覧と話の一覧、縦書きの原稿エディター（横書きにも切り替えられる。キーボードの上の道具帯・下書きの控え）
+- GitHub で作品フォルダーを同期する（取得・送信・競合を作者が選ぶ）。GitHub から作品を取り寄せる
+- AI の機能：あらすじ・誤字脱字・校正・指摘の一覧と提案（クラウドの AI。料金がかかる呼び出しの前に確かめる）
+- 執筆統計（今日・今週の字数と、直近14日の棒グラフ）、表示の設定、更新の確かめ、使っている部品のライセンス
+- 動作確認ページ（縦書き入力・ルビと傍点・ファイルの往復を確かめる試しの画面）は［ほか］→ ヘルプに残してある
+
+進み具合は [`docs/実装の残り.md`](docs/実装の残り.md)、実機で確かめたことは [`docs/実機確認リスト.md`](docs/実機確認リスト.md)、引継ぎは [`docs/引継ぎ書.md`](docs/引継ぎ書.md)。

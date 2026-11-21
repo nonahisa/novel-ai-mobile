@@ -4,6 +4,8 @@ import {
   decideNotice,
   dueForCheck,
   fetchLatestTicket,
+  NO_RELEASE,
+  UpdateHttpError,
   parseTicket,
   readUpdateSettings,
   RELEASE_DOWNLOAD_PREFIX,
@@ -127,6 +129,29 @@ describe("更新の仕組み：新しい版の確かめ（統合 docs/更新の�
           throw new Error("通信が落ちた");
         },
         getText: async () => "",
+      })
+    ).toBeUndefined();
+  });
+
+  /** 2026-11-21 作者の答え「分ける」：GitHub が Release は無いと答えたときだけ、通信の失敗と分ける */
+  it("GitHub が最新の Release は無い（404）と答えたら NO_RELEASE。ほかの失敗は undefined のまま", async () => {
+    const failing = (error: unknown) => ({
+      getJson: async () => {
+        throw error;
+      },
+      getText: async () => "",
+    });
+    expect(await fetchLatestTicket(failing(new UpdateHttpError(404)))).toBe(NO_RELEASE);
+    expect(await fetchLatestTicket(failing(new UpdateHttpError(500)))).toBeUndefined();
+    expect(await fetchLatestTicket(failing(new UpdateHttpError(403)))).toBeUndefined();
+    expect(await fetchLatestTicket(failing(new TypeError("Failed to fetch")))).toBeUndefined();
+    // 札の置き場の 404 は「無い」ではない（Release はある。札が取れないだけ）
+    expect(
+      await fetchLatestTicket({
+        getJson: async () => ({ body: `SHA-256：${"a".repeat(64)}`, assets: [{ name: "update.json", browser_download_url: `${RELEASE_DOWNLOAD_PREFIX}v1/update.json` }] }),
+        getText: async () => {
+          throw new UpdateHttpError(404);
+        },
       })
     ).toBeUndefined();
   });

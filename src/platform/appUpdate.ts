@@ -165,10 +165,33 @@ export function releaseNoteSha(body: string): string | undefined {
   return all.length > 0 ? all[all.length - 1][1].toLowerCase() : undefined;
 }
 
-/** 最新の Release の札を取ってきて照らす。無い・合わない・落ちたら undefined（黙る） */
-export async function fetchLatestTicket(deps: UpdateFetchDeps): Promise<UpdateTicket | undefined> {
+/** GitHub が 2xx 以外で答えた（答えの番号を持つ。通信が切れたときとは分けて扱う） */
+export class UpdateHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`HTTP ${status}`);
+    this.name = "UpdateHttpError";
+  }
+}
+
+/**
+ * 配った版がまだ1つも無い（GitHub が最新の Release は無い〈404〉と答えた）。
+ * 2026-11-21 作者の答え「分ける」：このときだけ「まだ配った版がありません」と出し、通信が切れたときとは分ける
+ */
+export const NO_RELEASE = "no-release" as const;
+
+/**
+ * 最新の Release の札を取ってきて照らす。配った版がまだ無ければ `NO_RELEASE`。
+ * 合わない・落ちた（通信・ほかの番号・札が取れない）ら undefined（黙る）
+ */
+export async function fetchLatestTicket(deps: UpdateFetchDeps): Promise<UpdateTicket | typeof NO_RELEASE | undefined> {
+  let release: { body?: unknown; assets?: unknown };
   try {
-    const release = (await deps.getJson(UPDATE_API_LATEST)) as { body?: unknown; assets?: unknown };
+    release = (await deps.getJson(UPDATE_API_LATEST)) as { body?: unknown; assets?: unknown };
+  } catch (error) {
+    // 「無い」と言えるのは、GitHub が最新の Release の問いに 404 と答えたときだけ（札の置き場の 404 は Release がある）
+    return error instanceof UpdateHttpError && error.status === 404 ? NO_RELEASE : undefined;
+  }
+  try {
     const assets = Array.isArray(release?.assets) ? (release.assets as { name?: unknown; browser_download_url?: unknown }[]) : [];
     const entry = assets.find((a) => a.name === TICKET_NAME);
     const url = typeof entry?.browser_download_url === "string" ? entry.browser_download_url : undefined;
@@ -192,7 +215,7 @@ export function defaultUpdateFetch(isNative: boolean, nativeGetText: (url: strin
   return {
     getJson: async (url) => {
       const response = await fetch(url, { credentials: "omit", headers: { Accept: "application/vnd.github+json" } });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) throw new UpdateHttpError(response.status);
       return response.json();
     },
     getText: async (url) => {

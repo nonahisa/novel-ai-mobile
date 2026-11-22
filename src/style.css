@@ -2331,5 +2331,7 @@ a.gh-open {
 .enrich-held ul, .enrich-dropped ul, .enrich-misattributed ul { margin: 0; padding-left: 1.2em; font-size: 0.9em; }
 .enrich-note { margin: 0 0 4px; font-size: 0.85em; color: var(--sub, #888); }
 .enrich-evidence { display: block; color: var(--sub, #888); }
+.enrich-place { display: block; margin: 4px 0 8px; }
+.enrich-placed { margin: 4px 0 8px; color: var(--sub, #888); }
 .enrich-nothing { margin: 0; }
 .materials-detail .menu-items { margin-top: 16px; }

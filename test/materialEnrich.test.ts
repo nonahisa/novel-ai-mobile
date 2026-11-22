@@ -50,7 +50,7 @@ function fakeAi(answer: Record<string, unknown>): { call: ModelCall; seen: { sys
   return { call, seen };
 }
 
-const characterAnswer = (values: Record<string, string | null>) => ({
+const characterAnswer = (values: Record<string, unknown>) => ({
   gender: null,
   summary: null,
   affiliation: null,
@@ -187,7 +187,7 @@ describe("設定資料の1件を本文から読み直す", () => {
     ];
     for (const item of cases) {
       // 本体が書いた形（本体の読み方を通した中身を2字下げ）に、パソコンの新しい版の欄を1つ足す
-      const original = { ...(item.parse(JSON.parse(JSON.stringify(item.record))) as Record<string, unknown>), futureField: "パソコンの新しい欄" };
+      const original: Record<string, unknown> = { ...(item.parse(JSON.parse(JSON.stringify(item.record))) as Record<string, unknown>), futureField: "パソコンの新しい欄" };
       const path = `${SET}/${item.dir}/${item.id}.json`;
       const store = new MemoryFileStore();
       store.putExternally(path, enc(`${JSON.stringify(original, null, 2)}

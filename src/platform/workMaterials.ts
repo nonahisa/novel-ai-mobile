@@ -61,7 +61,7 @@ function withAuthorMarks(lines: MaterialLine[], exportNote = ""): MaterialLine[]
 /** 作者が足した項目の定義の置き場（本体の `CUSTOM_FIELDS_FILE`。本体の置き場の部品は vscode を読むので名前だけ合わせる） */
 export const CUSTOM_FIELDS_FILE = "custom_fields.json";
 
-async function readCustomFieldSet(store: FileStore, settingsDir: string, errors: WorkTerms["errors"]): Promise<CustomFieldSet | undefined> {
+export async function readCustomFieldSet(store: FileStore, settingsDir: string, errors: WorkTerms["errors"]): Promise<CustomFieldSet | undefined> {
   try {
     const raw: unknown = JSON.parse(new TextDecoder().decode(await store.readFile(joinStorePath(settingsDir, CUSTOM_FIELDS_FILE))));
     return parseCustomFieldSet(raw);

@@ -10,7 +10,9 @@ import { escapeHtml, renderAppBar } from "./menuScreen";
  * - `#/materials/<作品>`：種類ごとの一覧（名前・短い紹介・「作者」「モブ」の印）と、読めなかったファイル
  * - `#/materials/<作品>/<種類>/<id>`：1件。値の入った欄だけ（`platform/workMaterials.ts`）
  *
- * 道の id は、読んだ資料の中から探すだけに使う（置き場の道にはしない）。直す・本文から読み直す・関係を見るは、まだ無い
+ * - `#/materials/<作品>/<種類>/<id>/enrich`：1件を本文から読み直す（`materialEnrichScreen.ts`。2026-11-22）
+ *
+ * 道の id は、読んだ資料の中から探すだけに使う（置き場の道にはしない）。直す・関係を見るは、まだ無い
  */
 
 export function materialsHash(root?: string, kind?: string, id?: string): string {
@@ -18,6 +20,14 @@ export function materialsHash(root?: string, kind?: string, id?: string): string
   const base = `#/materials/${encodeURIComponent(root)}`;
   return kind !== undefined && id !== undefined ? `${base}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}` : base;
 }
+
+/** 1件を本文から読み直す画面（`materialEnrichScreen.ts`） */
+export function materialEnrichHash(root: string, kind: string, id: string): string {
+  return `${materialsHash(root, kind, id)}/enrich`;
+}
+
+/** 本文から読み直せる種類（本体の［AIで再読込］と同じ。伏線は無い） */
+const ENRICHABLE = new Set(["character", "ability", "organization", "location", "world"]);
 
 export const MATERIALS_EMPTY = "この作品には、まだ設定資料がありません";
 export const MATERIAL_MISSING = "この資料は見つかりませんでした";
@@ -51,11 +61,15 @@ export function renderMaterialsList(root: string, materials: WorkMaterials): str
   return `${empty}${groups}${errors}`;
 }
 
-export function renderMaterialDetail(item: MaterialItem): string {
+export function renderMaterialDetail(item: MaterialItem, root?: string): string {
   const lines = item.lines
     .map((line) => `<dt>${escapeHtml(line.label)}${line.byAuthor ? `<span class="flag">作者</span>` : ""}</dt><dd>${escapeHtml(line.value)}</dd>`)
     .join("");
-  return `<article class="materials-detail"><h2>${escapeHtml(item.name)}</h2>${flags(item) ? `<p class="materials-flags">${flags(item)}</p>` : ""}<dl>${lines}</dl></article>`;
+  const enrich =
+    root !== undefined && ENRICHABLE.has(item.kind)
+      ? `<div class="menu-items"><a class="menu-item built" id="materialEnrich" href="${escapeHtml(materialEnrichHash(root, item.kind, item.id))}">本文から読み直す</a></div>`
+      : "";
+  return `<article class="materials-detail"><h2>${escapeHtml(item.name)}</h2>${flags(item) ? `<p class="materials-flags">${flags(item)}</p>` : ""}<dl>${lines}</dl>${enrich}</article>`;
 }
 
 export interface MaterialsRoute {
@@ -103,6 +117,6 @@ export function mountMaterialsScreen(screen: HTMLElement, store: FileStore, rout
     }
     if (route.kind === undefined || route.id === undefined) return done(renderMaterialsList(route.root, materials));
     const item = findMaterial(materials, route.kind, route.id);
-    done(item ? renderMaterialDetail(item) : `<p class="materials-missing">${MATERIAL_MISSING}</p>`);
+    done(item ? renderMaterialDetail(item, route.root) : `<p class="materials-missing">${MATERIAL_MISSING}</p>`);
   })();
 }

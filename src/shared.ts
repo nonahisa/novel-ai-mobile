@@ -245,3 +245,43 @@ export { postingCopySource } from "novel-ai-assistant/src/core/episodeCopy";
 */
 export { parseMemos, type SceneMemo } from "novel-ai-assistant/src/core/sceneMemo";
 export { resolveProposals, type ProposalLine, type ProposalView } from "novel-ai-assistant/src/models/proposal";
+// 設定資料の1件を本文から読み直す（本体の［AIで再読込］と同じ頼み・検算・反映。2026-11-22）
+export {
+  SETTINGS_ENRICH_TEMPERATURE,
+  SETTINGS_ENRICH_VERSION,
+  buildEnrichPrompt,
+  buildEnrichSchema,
+  enrichableFields,
+  type EnrichableField,
+} from "novel-ai-assistant/src/prompts/settingsEnrich";
+export { SETTINGS_ASSISTANT_SYSTEM_PROMPT } from "novel-ai-assistant/src/prompts/settingsChat";
+export {
+  checkEnrichProposals,
+  describeEnrichTarget,
+  misattributedAllowedFields,
+  otherRecordNamesFor,
+  parseEnrichResult,
+  searchTermsFor,
+  type EnrichProposal,
+  type EnrichRecord,
+} from "novel-ai-assistant/src/core/settingsEnrichCheck";
+export { collectMentionExcerpts, type ExcerptSource, type MentionExcerpt } from "novel-ai-assistant/src/core/mentionExcerpts";
+export { excerptSourcesOfEpisode, type ExcerptEpisode } from "novel-ai-assistant/src/core/excerptSourceOf";
+export { knownChaptersOf } from "novel-ai-assistant/src/core/chapterCitations";
+export { parseMisattributedValues, type MisattributedValue } from "novel-ai-assistant/src/core/misattributedValues";
+export { enrichForeignNarratorOf, workNarratorContextOf } from "novel-ai-assistant/src/core/sceneNarrators";
+export {
+  applyAbilityEdits,
+  applyCharacterEdits,
+  applyLocationEdits,
+  applyOrganizationEdits,
+  applyWorldItemEdits,
+  toRecordEdits,
+  type RecordEdits,
+} from "novel-ai-assistant/src/core/settingsEdit";
+export { blankMemoLines } from "novel-ai-assistant/src/core/sceneMemo";
+export { parseAbilitySystem, emptyAbilitySystem, ABILITY_SCHEMA_VERSION, type AbilitySystem } from "novel-ai-assistant/src/models/ability";
+export { CHARACTER_SCHEMA_VERSION } from "novel-ai-assistant/src/models/character";
+export { ORGANIZATION_SCHEMA_VERSION } from "novel-ai-assistant/src/models/organization";
+export { LOCATION_SCHEMA_VERSION } from "novel-ai-assistant/src/models/location";
+export { WORLD_SCHEMA_VERSION } from "novel-ai-assistant/src/models/world";

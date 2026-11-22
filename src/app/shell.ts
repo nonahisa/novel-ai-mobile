@@ -67,6 +67,7 @@ import { fetchGithubLogin, pickGithubClientId, mountGithubScreen, readGithubUser
 import { createTouchedRecorder } from "../platform/touchedPaths";
 import { createAutoFetch } from "./autoFetch";
 import { materialsHash, mountMaterialsScreen } from "./materialsScreen";
+import { mountMaterialEnrich } from "./materialEnrichScreen";
 import { createNewWork, newWorkResultText, repoNameProblem } from "../platform/newWork";
 import { DeviceFontShelf } from "../platform/fontShelf";
 import { CLOUD_PROVIDERS, checkApiKey, keyCheckText, saveApiKey, validateApiKeyFormat, type CloudProviderId } from "../platform/aiKeys";
@@ -113,7 +114,7 @@ import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLe
  * | `#/display` | 表示（書体の取り寄せ） |
  * | `#/licenses` | ライセンス |
  * | `#/stats` | 執筆統計（I。今日・今週の字数。読むだけ） |
- * | `#/materials[/<作品>[/<種類>/<id>]]` | 設定資料（E。作品を選ぶ・種類ごとの一覧・1件。読むだけ） |
+ * | `#/materials[/<作品>[/<種類>/<id>[/enrich]]]` | 設定資料（E。作品を選ぶ・種類ごとの一覧・1件・本文から読み直す） |
  * | `#/ai` | 設定 → AI（クラウドの AI の鍵） |
  * | `#/drafts` | 設定 → 書きかけの控え（どの話にも合わない控えを見て消す） |
  * | `#/update` | 設定 → 更新（新しい版の確かめ。引継ぎ書 154章） |
@@ -143,7 +144,7 @@ type Route =
   | { kind: "ai" }
   | { kind: "drafts" }
   | { kind: "stats" }
-  | { kind: "materials"; root?: string; materialKind?: string; id?: string }
+  | { kind: "materials"; root?: string; materialKind?: string; id?: string; enrich?: true }
   | { kind: "update" };
 
 /** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
@@ -216,6 +217,7 @@ export function parseRoute(hash: string): Route {
       const [root, kind, id] = pieces.map((piece) => decodeURIComponent(piece));
       if (pieces.length === 1 && isWorkRoot(root!)) return { kind: "materials", root };
       if (pieces.length === 3 && isWorkRoot(root!)) return { kind: "materials", root, materialKind: kind, id };
+      if (pieces.length === 4 && pieces[3] === "enrich" && isWorkRoot(root!)) return { kind: "materials", root, materialKind: kind, id, enrich: true };
     } catch {
       /* 読めない名前は作品を選ぶ所へ */
     }
@@ -745,9 +747,29 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         return;
       case "materials":
         // ［←］：1件 → 一覧 → 作品を選ぶ → ［ほか］。原稿の名前の札から来た1件は、原稿へ戻る
-        if (route.id !== undefined && parseRoute(previousHash).kind === "episode") materialsReturn = previousHash;
+        if (route.id !== undefined && !route.enrich && parseRoute(previousHash).kind === "episode") materialsReturn = previousHash;
         else if (route.id === undefined) materialsReturn = undefined;
         lastTabHash = route.root === undefined ? "#/other" : route.id === undefined ? materialsHash() : (materialsReturn ?? materialsHash(route.root));
+        if (route.enrich && route.root !== undefined && route.materialKind !== undefined && route.id !== undefined) {
+          // 読み直しの［←］・反映・破棄は、その1件へ
+          const detail = materialsHash(route.root, route.materialKind, route.id);
+          lastTabHash = detail;
+          const stop = mountMaterialEnrich(screen, {
+            store,
+            root: route.root,
+            kind: route.materialKind,
+            id: route.id,
+            undecidedConflicts: () => undecidedConflictPaths(store, route.root!),
+            ...(touchedRecorder(store) ? { beforeWrite: touchedRecorder(store)! } : {}),
+            settings: DeviceSettings.load(capacitorPreferencesBackend).then(({ settings }) => settings),
+            vault: secretVault(),
+            toast,
+            stillHere,
+            done: () => location.replace(detail),
+          });
+          leaveGuard = { isDirty: () => false, destroy: stop };
+          return;
+        }
         mountMaterialsScreen(screen, store, { root: route.root, kind: route.materialKind, id: route.id }, stillHere);
         return;
       case "update":

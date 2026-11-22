@@ -114,7 +114,7 @@ import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLe
  * | `#/display` | 表示（書体の取り寄せ） |
  * | `#/licenses` | ライセンス |
  * | `#/stats` | 執筆統計（I。今日・今週の字数。読むだけ） |
- * | `#/materials[/<作品>[/<種類>/<id>[/enrich]]]` | 設定資料（E。作品を選ぶ・種類ごとの一覧・1件・本文から読み直す） |
+ * | `#/materials[/<作品>[/<種類>/<id>[/enrich|/relations]]]` | 設定資料（E。作品を選ぶ・種類ごとの一覧・1件・本文から読み直す・関係を見る） |
  * | `#/ai` | 設定 → AI（クラウドの AI の鍵） |
  * | `#/drafts` | 設定 → 書きかけの控え（どの話にも合わない控えを見て消す） |
  * | `#/update` | 設定 → 更新（新しい版の確かめ。引継ぎ書 154章） |
@@ -144,7 +144,7 @@ type Route =
   | { kind: "ai" }
   | { kind: "drafts" }
   | { kind: "stats" }
-  | { kind: "materials"; root?: string; materialKind?: string; id?: string; enrich?: true }
+  | { kind: "materials"; root?: string; materialKind?: string; id?: string; enrich?: true; relations?: true }
   | { kind: "update" };
 
 /** 書庫の中の作品は「書庫/作品」。置き場の外や隠したフォルダーは指させない */
@@ -218,6 +218,7 @@ export function parseRoute(hash: string): Route {
       if (pieces.length === 1 && isWorkRoot(root!)) return { kind: "materials", root };
       if (pieces.length === 3 && isWorkRoot(root!)) return { kind: "materials", root, materialKind: kind, id };
       if (pieces.length === 4 && pieces[3] === "enrich" && isWorkRoot(root!)) return { kind: "materials", root, materialKind: kind, id, enrich: true };
+      if (pieces.length === 4 && pieces[3] === "relations" && kind === "character" && isWorkRoot(root!)) return { kind: "materials", root, materialKind: kind, id, relations: true };
     } catch {
       /* 読めない名前は作品を選ぶ所へ */
     }
@@ -747,7 +748,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         return;
       case "materials":
         // ［←］：1件 → 一覧 → 作品を選ぶ → ［ほか］。原稿の名前の札から来た1件は、原稿へ戻る
-        if (route.id !== undefined && !route.enrich && parseRoute(previousHash).kind === "episode") materialsReturn = previousHash;
+        if (route.id !== undefined && !route.enrich && !route.relations && parseRoute(previousHash).kind === "episode") materialsReturn = previousHash;
         else if (route.id === undefined) materialsReturn = undefined;
         lastTabHash = route.root === undefined ? "#/other" : route.id === undefined ? materialsHash() : (materialsReturn ?? materialsHash(route.root));
         if (route.enrich && route.root !== undefined && route.materialKind !== undefined && route.id !== undefined) {
@@ -770,7 +771,9 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
           leaveGuard = { isDirty: () => false, destroy: stop };
           return;
         }
-        mountMaterialsScreen(screen, store, { root: route.root, kind: route.materialKind, id: route.id }, stillHere);
+        // 関係の［←］は、その1件へ
+        if (route.relations && route.root !== undefined && route.materialKind !== undefined && route.id !== undefined) lastTabHash = materialsHash(route.root, route.materialKind, route.id);
+        mountMaterialsScreen(screen, store, { root: route.root, kind: route.materialKind, id: route.id, ...(route.relations ? { relations: true as const } : {}) }, stillHere);
         return;
       case "update":
         lastTabHash = "#/other";

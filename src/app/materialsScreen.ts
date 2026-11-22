@@ -1,4 +1,5 @@
 import type { FileStore } from "../platform/fileStore";
+import { readMaterialRelations, type MaterialRelations } from "../platform/materialRelations";
 import { findMaterial, readWorkMaterials, type MaterialItem, type WorkMaterials } from "../platform/workMaterials";
 import { findWorkRoots, readWorkLayout } from "../platform/workScan";
 import { escapeHtml, renderAppBar } from "./menuScreen";
@@ -11,8 +12,9 @@ import { escapeHtml, renderAppBar } from "./menuScreen";
  * - `#/materials/<作品>/<種類>/<id>`：1件。値の入った欄だけ（`platform/workMaterials.ts`）
  *
  * - `#/materials/<作品>/<種類>/<id>/enrich`：1件を本文から読み直す（`materialEnrichScreen.ts`。2026-11-22）
+ * - `#/materials/<作品>/character/<id>/relations`：その人物の関係を見る（`platform/materialRelations.ts`。読むだけ。2026-11-22）
  *
- * 道の id は、読んだ資料の中から探すだけに使う（置き場の道にはしない）。直す・関係を見るは、まだ無い
+ * 道の id は、読んだ資料の中から探すだけに使う（置き場の道にはしない）。直すは、まだ無い
  */
 
 export function materialsHash(root?: string, kind?: string, id?: string): string {
@@ -24,6 +26,11 @@ export function materialsHash(root?: string, kind?: string, id?: string): string
 /** 1件を本文から読み直す画面（`materialEnrichScreen.ts`） */
 export function materialEnrichHash(root: string, kind: string, id: string): string {
   return `${materialsHash(root, kind, id)}/enrich`;
+}
+
+/** その人物の関係を見る画面 */
+export function materialRelationsHash(root: string, id: string): string {
+  return `${materialsHash(root, "character", id)}/relations`;
 }
 
 /** 本文から読み直せる種類（本体の［AIで再読込］と同じ。伏線は無い） */
@@ -67,15 +74,39 @@ export function renderMaterialDetail(item: MaterialItem, root?: string): string 
     .join("");
   const enrich =
     root !== undefined && ENRICHABLE.has(item.kind)
-      ? `<div class="menu-items"><a class="menu-item built" id="materialEnrich" href="${escapeHtml(materialEnrichHash(root, item.kind, item.id))}">本文から読み直す</a></div>`
+      ? `<a class="menu-item built" id="materialEnrich" href="${escapeHtml(materialEnrichHash(root, item.kind, item.id))}">本文から読み直す</a>`
       : "";
-  return `<article class="materials-detail"><h2>${escapeHtml(item.name)}</h2>${flags(item) ? `<p class="materials-flags">${flags(item)}</p>` : ""}<dl>${lines}</dl>${enrich}</article>`;
+  // 関係を見るは人物だけ（本体の相関図も人物だけ）
+  const relations =
+    root !== undefined && item.kind === "character"
+      ? `<a class="menu-item built" id="materialRelations" href="${escapeHtml(materialRelationsHash(root, item.id))}">関係を見る</a>`
+      : "";
+  const actions = enrich || relations ? `<div class="menu-items">${enrich}${relations}</div>` : "";
+  return `<article class="materials-detail"><h2>${escapeHtml(item.name)}</h2>${flags(item) ? `<p class="materials-flags">${flags(item)}</p>` : ""}<dl>${lines}</dl>${actions}</article>`;
+}
+
+export const RELATIONS_EMPTY = "つながっている人は、まだ資料にありません";
+
+/** その人物とじかにつながる人の一覧（相手の名前はその人の1件へ。資料に無い相手は押せない） */
+export function renderMaterialRelations(root: string, relations: MaterialRelations): string {
+  if (relations.rows.length === 0) return `<p class="materials-empty">${RELATIONS_EMPTY}</p>`;
+  const rows = relations.rows
+    .map((row) => {
+      const name = row.provisional
+        ? `<span class="materials-name">${escapeHtml(row.name)}<span class="flag">${escapeHtml(row.missing ?? "")}</span></span>`
+        : `<a class="materials-name" href="${escapeHtml(materialsHash(root, "character", row.id))}">${escapeHtml(row.name)}</a>`;
+      const line = (who: string, words: string[]) => (words.length > 0 ? `<p class="relation-words">${escapeHtml(`${who}から：${words.join("・")}`)}</p>` : "");
+      return `<li class="relation-row">${name}${line(relations.name, row.fromCenter)}${line(row.name, row.toCenter)}</li>`;
+    })
+    .join("");
+  return `<p class="enrich-note">関係と呼び方は、それぞれの人物の資料に片側ずつ書かれています（読むだけ）</p><ul class="relation-rows">${rows}</ul>`;
 }
 
 export interface MaterialsRoute {
   root?: string;
   kind?: string;
   id?: string;
+  relations?: true;
 }
 
 /** 画面を組む。題は作品を読んでから差し替える */
@@ -116,6 +147,11 @@ export function mountMaterialsScreen(screen: HTMLElement, store: FileStore, rout
       return;
     }
     if (route.kind === undefined || route.id === undefined) return done(renderMaterialsList(route.root, materials));
+    if (route.relations && route.kind === "character") {
+      const relations = await readMaterialRelations(store, (await readWorkLayout(store, route.root)).settings, route.id).catch(() => undefined);
+      if (relations && stillHere()) setTitle(`関係：${relations.name}`);
+      return done(relations ? renderMaterialRelations(route.root, relations) : `<p class="materials-missing">${MATERIAL_MISSING}</p>`);
+    }
     const item = findMaterial(materials, route.kind, route.id);
     done(item ? renderMaterialDetail(item, route.root) : `<p class="materials-missing">${MATERIAL_MISSING}</p>`);
   })();

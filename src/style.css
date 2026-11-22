@@ -2335,3 +2335,9 @@ a.gh-open {
 .enrich-placed { margin: 4px 0 8px; color: var(--sub, #888); }
 .enrich-nothing { margin: 0; }
 .materials-detail .menu-items { margin-top: 16px; }
+
+/* 設定資料の1件 → 関係を見る（つながっている人の一覧。読むだけ） */
+.relation-rows { list-style: none; margin: 0; padding: 0; }
+.relation-row { padding: 10px 0; border-bottom: 1px solid var(--line, #ddd); }
+.relation-row .materials-name { display: block; font-weight: bold; }
+.relation-words { margin: 4px 0 0; }

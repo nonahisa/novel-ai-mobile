@@ -325,3 +325,29 @@ test("伏線には［本文から読み直す］を出さない", async ({ page 
   await expect(page.locator(".materials-detail")).toBeVisible();
   await expect(page.locator("#materialEnrich")).toHaveCount(0);
 });
+
+test("1件 →［関係を見る］：つながっている人を向きごとに並べる。相手の名前でその人の1件へ。資料に無い相手は印。［戻る］キーで1件へ。書かない", async ({ page }) => {
+  const files = {
+    ...MATERIALS,
+    [`${SET}/characters/char_001.json`]: character("char_001", "姉", { summary: "灯台に住む姉", relations: [{ name: "灯", relation: "弟", firstChapter: 1 }, { name: "港の守人", relation: "幼なじみ" }] }),
+  };
+  await openWithWorks(page, "#/other", files);
+  const before = await listFakeFiles(page, `${SET}/`);
+  await page.locator('[data-screen="materials"]').click();
+  await page.locator(".materials-work", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".materials-row", { hasText: "灯台に住む姉" }).click();
+  await page.locator("#materialRelations").click();
+  await expect(page).toHaveURL(/char_001\/relations$/);
+  await expect(page.locator(".appbar-title")).toHaveText("関係：姉");
+  await expect(page.locator(".relation-row")).toHaveCount(2);
+  await expect(page.locator(".relation-row", { hasText: "灯" }).first()).toContainText("姉から：弟（第1話から）");
+  await expect(page.locator(".relation-row", { hasText: "港の守人" })).toContainText("資料に無い相手");
+  await expect(page.locator(".relation-row", { hasText: "港の守人" }).locator("a")).toHaveCount(0);
+  await pressBack(page);
+  await expect(page).toHaveURL(/char_001$/);
+  await page.locator("#materialRelations").click();
+  await page.locator(".relation-row a", { hasText: "灯" }).click();
+  await expect(page).toHaveURL(/char_002$/);
+  await page.evaluate(() => (location.hash = "#/other"));
+  expect(await listFakeFiles(page, `${SET}/`)).toEqual(before);
+});

@@ -312,3 +312,5 @@ export { NEW_JSON_FILE_FORMAT } from "novel-ai-assistant/src/core/jsonFileFormat
 export { ORGANIZATION_SCHEMA_VERSION } from "novel-ai-assistant/src/models/organization";
 export { LOCATION_SCHEMA_VERSION } from "novel-ai-assistant/src/models/location";
 export { WORLD_SCHEMA_VERSION } from "novel-ai-assistant/src/models/world";
+// 人物相関図の材料（設計書6.38。AI を使わない。設定資料の1件 → 関係を見る）
+export { buildRelationGraph, egoGraph, type RelationEdge } from "novel-ai-assistant/src/core/relationGraph";

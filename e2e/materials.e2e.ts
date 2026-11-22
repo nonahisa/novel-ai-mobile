@@ -265,6 +265,60 @@ test("はじいた記述：［「灯」へ入れる］で既にいる人物の�
   await expect(page).toHaveURL(/char_001$/);
 });
 
+const PALACE = "皇宮_確認用";
+const HERO_SCENE = "　俺は串焼きを頬張った。旨い。\n　俺はもう一本頼むことにした。俺は腹が減っていた。\n「おかわりだ」\n　俺は店主に銀貨を渡した。俺は満足だった。\n　俺は宿へ戻った。俺は剣を磨いた。俺は早く寝た。\n";
+const PRINCE_SCENE = "　広い部屋にポツンと置かれた机で、余は先生の話をただ聞いていた。\n「これは経済の基本です。殿下、聞いていますか」\n　余もいつか、この退屈な皇宮から出ることができるのだろうか。\n";
+const extracted = (field: string, value: string, chapters: number[]) => ({ field, value, chapters, timepointId: null, note: null, evidence: null, source: "extracted" });
+const HERO_RECORD = character("char_007", "アジャーノ", {
+  summary: "旅の冒険者",
+  role: "皇子",
+  firstPerson: { default: "俺", variants: [] },
+  changes: [extracted("role", "冒険者", [10]), extracted("role", "皇子", [12])],
+  appearedChapters: [10, 11],
+});
+const PALACE_FILES: Record<string, string> = {
+  ...MATERIALS,
+  [`${PALACE}/.aiwriter/config.json`]: JSON.stringify({ workTitle: "皇宮_確認用" }),
+  [`${PALACE}/本文/第10話 串焼き.txt`]: `${HERO_SCENE}「アジャーノ、もう一本か」と店主が笑った。\n`,
+  [`${PALACE}/本文/第11話 宿.txt`]: HERO_SCENE.repeat(5),
+  [`${PALACE}/本文/第12話 皇宮.txt`]: PRINCE_SCENE,
+  [`${PALACE}/設定/characters/char_007.json`]: HERO_RECORD,
+  [`${PALACE}/設定/characters/char_016.json`]: character("char_016", "殿下", { summary: "皇宮の皇子", firstPerson: { default: "余", variants: [] } }),
+  // パソコンの抽出が積んだ、移す前の丸ごとの写し（承認すると移した値が戻る）
+  [`${PALACE}/.aiwriter/pending-characters/char_007.json`]: HERO_RECORD,
+};
+
+test("語り手の取り違え：主人公の読み直しで移す案が出る（既定は選ばない）。選んで反映すると移し先へ足し、主人公から外し、承認待ちの写しを片づける", async ({ page }) => {
+  await setUpAi(page, { ...SISTER_ANSWER, summary: null, role: null }, PALACE_FILES);
+  await page.evaluate(() => (location.hash = "#/other"));
+  await page.locator('[data-screen="materials"]').click();
+  await page.locator(".materials-work", { hasText: "皇宮_確認用" }).click();
+  await page.locator(".materials-row", { hasText: "旅の冒険者" }).click();
+  await page.locator("#materialEnrich").click();
+  await page.locator("#enrichRun").click();
+  await page.locator('[data-answer="yes"]').click();
+  const move = page.locator(".enrich-move", { hasText: "役割「皇子」" });
+  await expect(move).toBeVisible();
+  await expect(move.locator(".enrich-move-check")).not.toBeChecked();
+  await expect(move.locator(".enrich-move-to")).toHaveValue("char_016");
+  await expect(move).toContainText("ほかの語り手の場面だけの話です");
+  // 押すまでは書かない
+  expect(JSON.parse((await readFakeFile(page, `${PALACE}/設定/characters/char_007.json`))!).role).toBe("皇子");
+  await move.locator(".enrich-move-check").check();
+  await page.locator("#enrichApply").click();
+  await expect(page.locator("#enrichProgress")).toContainText("1 件を「殿下」の資料へ移しました。");
+  await expect(page.locator("#enrichProgress")).toContainText("承認待ちの更新案を片づけました");
+  await expect(page.locator("#enrichApply")).toHaveCount(0);
+  await expect(page.locator("#enrichDiscard")).toHaveText("戻る");
+  const hero = JSON.parse((await readFakeFile(page, `${PALACE}/設定/characters/char_007.json`))!);
+  expect(hero.role).toBe("冒険者");
+  expect(hero.rejectedValues.map((entry: { value: string }) => entry.value)).toEqual(["皇子"]);
+  expect(JSON.parse((await readFakeFile(page, `${PALACE}/設定/characters/char_016.json`))!).role).toBe("皇子");
+  expect(await readFakeFile(page, `${PALACE}/.aiwriter/pending-characters/char_007.json`)).toBeUndefined();
+  await page.locator("#enrichDiscard").click();
+  await expect(page).toHaveURL(/char_007$/);
+});
+
 test("伏線には［本文から読み直す］を出さない", async ({ page }) => {
   await openMaterials(page);
   await page.locator(".materials-row", { hasText: "銀の懐中時計" }).click();

@@ -2316,3 +2316,20 @@ a.gh-open {
 .update-result:empty {
   display: none;
 }
+
+/* 本文から読み直す（設定資料の1件。2026-11-22） */
+.enrich { padding: 12px 16px 32px; display: flex; flex-direction: column; gap: 10px; }
+.enrich-notes-label { font-size: 0.9em; color: var(--sub, #888); }
+#enrichNotes { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; border-radius: 8px; }
+.enrich-rows { display: flex; flex-direction: column; gap: 12px; }
+.enrich-row { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--card, rgba(127, 127, 127, 0.1)); }
+.enrich-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 600; }
+.enrich-check { width: 22px; height: 22px; }
+.enrich-before { margin: 0; font-size: 0.9em; color: var(--sub, #888); }
+.enrich-after { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border-radius: 8px; }
+.enrich-held h3, .enrich-dropped h3, .enrich-misattributed h3 { font-size: 0.95em; margin: 12px 0 4px; }
+.enrich-held ul, .enrich-dropped ul, .enrich-misattributed ul { margin: 0; padding-left: 1.2em; font-size: 0.9em; }
+.enrich-note { margin: 0 0 4px; font-size: 0.85em; color: var(--sub, #888); }
+.enrich-evidence { display: block; color: var(--sub, #888); }
+.enrich-nothing { margin: 0; }
+.materials-detail .menu-items { margin-top: 16px; }

@@ -1,18 +1,16 @@
-import { decideFeatureAI, paidUsageNotice } from "../shared";
+import { NARRATOR_MOVE_PREFIX, decideFeatureAI, describeNarratorMove, paidUsageNotice, type NarratorMoveItem } from "../shared";
 import { describeChoice, readAiChoices } from "../platform/aiAssignment";
 import { CLOUD_PROVIDERS, type CloudProviderId } from "../platform/aiKeys";
 import { backgroundWork, whileWorking, type BackgroundWork } from "../platform/backgroundWork";
 import type { DeviceSettings } from "../platform/deviceSettings";
 import type { FileStore } from "../platform/fileStore";
 import {
-  applyEnrichRows,
+  applyEnrich,
   isEnrichKind,
   placeMisattributed,
   prepareEnrich,
   refreshDestinations,
   runEnrich,
-  saveRecord,
-  saveRecordFailureText,
   type EnrichOutcome,
   type MisattributedItem,
   type PrepareEnrichInput,
@@ -31,6 +29,9 @@ import { confirmPaidUsage } from "./paidConfirm";
  * 留意点（空でもよい）→ 見積もり（本文の抜粋の字数・AI・料金）→ 有料の確認 → AI に頼む → 案（いまの値と並べる。
  * 手で直せる）→ 選んで［選んだ項目を反映］。**選んで押すまで資料は書かない**（本体と同じ承認制）。既定で選ぶのは
  * 空欄を埋める案だけ。AI は機能ごとの割り当ての「抽出」（本体と同じ区分）。仕組みは `platform/materialEnrich.ts`
+ *
+ * 主人公の読み直しでは、語り手の取り違えで入った疑いのある値を「移す案」として並べる（本体と同じ。既定では選ばない。
+ * 移し先は選び直せ、「外すだけ」も選べる）
  */
 
 export interface MaterialEnrichDeps {
@@ -85,11 +86,43 @@ export function renderEnrichOutcome(outcome: EnrichOutcome): string {
             : "行き先の資料へ入れられるのは、登場人物を読み直したときだけです"
         }</p><ul>${outcome.misattributed.map((entry, index) => renderMisattributed(entry, index)).join("")}</ul></section>`
       : "";
+  const moves =
+    outcome.moves.length > 0
+      ? `<section class="enrich-moves"><h3>語り手の取り違えで入った疑いのある値</h3><p class="enrich-note">選ぶと、この資料から外して移し先の資料へ足します（移し先の書かれた値は上書きしません）</p>${outcome.moves
+          .map((item, index) => renderNarratorMove(item, index))
+          .join("")}</section>`
+      : "";
   const actions =
-    outcome.rows.length > 0
+    outcome.rows.length > 0 || outcome.moves.length > 0
       ? `<div class="draft-actions"><button class="primary" id="enrichApply">選んだ項目を反映</button><button id="enrichDiscard">破棄</button></div>`
       : `<p class="enrich-nothing">${ENRICH_NOTHING}</p><div class="draft-actions"><button id="enrichDiscard">戻る</button></div>`;
-  return `<div class="enrich-rows">${rows}</div>${actions}${held}${dropped}${misattributed}`;
+  return `<div class="enrich-rows">${rows}</div>${moves}${actions}${held}${dropped}${misattributed}`;
+}
+
+/** 移す案の1件（既定では選ばない。移し先は名指しできた人を先に、「外すだけ」も選べる） */
+export function renderNarratorMove(item: NarratorMoveItem, index: number): string {
+  const text = describeNarratorMove(item);
+  const chosen = item.destination.kind === "named" ? item.destination.id : "";
+  const options =
+    item.destination.candidates
+      .map((candidate) => `<option value="${escapeHtml(candidate.id)}"${candidate.id === chosen ? " selected" : ""}>「${escapeHtml(candidate.name)}」へ移す</option>`)
+      .join("") + `<option value=""${chosen === "" ? " selected" : ""}>外すだけ</option>`;
+  return (
+    `<div class="enrich-move" data-index="${index}">` +
+    `<label class="enrich-pick"><input type="checkbox" class="enrich-move-check"><span>${escapeHtml(text.label)}</span></label>` +
+    `<p class="enrich-before">現在：${escapeHtml(text.before)}</p><p class="enrich-note">${escapeHtml(text.reason)}</p>` +
+    `<select class="enrich-move-to" aria-label="移し先">${options}</select></div>`
+  );
+}
+
+/** 画面の移す案から、選んだものと移し先を集める（空の移し先は「外すだけ」なので落とさない） */
+export function chosenMoves(container: HTMLElement): Record<string, string> {
+  const chosen: Record<string, string> = {};
+  container.querySelectorAll<HTMLElement>(".enrich-move").forEach((move) => {
+    if (!move.querySelector<HTMLInputElement>(".enrich-move-check")?.checked) return;
+    chosen[`${NARRATOR_MOVE_PREFIX}${move.dataset.index}`] = move.querySelector<HTMLSelectElement>(".enrich-move-to")?.value ?? "";
+  });
+  return chosen;
 }
 
 /** はじいた記述の1件（行き先があれば、入れるボタン） */
@@ -225,7 +258,8 @@ export function mountMaterialEnrich(screen: HTMLElement, deps: MaterialEnrichDep
       }
       if (!deps.stillHere()) return;
       run.remove();
-      progress.textContent = outcome.rows.length > 0 ? `案が${outcome.rows.length}つあります。選んで［選んだ項目を反映］を押すと、資料に書きます` : "";
+      const count = outcome.rows.length + outcome.moves.length;
+      progress.textContent = count > 0 ? `案が${count}つあります。選んで［選んだ項目を反映］を押すと、資料に書きます` : "";
       after.innerHTML = renderEnrichOutcome(outcome);
       after.querySelector<HTMLButtonElement>("#enrichDiscard")?.addEventListener("click", () => deps.done());
       let items = outcome.misattributed;
@@ -268,20 +302,39 @@ export function mountMaterialEnrich(screen: HTMLElement, deps: MaterialEnrichDep
       apply?.addEventListener("click", () => {
         void (async () => {
           const values = chosenValues(after);
-          if (Object.keys(values).length === 0) return deps.toast("反映する項目を選んでください");
+          const moveValues = chosenMoves(after);
+          if (Object.keys(values).length === 0 && Object.keys(moveValues).length === 0) return deps.toast("反映する項目を選んでください");
           apply.disabled = true;
-          const at = now();
-          const updated = applyEnrichRows(material.target, values, material.characters, at);
-          await deps.beforeWrite?.(material.target.path).catch(() => undefined);
-          const saved = await saveRecord(deps.store, material.target, updated, at);
+          let result;
+          try {
+            result = await applyEnrich(deps.store, material, {
+              root: deps.root,
+              values,
+              moves: outcome.moves,
+              moveValues,
+              now: now(),
+              ...(deps.beforeWrite ? { beforeWrite: deps.beforeWrite } : {}),
+            });
+          } catch (error) {
+            result = { ok: false as const, notice: error instanceof Error ? error.message : String(error) };
+          }
           if (!deps.stillHere()) return;
-          if (!saved.ok) {
+          if (!result.ok) {
             apply.disabled = false;
-            progress.textContent = saveRecordFailureText(saved);
+            progress.textContent = result.notice;
             return;
           }
-          deps.toast(`${Object.keys(values).length}項目を反映しました`);
-          deps.done();
+          if (Object.keys(moveValues).length === 0) {
+            deps.toast(result.notice);
+            deps.done();
+            return;
+          }
+          // 移した結果（移せなかった訳・承認待ちの片づけ）は長いので、トーストで流さずに画面へ残す
+          progress.textContent = result.notice;
+          apply.remove();
+          const back = after.querySelector<HTMLButtonElement>("#enrichDiscard");
+          if (back) back.textContent = "戻る";
+          after.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea").forEach((field) => (field.disabled = true));
         })();
       });
     };

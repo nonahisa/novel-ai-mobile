@@ -277,7 +277,25 @@ export {
   type MisattributedDestination,
   type MisattributedValue,
 } from "novel-ai-assistant/src/core/misattributedValues";
-export { enrichForeignNarratorOf, workNarratorContextOf } from "novel-ai-assistant/src/core/sceneNarrators";
+export { enrichForeignNarratorOf, workNarratorContextOf, type WorkNarratorContext } from "novel-ai-assistant/src/core/sceneNarrators";
+// 語り手の取り違えを移す案（設計書6.5.12。本体 v1.0.44 で core へ移った部品）
+export {
+  applyNarratorMoves,
+  describeNarratorMove,
+  findNarratorMoves,
+  type NarratorMoveChoice,
+  type NarratorMoveItem,
+  type NarratorMoveOutcome,
+} from "novel-ai-assistant/src/core/narratorMoves";
+export {
+  describeDiscardedUpdatesNotice,
+  describeMoveOutcome,
+  NARRATOR_MOVE_PREFIX,
+  narratorMoveChoicesOf,
+  staleCharacterUpdates,
+  type StaleUpdateCandidate,
+} from "novel-ai-assistant/src/core/narratorMoveChoices";
+export { PENDING_DIR, readKind as readPendingKind, unwrapPendingCharacter } from "novel-ai-assistant/src/core/pendingUpdateFormat";
 export {
   applyAbilityEdits,
   applyCharacterEdits,

@@ -269,7 +269,14 @@ export {
 export { collectMentionExcerpts, type ExcerptSource, type MentionExcerpt } from "novel-ai-assistant/src/core/mentionExcerpts";
 export { excerptSourcesOfEpisode, type ExcerptEpisode } from "novel-ai-assistant/src/core/excerptSourceOf";
 export { knownChaptersOf } from "novel-ai-assistant/src/core/chapterCitations";
-export { parseMisattributedValues, type MisattributedValue } from "novel-ai-assistant/src/core/misattributedValues";
+export {
+  insertMisattributedValue,
+  parseMisattributedValues,
+  planMisattributedRecord,
+  resolveMisattributedDestination,
+  type MisattributedDestination,
+  type MisattributedValue,
+} from "novel-ai-assistant/src/core/misattributedValues";
 export { enrichForeignNarratorOf, workNarratorContextOf } from "novel-ai-assistant/src/core/sceneNarrators";
 export {
   applyAbilityEdits,
@@ -282,7 +289,8 @@ export {
 } from "novel-ai-assistant/src/core/settingsEdit";
 export { blankMemoLines } from "novel-ai-assistant/src/core/sceneMemo";
 export { parseAbilitySystem, emptyAbilitySystem, ABILITY_SCHEMA_VERSION, type AbilitySystem } from "novel-ai-assistant/src/models/ability";
-export { CHARACTER_SCHEMA_VERSION } from "novel-ai-assistant/src/models/character";
+export { CHARACTER_SCHEMA_VERSION, characterFileName } from "novel-ai-assistant/src/models/character";
+export { NEW_JSON_FILE_FORMAT } from "novel-ai-assistant/src/core/jsonFileFormat";
 export { ORGANIZATION_SCHEMA_VERSION } from "novel-ai-assistant/src/models/organization";
 export { LOCATION_SCHEMA_VERSION } from "novel-ai-assistant/src/models/location";
 export { WORLD_SCHEMA_VERSION } from "novel-ai-assistant/src/models/world";

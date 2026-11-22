@@ -7,11 +7,14 @@ import type { FileStore } from "../platform/fileStore";
 import {
   applyEnrichRows,
   isEnrichKind,
+  placeMisattributed,
   prepareEnrich,
+  refreshDestinations,
   runEnrich,
   saveRecord,
   saveRecordFailureText,
   type EnrichOutcome,
+  type MisattributedItem,
   type PrepareEnrichInput,
 } from "../platform/materialEnrich";
 import type { SecretVault } from "../platform/secretVault";
@@ -76,15 +79,27 @@ export function renderEnrichOutcome(outcome: EnrichOutcome): string {
     outcome.dropped.length > 0 ? `<section class="enrich-dropped"><h3>検算で外した案</h3><ul>${outcome.dropped.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul></section>` : "";
   const misattributed =
     outcome.misattributed.length > 0
-      ? `<section class="enrich-misattributed"><h3>この資料のものではない、と AI が判断した記述</h3><p class="enrich-note">別の資料へ移すのは、パソコンの設定資料パネルの［AIで再読込］でできます</p><ul>${outcome.misattributed
-          .map((entry) => `<li><b>${escapeHtml(entry.belongsTo)}</b>の${escapeHtml(entry.fieldLabel)}：${escapeHtml(entry.value)}<span class="enrich-evidence">「${escapeHtml(entry.evidence)}」</span></li>`)
-          .join("")}</ul></section>`
+      ? `<section class="enrich-misattributed"><h3>この資料のものではない、と AI が判断した記述</h3><p class="enrich-note">${
+          outcome.misattributed.some((entry) => entry.destination)
+            ? "押すと、その人物の資料へ入れます（書かれている値は上書きしません）"
+            : "行き先の資料へ入れられるのは、登場人物を読み直したときだけです"
+        }</p><ul>${outcome.misattributed.map((entry, index) => renderMisattributed(entry, index)).join("")}</ul></section>`
       : "";
   const actions =
     outcome.rows.length > 0
       ? `<div class="draft-actions"><button class="primary" id="enrichApply">選んだ項目を反映</button><button id="enrichDiscard">破棄</button></div>`
       : `<p class="enrich-nothing">${ENRICH_NOTHING}</p><div class="draft-actions"><button id="enrichDiscard">戻る</button></div>`;
   return `<div class="enrich-rows">${rows}</div>${actions}${held}${dropped}${misattributed}`;
+}
+
+/** はじいた記述の1件（行き先があれば、入れるボタン） */
+export function renderMisattributed(entry: MisattributedItem, index: number): string {
+  const place = entry.destination
+    ? `<button type="button" class="enrich-place" data-index="${index}">${escapeHtml(
+        entry.destination.kind === "existing" ? `「${entry.destination.name}」へ入れる` : `「${entry.destination.name}」を新しく起こして入れる`
+      )}</button>`
+    : "";
+  return `<li data-index="${index}"><b>${escapeHtml(entry.belongsTo)}</b>の${escapeHtml(entry.fieldLabel)}：${escapeHtml(entry.value)}<span class="enrich-evidence">「${escapeHtml(entry.evidence)}」</span>${place}</li>`;
 }
 
 /** 画面の案から、選んだ項目と（直した）値を集める */
@@ -213,6 +228,42 @@ export function mountMaterialEnrich(screen: HTMLElement, deps: MaterialEnrichDep
       progress.textContent = outcome.rows.length > 0 ? `案が${outcome.rows.length}つあります。選んで［選んだ項目を反映］を押すと、資料に書きます` : "";
       after.innerHTML = renderEnrichOutcome(outcome);
       after.querySelector<HTMLButtonElement>("#enrichDiscard")?.addEventListener("click", () => deps.done());
+      let items = outcome.misattributed;
+      // はじいた記述を行き先へ入れる（押した1件だけ。案の反映とは別に書く。本体と同じ）
+      after.querySelector<HTMLElement>(".enrich-misattributed")?.addEventListener("click", (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".enrich-place");
+        if (!button) return;
+        const index = Number(button.dataset.index);
+        const entry = items[index];
+        if (!entry) return;
+        button.disabled = true;
+        void (async () => {
+          let result;
+          try {
+            result = await placeMisattributed(deps.store, base.settingsDir, entry, now(), deps.beforeWrite);
+          } catch (error) {
+            result = { ok: false as const, notice: error instanceof Error ? error.message : String(error) };
+          }
+          if (!deps.stillHere()) return;
+          if (!result.ok) {
+            button.disabled = false;
+            deps.toast(result.notice);
+            return;
+          }
+          const line = document.createElement("p");
+          line.className = "enrich-placed";
+          line.setAttribute("role", "status");
+          line.textContent = result.notice;
+          button.replaceWith(line);
+          // 残りの行き先を引き直す（新しく起こした人物へ、同じ相手の2件目が入るように）
+          items = await refreshDestinations(deps.store, base.settingsDir, items).catch(() => items);
+          if (!deps.stillHere()) return;
+          after.querySelectorAll<HTMLButtonElement>(".enrich-place").forEach((other) => {
+            const next = items[Number(other.dataset.index)]?.destination;
+            if (next) other.textContent = next.kind === "existing" ? `「${next.name}」へ入れる` : `「${next.name}」を新しく起こして入れる`;
+          });
+        })();
+      });
       const apply = after.querySelector<HTMLButtonElement>("#enrichApply");
       apply?.addEventListener("click", () => {
         void (async () => {

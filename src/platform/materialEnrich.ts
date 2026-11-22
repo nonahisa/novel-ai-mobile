@@ -3,6 +3,7 @@ import {
   CHARACTER_SCHEMA_VERSION,
   KIND_LABELS,
   LOCATION_SCHEMA_VERSION,
+  MISATTRIBUTED_KEY,
   ORGANIZATION_SCHEMA_VERSION,
   SETTINGS_ASSISTANT_SYSTEM_PROMPT,
   SETTINGS_ENRICH_TEMPERATURE,
@@ -20,6 +21,7 @@ import {
   containsConflictMarkers,
   describeEnrichTarget,
   emptyAbilitySystem,
+  enrichableFields,
   enrichForeignNarratorOf,
   excerptSourcesOfEpisode,
   fieldsFor,
@@ -56,7 +58,7 @@ import { readTextFile, writeTextFilePreservingFormat, type TextFileContent, type
 import type { ModelCall } from "./typoCheck";
 import { readCustomFieldSet } from "./workMaterials";
 import type { ScannedWork } from "./workScan";
-import { readKind } from "./workTerms";
+import { readErrorMessage, readKind } from "./workTerms";
 
 /**
  * **設定資料の1件を、本文から読み直す**（設計書 4.4.1「設定資料の1件 → 本文から読み直す」。2026-11-22 作者の答え
@@ -139,8 +141,15 @@ export async function readRecordFile(store: FileStore, settingsDir: string, kind
     if (name !== `${id}.json` && !name.startsWith(`${id}_`)) continue;
     const path = joinStorePath(dir, name);
     const content = await readTextFile(store, path);
-    const raw: unknown = JSON.parse(content.text);
-    const record = PARSE[kind](raw);
+    let raw: unknown;
+    let record: EnrichRecord;
+    try {
+      raw = JSON.parse(content.text);
+      record = PARSE[kind](raw);
+    } catch (error) {
+      // 一覧を出したあとで壊れた・書き換わった。訳は日本語で（`readErrorMessage`）
+      throw new Error(`${DIRECTORY[kind]}/${name} を読めませんでした：${readErrorMessage(error)}`);
+    }
     if (record.id !== id) continue;
     return { kind, record, path, content, raw: raw as Record<string, unknown> };
   }
@@ -332,9 +341,9 @@ export async function runEnrich(material: EnrichMaterial, call: ModelCall, optio
   if (checked.speechEchoes > 0) dropped.push("口調：頼みの言葉の写しだったので外しました");
   if (checked.speechUnspokenFirstPersons.length > 0) dropped.push(`口調：一人称「${checked.speechUnspokenFirstPersons.join("・")}」が本文の台詞に無いので外しました`);
   for (const item of checked.foreignChanges) dropped.push(`${item.label}：名前の出ない話の記録から持ち越した語（${item.phrases.join("・")}）があったので外しました`);
-  const labels = new Map(rows.map((row) => [row.key.replace(/^custom:/, ""), row.label]));
-  for (const proposal of checked.proposals) labels.set(proposal.field.key, proposal.field.label);
-  const misattributed = parseMisattributedValues(parsed["misattributed"], excerptText, misattributedAllowedFields(kind, material.customFields)).entries.map((entry) => ({
+  // 見出しは本体の項目の並びから引く（案の出なかった項目も、はじいた記述には出る。本体の MCP 版と同じ）
+  const labels = new Map(enrichableFields(kind, material.customFields).map((field) => [field.key, field.label]));
+  const misattributed = parseMisattributedValues(parsed[MISATTRIBUTED_KEY], excerptText, misattributedAllowedFields(kind, material.customFields)).entries.map((entry) => ({
     ...entry,
     fieldLabel: labels.get(entry.field) ?? entry.field,
   }));

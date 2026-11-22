@@ -247,6 +247,7 @@ export { parseMemos, type SceneMemo } from "novel-ai-assistant/src/core/sceneMem
 export { resolveProposals, type ProposalLine, type ProposalView } from "novel-ai-assistant/src/models/proposal";
 // 設定資料の1件を本文から読み直す（本体の［AIで再読込］と同じ頼み・検算・反映。2026-11-22）
 export {
+  MISATTRIBUTED_KEY,
   SETTINGS_ENRICH_TEMPERATURE,
   SETTINGS_ENRICH_VERSION,
   buildEnrichPrompt,

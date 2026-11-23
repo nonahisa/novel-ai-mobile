@@ -336,6 +336,9 @@ test("1件 →［関係を見る］：つながっている人を向きごとに
   await page.locator('[data-screen="materials"]').click();
   await page.locator(".materials-work", { hasText: "灯台守の手紙_確認用" }).click();
   await page.locator(".materials-row", { hasText: "灯台に住む姉" }).click();
+  // ボタンの字に下線を付けない（ほかの項目と同じ見た目。2026-11-23 AQUOS の実機で見つけた）
+  await expect(page.locator("#materialRelations")).toHaveCSS("text-decoration-line", "none");
+  await expect(page.locator("#materialEnrich")).toHaveCSS("text-decoration-line", "none");
   await page.locator("#materialRelations").click();
   await expect(page).toHaveURL(/char_001\/relations$/);
   await expect(page.locator(".appbar-title")).toHaveText("関係：姉");

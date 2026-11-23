@@ -356,6 +356,10 @@ button {
   font: inherit;
   font-weight: 700;
 }
+/* 道へ飛ぶ項目（設定資料の1件の［本文から読み直す］など）は <a> なので、字の下線を消して押す項目と同じ見た目にする */
+a.menu-item {
+  text-decoration: none;
+}
 .menu-item.built {
   border-color: var(--accent);
   color: var(--accent);

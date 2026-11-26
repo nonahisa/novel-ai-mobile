@@ -59,6 +59,10 @@ AI の利用料はそれぞれの AI の会社から請求されます。
 
 作品はアプリ専用の領域に置きます。ほかのアプリからは見えません。パソコンとは GitHub を通して行き来します。
 
+## 質問と不具合の報告
+
+使い方の質問・不具合・要望は、Discord のサーバー「小説執筆部屋」（https://discord.gg/6pcuUaCMax）で受け付けています。GitHub をお使いなら、不具合は [Issues](https://github.com/nonahisa/novel-ai-mobile/issues) へも送れます。
+
 ## ライセンス
 
 MIT（[LICENSE](LICENSE)）。使っている部品のライセンスは、アプリの［ほか］→ ヘルプ → ライセンス で見られます。

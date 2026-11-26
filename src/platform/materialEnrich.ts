@@ -432,7 +432,9 @@ export async function saveRecord(store: FileStore, target: RecordFile, record: E
   const label = `${KIND_LABELS[target.kind]}の資料`;
   const newer = ledgerShapeProblem(label, target.content.text, SCHEMA_VERSION[target.kind]);
   if (newer) return { ok: false, reason: "newer_shape", detail: newer };
-  const known = new Set(Object.keys(record));
+  // 知っている欄は、読んだときの記録と直したあとの記録の両方（主人公の印を外す・宿りや追加項目を空にする直しは、本体の
+  // 部品が鍵ごと外す。それを「知らない欄」と取り違えて断らない。知らない欄は、モバイル版の読み方で落ちた鍵だけ）
+  const known = new Set([...Object.keys(target.record), ...Object.keys(record)]);
   const unknown = Object.keys(target.raw).filter((key) => !known.has(key));
   if (unknown.length > 0) {
     return {

@@ -2340,6 +2340,12 @@ a.gh-open {
 .enrich-nothing { margin: 0; }
 .materials-detail .menu-items { margin-top: 16px; }
 
+/* 設定資料の1件を手で直す（2026-11-27） */
+.edit-fields { display: flex; flex-direction: column; gap: 14px; }
+.edit-field { display: flex; flex-direction: column; gap: 4px; }
+.edit-label { font-size: 0.9em; font-weight: 600; }
+.edit-field .edit-input:not([type="checkbox"]) { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border-radius: 8px; }
+
 /* 設定資料の1件 → 関係を見る（つながっている人の一覧。読むだけ） */
 .relation-rows { list-style: none; margin: 0; padding: 0; }
 .relation-row { padding: 10px 0; border-bottom: 1px solid var(--line, #ddd); }

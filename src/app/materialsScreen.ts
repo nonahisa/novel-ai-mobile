@@ -13,8 +13,9 @@ import { escapeHtml, renderAppBar } from "./menuScreen";
  *
  * - `#/materials/<作品>/<種類>/<id>/enrich`：1件を本文から読み直す（`materialEnrichScreen.ts`。2026-11-22）
  * - `#/materials/<作品>/character/<id>/relations`：その人物の関係を見る（`platform/materialRelations.ts`。読むだけ。2026-11-22）
+ * - `#/materials/<作品>/<種類>/<id>/edit`：1件を手で直す（`materialEditScreen.ts`。2026-11-27 作者の答え「全部の欄」。伏線は除く）
  *
- * 道の id は、読んだ資料の中から探すだけに使う（置き場の道にはしない）。直すは、まだ無い
+ * 道の id は、読んだ資料の中から探すだけに使う（置き場の道にはしない）
  */
 
 export function materialsHash(root?: string, kind?: string, id?: string): string {
@@ -26,6 +27,11 @@ export function materialsHash(root?: string, kind?: string, id?: string): string
 /** 1件を本文から読み直す画面（`materialEnrichScreen.ts`） */
 export function materialEnrichHash(root: string, kind: string, id: string): string {
   return `${materialsHash(root, kind, id)}/enrich`;
+}
+
+/** 1件を手で直す画面（`materialEditScreen.ts`） */
+export function materialEditHash(root: string, kind: string, id: string): string {
+  return `${materialsHash(root, kind, id)}/edit`;
 }
 
 /** その人物の関係を見る画面 */
@@ -81,7 +87,12 @@ export function renderMaterialDetail(item: MaterialItem, root?: string): string 
     root !== undefined && item.kind === "character"
       ? `<a class="menu-item built" id="materialRelations" href="${escapeHtml(materialRelationsHash(root, item.id))}">関係を見る</a>`
       : "";
-  const actions = enrich || relations ? `<div class="menu-items">${enrich}${relations}</div>` : "";
+  // 手で直すのは、本体の設定資料パネルで直せる5種類（伏線は本体でも別の画面）
+  const edit =
+    root !== undefined && ENRICHABLE.has(item.kind)
+      ? `<a class="menu-item built" id="materialEdit" href="${escapeHtml(materialEditHash(root, item.kind, item.id))}">直す</a>`
+      : "";
+  const actions = edit || enrich || relations ? `<div class="menu-items">${edit}${enrich}${relations}</div>` : "";
   return `<article class="materials-detail"><h2>${escapeHtml(item.name)}</h2>${flags(item) ? `<p class="materials-flags">${flags(item)}</p>` : ""}<dl>${lines}</dl>${actions}</article>`;
 }
 

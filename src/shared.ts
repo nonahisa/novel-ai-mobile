@@ -303,8 +303,18 @@ export {
   applyOrganizationEdits,
   applyWorldItemEdits,
   toRecordEdits,
+  formatAliasReadingsForEdit,
+  formatRelationsForEdit,
+  formatLocationRelationsForEdit,
+  describeLocationRelationEditHint,
+  SettingsEditError,
+  CUSTOM_FIELD_PREFIX,
   type RecordEdits,
 } from "novel-ai-assistant/src/core/settingsEdit";
+// 設定資料を手で直す欄（［設定資料］→ 1件 →［直す］。本体の設定資料パネルと同じ形）
+export { formatDwellingsForEdit } from "novel-ai-assistant/src/core/characterDwelling";
+export { SUMMARY_MAX_CHARS } from "novel-ai-assistant/src/core/summaryLimit";
+export { WORLD_CATEGORIES } from "novel-ai-assistant/src/models/world";
 export { blankMemoLines } from "novel-ai-assistant/src/core/sceneMemo";
 export { parseAbilitySystem, emptyAbilitySystem, ABILITY_SCHEMA_VERSION, type AbilitySystem } from "novel-ai-assistant/src/models/ability";
 export { CHARACTER_SCHEMA_VERSION, characterFileName } from "novel-ai-assistant/src/models/character";

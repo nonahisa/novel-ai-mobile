@@ -177,6 +177,38 @@ describe("保存（変えた欄だけを本体の部品で当てる）", () => {
     expect((await store.listFiles(`${SET}/world`)).sort()).toEqual(["world_001_霧笛の決まり.json"]);
   });
 
+  it("欄を外す直し（主人公の印を外す・宿りを空に・ただ1つの追加項目を空に・位置関係を全部消す・読みの付いた別名を消す）も書ける", async () => {
+    const store = storeWith({
+      [`${SET}/characters/char_004.json`]: `${JSON.stringify(
+        { ...emptyCharacter("char_004", "守人"), aliases: ["灯守"], aliasReadings: { 灯守: "ひもり" }, isProtagonist: true, dwellings: [{ body: "灯", bodyId: "char_002", fromChapter: 4 }] },
+        null,
+        2
+      )}
+`,
+      [`${SET}/abilities/abil_002.json`]: `${JSON.stringify({ ...emptyAbility("abil_002", "潮読み"), customFields: { birthday: "冬" } }, null, 2)}
+`,
+      [`${SET}/locations/loc_003.json`]: `${JSON.stringify({ ...emptyLocation("loc_003", "岬"), relations: [{ kind: "direction", target: "港町", targetId: "loc_002", value: "北", chapters: [], evidence: null }] }, null, 2)}
+`,
+      [`${SET}/custom_fields.json`]: JSON.stringify({
+        schemaVersion: "0.1",
+        fields: [{ key: "birthday", label: "誕生日", hint: "", multiline: false, kinds: ["character", "ability"] }],
+      }),
+    });
+    const person = await open(store, "character", "char_004");
+    const personResult = await saveMaterialEdits(store, SET, person, { isProtagonist: "", dwellings: "", aliases: "" }, NOW);
+    expect(personResult).toMatchObject({ ok: true });
+    const savedPerson = JSON.parse(dec(await store.readFile(`${SET}/characters/char_004.json`)));
+    expect(savedPerson.isProtagonist).toBeUndefined();
+    expect(savedPerson.dwellings).toBeUndefined();
+    expect(savedPerson.aliasReadings).toBeUndefined();
+    const ability = await open(store, "ability", "abil_002");
+    expect(await saveMaterialEdits(store, SET, ability, { "custom:birthday": "" }, NOW)).toMatchObject({ ok: true });
+    expect(JSON.parse(dec(await store.readFile(`${SET}/abilities/abil_002.json`))).customFields).toBeUndefined();
+    const place = await open(store, "location", "loc_003");
+    expect(await saveMaterialEdits(store, SET, place, { relations: "" }, NOW)).toMatchObject({ ok: true });
+    expect(JSON.parse(dec(await store.readFile(`${SET}/locations/loc_003.json`))).relations ?? []).toEqual([]);
+  });
+
   it("場所の位置関係は、台帳の場所へ引き当てる（本体と同じ）", async () => {
     const store = storeWith();
     const file = await open(store, "location", "loc_001");

@@ -10,7 +10,7 @@ import {
 import { replaceViaTemp, type ReplaceOps } from "./atomicReplace";
 
 /**
- * 端末の置き場：アプリ専用の領域（`Directory.Data`）の下（設計書 2.3。README「先に潰すべき問題」b）。
+ * 端末の置き場：アプリ専用の領域（`Directory.Data`）の下（設計書 2.3。docs/開発の手引き.md「先に潰すべき問題」b）。
  *
  * **バイト列のまま読み書きする。** `encoding` を渡すと Capacitor が UTF-8 として読み書きし、
  * Shift_JIS の原稿や改行の形が変わる。文字コードの判定と保持は本体の部品（`textDecode`・

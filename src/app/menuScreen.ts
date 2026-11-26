@@ -1,4 +1,4 @@
-import type { ActionEntry, PlannedItem, PlannedTab } from "./menuPlan";
+import { LINKS, type ActionEntry, type LinkId, type PlannedItem, type PlannedTab } from "./menuPlan";
 
 /**
  * メニューの画面の HTML（文字列で作るので、DOM の無いテストでも中身を確かめられる）。
@@ -15,8 +15,14 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
+/** 外の URL を開く項目（`<a>`。押すと Capacitor が端末のブラウザへ渡す） */
+function linkItem(link: LinkId, inner: string): string {
+  return `<a class="menu-item built" href="${escapeHtml(LINKS[link])}" data-link="${link}">${inner}</a>`;
+}
+
 export function itemButton(item: PlannedItem): string {
   const note = item.note ? `<span class="menu-note">${escapeHtml(item.note)}</span>` : "";
+  if (item.link) return linkItem(item.link, `${escapeHtml(item.label)}${note}`);
   if (item.built) {
     return `<button class="menu-item built" data-screen="${item.built}">${escapeHtml(item.label)}${note}</button>`;
   }
@@ -58,7 +64,7 @@ export function renderTab(tab: PlannedTab, version?: string, lead = ""): string 
   // まだ作っていない項目はタブに出さない（2026-11-18 作者「画面配置もテスト用のものでなくてもいいかもしれません」）。
   // 中が空になったまとまりは見出しごと出さない。作っていない機能は「すべての機能」で灰色のまま見られる
   const sections = tab.sections
-    .map((section) => ({ ...section, items: section.items.filter((item) => item.built) }))
+    .map((section) => ({ ...section, items: section.items.filter((item) => item.built || item.link) }))
     .filter((section) => section.items.length > 0)
     .map(
       (section) => `
@@ -90,7 +96,9 @@ export function renderActionRows(entries: readonly ActionEntry[]): string {
     }
     const ai = entry.usesAI ? `<span class="menu-ai">AI</span>` : "";
     const place = `<span class="menu-note">${escapeHtml(entry.place)}</span>`;
-    if (entry.built) {
+    if (entry.link) {
+      html += linkItem(entry.link, `${escapeHtml(entry.label)}${ai}${place}`);
+    } else if (entry.built) {
       html += `<button class="menu-item built" data-screen="${entry.built}">${escapeHtml(entry.label)}${ai}${place}</button>`;
     } else {
       const tell = `${NOT_BUILT_MESSAGE}。置く予定の所：${entry.place}`;

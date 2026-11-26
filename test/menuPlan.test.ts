@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { ACTION_TREE } from "../src/shared";
 import {
   BUILT_ACTIONS,
+  LINK_ACTIONS,
   HIDDEN_ON_MOBILE,
   TABS,
   TRIAL_ITEMS,
@@ -106,7 +107,10 @@ describe("すべての機能（4.4.1 の3段目）", () => {
     }
     const html = renderActionRows(list);
     expect(html.match(/data-screen=/g)).toHaveLength(Object.keys(BUILT_ACTIONS).length);
-    expect(html.match(/data-planned=/g)).toHaveLength(list.length - Object.keys(BUILT_ACTIONS).length);
+    // 外の URL を開く行（コミュニティ）は、画面を開かず <a> にする
+    for (const [label, link] of Object.entries(LINK_ACTIONS)) expect(list.find((e) => e.label === label)?.link).toBe(link);
+    expect(html.match(/data-link=/g)).toHaveLength(Object.keys(LINK_ACTIONS).length);
+    expect(html.match(/data-planned=/g)).toHaveLength(list.length - Object.keys(BUILT_ACTIONS).length - Object.keys(LINK_ACTIONS).length);
   });
 
   test("検索：2〜3文字で絞れる・空白で区切ると全部を含む行・全角英数字も当たる", () => {

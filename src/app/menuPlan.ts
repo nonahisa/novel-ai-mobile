@@ -1,4 +1,4 @@
-import { ACTION_TREE, isItemShownInActionList, type ActionGroup, type ActionItem } from "../shared";
+import { ACTION_TREE, COMMUNITY_DISCORD_URL, isItemShownInActionList, type ActionGroup, type ActionItem } from "../shared";
 
 /**
  * **予定している画面とメニューの並べ方**（Android詳細設計書 4.3・4.4.1〜4.4.3 の【案】。
@@ -16,6 +16,16 @@ import { ACTION_TREE, isItemShownInActionList, type ActionGroup, type ActionItem
 /** `proposals` は［提案］のタブ（頭に、最後に開いた話の誤字脱字の入口がある） */
 export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals" | "stats" | "update" | "materials";
 
+/**
+ * 外の決まった URL を端末のブラウザで開く項目（画面を持たない）。開く先は ここの1つずつだけで、作品や原稿は送らない。
+ * Capacitor は、アプリの外の URL へのリンクを端末のブラウザへ渡す
+ */
+export type LinkId = "community";
+
+export const LINKS: Readonly<Record<LinkId, string>> = {
+  community: COMMUNITY_DISCORD_URL,
+};
+
 /** メニューの1項目 */
 export interface PlannedItem {
   label: string;
@@ -26,6 +36,8 @@ export interface PlannedItem {
   note?: string;
   /** 作ってあれば、開く画面 */
   built?: ScreenId;
+  /** 外の URL を開く項目なら、その名前（`LINKS`） */
+  link?: LinkId;
   /** 本体の詳細メニューの操作を名指しするとき（「すべての機能」と同じ名前） */
   action?: string;
 }
@@ -154,6 +166,8 @@ export const TABS: readonly PlannedTab[] = [
           { label: "使い方", action: "使い方" },
           { label: "バージョン確認", built: "check", action: "バージョン確認" },
           { label: "ライセンス", built: "licenses" },
+          // 2026-11-26 作者の答え「A ヘルプに Discord を足す」。本体の「ヘルプ › コミュニティ」と同じ URL
+          { label: "コミュニティ（Discord）", action: "コミュニティ", link: "community" },
         ],
       },
     ],
@@ -182,6 +196,8 @@ export interface ActionEntry {
   place: string;
   /** 作ってあれば、開く画面 */
   built?: ScreenId;
+  /** 外の URL を開く項目なら、その名前（`LINKS`） */
+  link?: LinkId;
 }
 
 /**
@@ -229,6 +245,11 @@ export const BUILT_ACTIONS: Readonly<Record<string, ScreenId>> = {
   執筆統計: "stats",
 };
 
+/** 本体の操作のうち、外の URL を開くもの（名前 → `LINKS`） */
+export const LINK_ACTIONS: Readonly<Record<string, LinkId>> = {
+  コミュニティ: "community",
+};
+
 function hiddenReason(label: string, group: string, section?: string): string | undefined {
   return HIDDEN_ON_MOBILE[label] ?? (section ? HIDDEN_ON_MOBILE[`${group}/${section}`] : undefined) ?? HIDDEN_ON_MOBILE[group];
 }
@@ -256,6 +277,7 @@ export function buildActionList(tree: readonly ActionGroup[] = ACTION_TREE): Act
       usesAI: item.usesAI === true,
       place: placeOf(group, section),
       built: BUILT_ACTIONS[item.label],
+      link: LINK_ACTIONS[item.label],
     });
   };
   for (const group of tree) {

@@ -314,3 +314,5 @@ export { LOCATION_SCHEMA_VERSION } from "novel-ai-assistant/src/models/location"
 export { WORLD_SCHEMA_VERSION } from "novel-ai-assistant/src/models/world";
 // 人物相関図の材料（設計書6.38。AI を使わない。設定資料の1件 → 関係を見る）
 export { buildRelationGraph, egoGraph, type RelationEdge } from "novel-ai-assistant/src/core/relationGraph";
+// コミュニティ（Discord）の招待の URL（本体と同じ1つ。［ほか］→ ヘルプ → コミュニティ（Discord））
+export { COMMUNITY_DISCORD_URL } from "novel-ai-assistant/src/core/community";

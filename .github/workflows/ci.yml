@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      # JDK 25 では Gradle 8.14 が落ちる（README「JDK 25 では動かない」）。手元と同じ 21 にそろえる
+      # JDK 25 では Gradle 8.14 が落ちる（docs/開発の手引き.md「JDK 25 では動かない」）。手元と同じ 21 にそろえる
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin

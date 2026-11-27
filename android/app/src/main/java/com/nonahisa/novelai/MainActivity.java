@@ -10,6 +10,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AiWorkPlugin.class);
         // 新しい版を取り寄せて照らし、端末のインストーラーへ渡す口（AppUpdatePlugin。引継ぎ書 156章）
         registerPlugin(AppUpdatePlugin.class);
+        // 端末の読み上げ（TextToSpeech）で原稿を読む口（ReadAloudPlugin。本体の設計書 6.42）
+        registerPlugin(ReadAloudPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

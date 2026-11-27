@@ -13,7 +13,7 @@ test("［…］→ 誤字脱字：書きかけを保存してから、この話�
   await editor.press("End");
   await page.keyboard.type("足した");
   await page.locator("#episodeMore").click();
-  await expect(page.locator(".dialog-choices .dialog-list button")).toHaveText(["新しい話", "章を立てる", "書き出し", "誤字脱字", "推敲", "あらすじ"]);
+  await expect(page.locator(".dialog-choices .dialog-list button")).toHaveText(["新しい話", "章を立てる", "書き出し", "読み上げ", "誤字脱字", "推敲", "あらすじ"]);
   await page.locator(".dialog-choices button", { hasText: "誤字脱字" }).click();
   await expect(page).toHaveURL(/#\/typo\//);
   await expect(page.locator(".estimate")).toContainText("第1話 手紙");
@@ -92,4 +92,115 @@ test("［…］→ 書き出し → カクヨム：カクヨムの書き方に�
   await page.locator(".dialog-choices button", { hasText: /^カクヨム$/ }).click();
   await expect(page.locator("#toast")).toHaveText("カクヨム向けにコピーしました（21字）");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("｜灯台《とうだい》の《《手紙》》が届いた。");
+});
+
+// 本体の設計書 6.68.6：写したあと、台帳にそのサイトの投稿ページがあれば［◯◯の投稿ページを開く］を添える。押したときだけ開く
+test("［…］→ 書き出し：台帳に登録した投稿先が先に並び、写したあと投稿ページへのリンクが出る", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const url = "https://kakuyomu.jp/my/works/1177354054/episodes/new";
+  await openWithWorks(page, "#/works", {
+    ...FAKE_WORKS,
+    "灯台守_確認用/設定/投稿状態.json": JSON.stringify({ schemaVersion: "1", sites: [{ site: "kakuyomu", newEpisodeUrl: url }], posts: [] }),
+  });
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  await page.locator("textarea#msEditor").fill("{灯台|とうだい}の{{手紙}}が届いた。\n");
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "書き出し" }).click();
+  await expect(page.locator(".dialog-choices .dialog-list button").first()).toHaveText("カクヨム");
+  await page.locator(".dialog-choices button", { hasText: /^カクヨム$/ }).click();
+  const dialog = page.locator(".dialog[role=alertdialog]");
+  await expect(dialog.locator(".dialog-message")).toHaveText("カクヨム向けにコピーしました（21字）");
+  await expect(dialog.locator("a.dialog-link")).toHaveText("カクヨムの投稿ページを開く");
+  await expect(dialog.locator("a.dialog-link")).toHaveAttribute("href", url);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("｜灯台《とうだい》の《《手紙》》が届いた。");
+  // 勝手には開かない。［閉じる］で閉じ、原稿の画面のまま
+  await dialog.locator("button", { hasText: "閉じる" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("textarea#msEditor")).toBeVisible();
+});
+
+test("［…］→ 書き出し：台帳の URL がそのサイトのものでなければ、リンクは出さない（知らせだけ）", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openWithWorks(page, "#/works", {
+    ...FAKE_WORKS,
+    "灯台守_確認用/設定/投稿状態.json": JSON.stringify({ schemaVersion: "1", sites: [{ site: "kakuyomu", newEpisodeUrl: "https://example.com/new" }], posts: [] }),
+  });
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  await page.locator("textarea#msEditor").fill("{灯台|とうだい}の{{手紙}}が届いた。\n");
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "書き出し" }).click();
+  await page.locator(".dialog-choices button", { hasText: /^カクヨム$/ }).click();
+  await expect(page.locator("#toast")).toHaveText("カクヨム向けにコピーしました（21字）");
+  await expect(page.locator("a.dialog-link")).toHaveCount(0);
+});
+
+// 本体の設計書 6.42（音読推敲）：カーソルのある文から端末の声で読む。本文・選択には触らない。声は偽物（`speechSynthesis` を差し替える）
+test("［…］→ 読み上げ：カーソルの文から1文ずつ読み、［止める］で止まる。本文は変わらない", async ({ page }) => {
+  await page.addInitScript(() => {
+    const spoken: string[] = [];
+    let current: { onend: (() => void) | null } | undefined;
+    const fake = {
+      getVoices: () => [{ lang: "ja-JP", name: "偽の声" }],
+      addEventListener: () => undefined,
+      speak(utterance: { text: string; onend: (() => void) | null }) {
+        spoken.push(utterance.text);
+        current = utterance;
+      },
+      cancel() {
+        current = undefined;
+      },
+    };
+    Object.defineProperty(window, "speechSynthesis", { value: fake, configurable: true });
+    (window as unknown as { SpeechSynthesisUtterance: unknown }).SpeechSynthesisUtterance = class {
+      text: string;
+      lang = "";
+      rate = 1;
+      voice: unknown;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(text: string) {
+        this.text = text;
+      }
+    };
+    (window as unknown as { __aloud: unknown }).__aloud = { spoken, finish: () => current?.onend?.() };
+  });
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("textarea#msEditor");
+  const body = "一つ目の文。二つ目の文。三つ目の文。";
+  await editor.fill(body);
+  // カーソルを二つ目の文の頭へ
+  await editor.evaluate((el: HTMLTextAreaElement, at) => el.setSelectionRange(at, at), body.indexOf("二つ目"));
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "読み上げ" }).click();
+  await expect(page.locator("#aloudBar")).toBeVisible();
+  // 帯は画面の中に出る（枠の下に足すと画面の外へ押し出された。2026-11-27 エミュレーター）
+  await expect(page.locator("#aloudBar")).toBeInViewport({ ratio: 1 });
+  await expect(page.locator("#aloudNow")).toHaveText("二つ目の文。");
+  await page.evaluate(() => (window as unknown as { __aloud: { finish: () => void } }).__aloud.finish());
+  await expect(page.locator("#aloudNow")).toHaveText("三つ目の文。");
+  await page.locator("#aloudStop").click();
+  await expect(page.locator("#aloudBar")).toBeHidden();
+  expect(await page.evaluate(() => (window as unknown as { __aloud: { spoken: string[] } }).__aloud.spoken)).toEqual(["二つ目の文。", "三つ目の文。"]);
+  await expect(editor).toHaveValue(body);
+  expect(await editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([body.indexOf("二つ目"), body.indexOf("二つ目")]);
+});
+
+test("［…］→ 読み上げ：日本語の声が無ければ読まずに訳を出す", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "speechSynthesis", {
+      value: { getVoices: () => [{ lang: "en-US", name: "英語の声" }], addEventListener: () => undefined, speak: () => undefined, cancel: () => undefined },
+      configurable: true,
+    });
+  });
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "読み上げ" }).click();
+  await expect(page.locator("#toast")).toContainText("日本語の読み上げの声が見つかりません", { timeout: 5000 });
+  await expect(page.locator("#aloudBar")).toBeHidden();
 });

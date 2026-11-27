@@ -4,11 +4,14 @@ import { lockScrollChain } from "./scrollChainLock";
 import { fitToVisible } from "./fitToVisible";
 import { exportCopy, exportTargets } from "./exportCopy";
 import { readWorkMemoMarkers } from "../platform/memoMarkers";
+import { readPostingSites } from "../platform/postingSites";
+import { aloudStartIndex, readingPlanFor, runAloud, type AloudRun } from "./readAloud";
+import { deviceSpeaker } from "../platform/speech";
 import { App } from "@capacitor/app";
 import type { FileStore } from "../platform/fileStore";
 import type { AutoSaveStatus } from "./autoSave";
 import { failureMessage } from "./autoSave";
-import { askChoice, askText, chooseFrom, tell } from "./dialog";
+import { askChoice, askText, chooseFrom, tell, tellWithLink } from "./dialog";
 import { openEpisode, type BackgroundSource, type EpisodeSession } from "./episodeSession";
 import { escapeHtml, renderAppBar } from "./menuScreen";
 import { TOOL_STRIP, applyRuby, insertText, rubyPlan, toggleEmphasis, wrapBrackets, type TextEdit, type ToolId } from "./manuscriptTools";
@@ -28,7 +31,7 @@ import { charFromPoint, readCharBoxes } from "./tapCaret";
 import { readProposals, withoutProposal, writeProposals } from "./typoProposals";
 import { mergeNoteRows, renderNoteBoard } from "./noteBoard";
 import { readPendingEditorProposals } from "../platform/editorProposals";
-import { applyFindingToText, DEFAULT_MEMO_MARKERS, parseMemos, type MemoMarkers, type ProposalView } from "../shared";
+import { applyFindingToText, DEFAULT_MEMO_MARKERS, parseMemos, postingSiteInfo, type MemoMarkers, type ProposalView } from "../shared";
 import { watchPinchSize } from "./pinchSize";
 import { mountRangeGestures } from "./rangeGestures";
 import { createTrialLog } from "./trialLogFile";
@@ -528,7 +531,7 @@ export function mountEpisodeScreen(
   // 原稿の欄は作り直さない（回転や分割画面で、書きかけ・カーソル・変換中の字を保つ。設計書 4.3・4.5）
   const sideOpen = readSideOpen();
   const boardOpen = readBoardOpen();
-  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}" data-board="${boardOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><aside class="ms-board" id="msBoard" aria-label="横の板"><div class="seg board-tabs" role="tablist"><button type="button" data-board-tab="proposals" aria-pressed="true">校正・メモ</button><button type="button" data-board-tab="term" aria-pressed="false">資料</button></div><div id="msBoardBody"></div><div id="msBoardTerm" hidden></div></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}</div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><a class="term-sheet-open" id="termSheetOpen" hidden>資料を開く</a><ol class="term-hits" id="termSheetHits"></ol></div>`;
+  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}" data-board="${boardOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><aside class="ms-board" id="msBoard" aria-label="横の板"><div class="seg board-tabs" role="tablist"><button type="button" data-board-tab="proposals" aria-pressed="true">校正・メモ</button><button type="button" data-board-tab="term" aria-pressed="false">資料</button></div><div id="msBoardBody"></div><div id="msBoardTerm" hidden></div></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}<div class="aloud-bar" id="aloudBar" role="status" hidden><p class="aloud-now" id="aloudNow"></p><button type="button" class="primary" id="aloudStop">止める</button></div></div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><a class="term-sheet-open" id="termSheetOpen" hidden>資料を開く</a><ol class="term-hits" id="termSheetHits"></ol></div>`;
   // 上のバーの右に押し口を入れる。［一覧］は中・広い段だけ（CSS で出す）
   const sideToggle = document.createElement("button");
   sideToggle.className = "appbar-action ms-side-toggle";
@@ -584,6 +587,7 @@ export function mountEpisodeScreen(
         ...(newEpisode ? [{ id: "newEpisode", label: "新しい話" }] : []),
         ...(newChapter ? [{ id: "newChapter", label: "章を立てる" }] : []),
         { id: "export", label: "書き出し" },
+        { id: "aloud", label: "読み上げ" },
         ...(runAi
           ? [
               { id: "typo", label: "誤字脱字" },
@@ -595,6 +599,7 @@ export function mountEpisodeScreen(
         if (picked === "newEpisode") newEpisode?.();
         if (picked === "newChapter") newChapter?.();
         if (picked === "export") void exportForPosting();
+        if (picked === "aloud") void startAloud();
         if (picked === "typo" || picked === "proofread" || picked === "synopsis") runAi?.(picked);
       });
     });
@@ -989,11 +994,64 @@ export function mountEpisodeScreen(
    * 出ない。写しは端末の写し（`navigator.clipboard`）。読めない・書けない端末（許しが無いなど）は知らせて止める。
    * 貼り付けは選んだ範囲と置き換え、道具帯と同じく1手として取り消せる
    */
-  /** ［…］→ 書き出し：貼り付け先を選んで、その書き方に直した本文を写しへ（`exportCopy.ts`） */
+  /**
+   * ［…］→ 読み上げ（本体の設計書 6.42 音読推敲。`readAloud.ts`）：カーソルのある文から、端末の声で1文ずつ読む。
+   * 読んでいるあいだは下の帯に今の文と［止める］。本文・選択・カーソルには触らない（本体と同じ。読み上げ中に打った字が
+   * 選んだ範囲を置き換えて原稿を壊さないように）。画面を離れたら止める
+   */
+  let aloud: AloudRun | undefined;
+  const aloudBar = screen.querySelector<HTMLElement>("#aloudBar")!;
+  const aloudNow = screen.querySelector<HTMLElement>("#aloudNow")!;
+  const stopAloud = () => {
+    aloud?.stop();
+    aloud = undefined;
+    aloudBar.hidden = true;
+  };
+  screen.querySelector<HTMLButtonElement>("#aloudStop")!.addEventListener("click", stopAloud);
+  const startAloud = async (): Promise<void> => {
+    const target = pane;
+    if (!target) return;
+    const wasReading = aloud !== undefined;
+    stopAloud();
+    // 止めた直後の読みは捨てられることがある（本体と同じく 60ms 空ける）
+    if (wasReading) await new Promise((resolve) => setTimeout(resolve, 60));
+    const speaker = deviceSpeaker();
+    const reason = await speaker.unavailable();
+    if (destroyed || pane !== target) return;
+    if (reason) return options.toast(reason);
+    let markers;
+    try {
+      markers = options.workRoot ? await readWorkMemoMarkers(store, options.workRoot) : undefined;
+    } catch {
+      markers = undefined;
+    }
+    if (destroyed || pane !== target) return;
+    const plan = readingPlanFor(target.value(), path, markers);
+    if (plan.sentences.length === 0) return options.toast("読む文がありません");
+    const run = runAloud(speaker, plan, aloudStartIndex(plan, target.selection().start), {
+      rate: 1,
+      onSentence: (_, sentence) => {
+        aloudNow.textContent = sentence.speech;
+      },
+    });
+    aloud = run;
+    aloudBar.hidden = false;
+    const end = await run.finished;
+    if (aloud !== run) return;
+    aloud = undefined;
+    aloudBar.hidden = true;
+    if (end === "done" && !destroyed) options.toast("読み終えました");
+  };
+  /**
+   * ［…］→ 書き出し：貼り付け先を選んで、その書き方に直した本文を写しへ（`exportCopy.ts`）。投稿の台帳に登録した投稿先を
+   * 先に並べ、写したあとそのサイトの投稿ページが分かれば［◯◯の投稿ページを開く］を添える（本体の設計書 6.68.6。台帳は読むだけ）
+   */
   const exportForPosting = async (): Promise<void> => {
     const target = pane;
     if (!target) return;
-    const targets = exportTargets();
+    const posting = options.workRoot ? await readPostingSites(store, options.workRoot) : undefined;
+    if (pane !== target) return;
+    const targets = exportTargets(posting?.registered);
     const picked = await chooseFrom(targets.map((t, i) => ({ id: String(i), label: t.label })));
     if (picked === undefined || pane !== target) return;
     let markers;
@@ -1003,13 +1061,17 @@ export function mountEpisodeScreen(
       // 作品のメモの印が壊れていたら、付箋の行が本文に混ざらないよう写さない（本体と同じく止める）
       return options.toast("作品の設定（メモの印）が読めないので、写せません");
     }
-    const result = exportCopy(target.value(), target.selection(), targets[Number(picked)]!, markers);
+    const chosen = targets[Number(picked)]!;
+    const result = exportCopy(target.value(), target.selection(), chosen, markers);
     try {
       await navigator.clipboard.writeText(result.text);
-      options.toast(result.message);
     } catch {
-      options.toast("コピーできませんでした");
+      return options.toast("コピーできませんでした");
     }
+    const pageUrl = posting?.pageUrl(chosen.site);
+    // 開ける投稿ページが無いときは、これまでどおり知らせだけ（本体も釦を出さないだけで、文言は変えない）
+    if (!pageUrl || !chosen.site) return options.toast(result.message);
+    void tellWithLink(result.message, { label: `${postingSiteInfo(chosen.site).label}の投稿ページを開く`, url: pageUrl });
   };
   const copyOrPaste = async (id: "copy" | "paste", target: WritingPane): Promise<void> => {
     const text = target.value();
@@ -1194,6 +1256,7 @@ export function mountEpisodeScreen(
     },
     destroy() {
       destroyed = true;
+      stopAloud();
       stopPinch();
       stopLandscapeKeyboard();
       stopBlankTap();

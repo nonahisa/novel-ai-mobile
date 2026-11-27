@@ -943,7 +943,8 @@ function updateDeps(toast: (text: string) => void): UpdateDeps {
 async function syncStateOf(store: FileStore, root: string): Promise<WorkSyncState | undefined> {
   if (!(store instanceof CapacitorFileStore)) return undefined;
   try {
-    return await readWorkSync(createGitFs(new CapacitorGitFsBackend()), root);
+    // 1回の読み取りのあいだだけ見たものを覚える置き場（読み終えたら捨てる。`createGitFs` の `snapshot`）
+    return await readWorkSync(createGitFs(new CapacitorGitFsBackend(), { snapshot: true }), root);
   } catch {
     return undefined;
   }

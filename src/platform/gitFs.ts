@@ -33,6 +33,11 @@ export interface GitFsBackend {
   rmdir(path: string): Promise<void>;
   /** 無ければ undefined */
   stat(path: string): Promise<GitFsStat | undefined>;
+  /**
+   * フォルダーの中の名前と、それぞれの種類・大きさ・時刻（1回の問い合わせで）。決まりは `readdir` と同じ。
+   * 端末の置き場は一覧のときに同じ欄を返すので、作業の木を見比べるときのファイルごとの問い合わせを省ける（`createGitFs` の `snapshot`）
+   */
+  readdirStats?(path: string): Promise<{ name: string; stat: GitFsStat }[]>;
 }
 
 /** Node の失敗と同じ形（`code` を持つ） */
@@ -67,11 +72,41 @@ const wantsText = (options: ReadOptions): boolean =>
   (typeof options === "string" ? options : options?.encoding) === "utf8";
 
 /** isomorphic-git に渡す `fs`（`{ promises }` の形） */
-export function createGitFs(backend: GitFsBackend) {
-  const statOrThrow = async (path: string) => {
+export function createGitFs(
+  backend: GitFsBackend,
+  options: {
+    /**
+     * **1回の読み取りのあいだだけ**、見た種類・大きさ・時刻を覚えて問い合わせを省く（2026-11-27 作者「動作の高速化」）。
+     * 作品一覧の「送っていない話の数」（`readWorkSync`）だけが使う。呼ぶたびに新しく作り、読み終えたら捨てる。
+     * - フォルダーの一覧で返った種類・大きさ・時刻を、そのファイルの stat の答えにする（端末の置き場は同じ欄を返す）
+     * - 索引（`.git/index`）の stat は1回だけ問い合わせる（isomorphic-git はファイル1件ごとに索引を見に来る）
+     * - この置き場から書いた・消した・作った場所は忘れて、問い合わせ直す
+     */
+    snapshot?: boolean;
+  } = {}
+) {
+  const seen = new Map<string, GitFsStat>();
+  const forget = (path: string) => seen.delete(normalizeGitPath(path));
+  const statOf = async (path: string): Promise<GitFsStat | undefined> => {
+    if (!options.snapshot) return backend.stat(path);
+    const key = normalizeGitPath(path);
+    const known = seen.get(key);
+    if (known) return known;
     const stat = await backend.stat(path);
+    if (stat && key.endsWith("/.git/index")) seen.set(key, stat);
+    return stat;
+  };
+  const statOrThrow = async (path: string) => {
+    const stat = await statOf(path);
     if (!stat) throw fsError("ENOENT", path);
     return toNodeStat(stat);
+  };
+  const readdir = async (path: string): Promise<string[]> => {
+    if (!options.snapshot || !backend.readdirStats) return backend.readdir(path);
+    const entries = await backend.readdirStats(path);
+    const dir = normalizeGitPath(path);
+    for (const entry of entries) seen.set(dir === "/" ? `/${entry.name}` : `${dir}/${entry.name}`, entry.stat);
+    return entries.map((entry) => entry.name);
   };
   return {
     promises: {
@@ -80,12 +115,13 @@ export function createGitFs(backend: GitFsBackend) {
         return wantsText(options) ? utf8Decoder.decode(bytes) : bytes;
       },
       async writeFile(path: string, data: Uint8Array | string): Promise<void> {
+        forget(path);
         await backend.writeFile(path, typeof data === "string" ? utf8.encode(data) : data);
       },
-      unlink: (path: string) => backend.unlink(path),
-      readdir: (path: string) => backend.readdir(path),
-      mkdir: (path: string) => backend.mkdir(path),
-      rmdir: (path: string) => backend.rmdir(path),
+      unlink: (path: string) => (forget(path), backend.unlink(path)),
+      readdir,
+      mkdir: (path: string) => (forget(path), backend.mkdir(path)),
+      rmdir: (path: string) => (forget(path), backend.rmdir(path)),
       stat: statOrThrow,
       lstat: statOrThrow,
       /*
@@ -171,6 +207,18 @@ export class CapacitorGitFsBackend implements GitFsBackend {
     return result.files.map((file) => file.name);
   }
 
+  async readdirStats(path: string): Promise<{ name: string; stat: GitFsStat }[]> {
+    const stat = await this.stat(path);
+    if (!stat) throw fsError("ENOENT", path);
+    if (stat.type !== "dir") throw fsError("ENOTDIR", path);
+    const result = await Filesystem.readdir({ path: this.full(path), directory: this.directory });
+    // 一覧の欄は stat と同じもの（種類・大きさ・時刻）
+    return result.files.map((file) => ({
+      name: file.name,
+      stat: { type: file.type === "directory" ? "dir" : "file", size: file.size, mtimeMs: file.mtime },
+    }));
+  }
+
   async mkdir(path: string): Promise<void> {
     if (await this.stat(path)) throw fsError("EEXIST", path);
     if (!(await this.stat(parentOf(path)))) throw fsError("ENOENT", path);
@@ -249,6 +297,12 @@ export class MemoryGitFsBackend implements GitFsBackend {
       if (entry !== key && entry.startsWith(prefix)) names.add(entry.slice(prefix.length).split("/")[0]);
     }
     return [...names];
+  }
+
+  async readdirStats(path: string): Promise<{ name: string; stat: GitFsStat }[]> {
+    const names = await this.readdir(path);
+    const key = normalizeGitPath(path);
+    return Promise.all(names.map(async (name) => ({ name, stat: (await this.stat(key === "/" ? `/${name}` : `${key}/${name}`))! })));
   }
 
   async mkdir(path: string): Promise<void> {

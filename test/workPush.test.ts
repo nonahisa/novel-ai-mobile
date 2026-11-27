@@ -3,6 +3,7 @@ import git from "isomorphic-git";
 import { describe, expect, test } from "vitest";
 import { MemoryGitFsBackend, createGitFs } from "../src/platform/gitFs";
 import { collectChanges, pushWork, type WorkPushInput } from "../src/platform/workPush";
+import { steadyGitFsOptions } from "./support/steadyGitFs";
 import { FakeGitHub, author, text } from "./support/fakeGitHub";
 
 /**
@@ -16,7 +17,7 @@ async function setup(msPerWrite = 1_000) {
   const gh = new FakeGitHub();
   const remote = await gh.init(start);
   const backend = new MemoryGitFsBackend(msPerWrite);
-  const fs = createGitFs(backend);
+  const fs = createGitFs(backend, steadyGitFsOptions());
   const dir = "/works/作品";
   await fs.promises.mkdir("/works");
   await fs.promises.mkdir(dir);

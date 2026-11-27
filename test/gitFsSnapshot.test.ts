@@ -83,3 +83,82 @@ describe("1回の読み取りのあいだだけ覚える置き場", () => {
     expect((await fs.promises.stat(`${dir}/本文/第1話.txt`)).size).toBe(utf8("外で長く書き換えた本文\n").length);
   });
 });
+
+describe("isomorphic-git の確かめの読み込み", () => {
+  test("場所の無い読み込み（Promise で答えるかの確かめ）は、置き場まで届けずに断る。git の操作は今までどおり", async () => {
+    const inner = new MemoryGitFsBackend();
+    const asked: string[] = [];
+    const backend = new Proxy(inner, {
+      get(target, name, receiver) {
+        const value = Reflect.get(target, name, receiver);
+        if (name !== "readFile") return typeof value === "function" ? value.bind(target) : value;
+        return (path: string) => {
+          asked.push(String(path));
+          return target.readFile(path);
+        };
+      },
+    });
+    const fs = createGitFs(backend);
+    const probe = (fs.promises.readFile as (path?: string) => Promise<unknown>)();
+    expect(probe).toBeInstanceOf(Promise);
+    await expect(probe).rejects.toMatchObject({ code: "ENOENT" });
+    expect(asked).toEqual([]);
+    await fs.promises.mkdir("/r");
+    await git.init({ fs, dir: "/r", defaultBranch: "main" });
+    expect(await git.resolveRef({ fs, dir: "/r", ref: "HEAD" }).catch((error: { code?: string }) => error.code)).toBe("NotFoundError");
+    expect(asked.filter((path) => path === "" || path === "undefined")).toEqual([]);
+  });
+});
+
+describe("1回の操作のあいだ .git を覚える置き場（steadyGitDir）", () => {
+  const counting = () => {
+    const inner = new MemoryGitFsBackend();
+    const asked: string[] = [];
+    const backend = new Proxy(inner, {
+      get(target, name, receiver) {
+        const value = Reflect.get(target, name, receiver);
+        if (name !== "stat") return typeof value === "function" ? value.bind(target) : value;
+        return (path: string) => {
+          asked.push(path);
+          return target.stat(path);
+        };
+      },
+    });
+    return { inner, backend, asked };
+  };
+
+  test(".git がフォルダーなら2回目からは問い合わせない。原稿と索引は毎回見る", async () => {
+    const { backend, asked } = counting();
+    const fs = createGitFs(backend, { steadyGitDir: true });
+    await fs.promises.mkdir("/r");
+    await git.init({ fs, dir: "/r", defaultBranch: "main" });
+    await fs.promises.writeFile("/r/a.txt", utf8("一\n"));
+    await git.add({ fs, dir: "/r", filepath: "a.txt" });
+    // 1回の操作ごとに新しく作る置き場で見る
+    const fresh = createGitFs(backend, { steadyGitDir: true });
+    asked.length = 0;
+    for (let i = 0; i < 3; i++) {
+      await fresh.promises.stat("/r/.git");
+      await fresh.promises.stat("/r/.git/index");
+      await fresh.promises.stat("/r/a.txt");
+    }
+    expect(asked.filter((path) => path === "/r/.git")).toHaveLength(1);
+    expect(asked.filter((path) => path === "/r/.git/index")).toHaveLength(3);
+    expect(asked.filter((path) => path === "/r/a.txt")).toHaveLength(3);
+  });
+
+  test(".git がファイル（ほかの所を指す書き方）なら覚えない。この置き場から書いたら見直す", async () => {
+    const { backend, asked } = counting();
+    const fs = createGitFs(backend, { steadyGitDir: true });
+    await fs.promises.mkdir("/w");
+    await fs.promises.writeFile("/w/.git", utf8("gitdir: /elsewhere\n"));
+    await fs.promises.stat("/w/.git");
+    await fs.promises.stat("/w/.git");
+    expect(asked.filter((path) => path === "/w/.git")).toHaveLength(2);
+    await fs.promises.unlink("/w/.git");
+    await fs.promises.mkdir("/w/.git");
+    expect((await fs.promises.stat("/w/.git")).isDirectory()).toBe(true);
+    await fs.promises.rmdir("/w/.git");
+    await expect(fs.promises.stat("/w/.git")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});

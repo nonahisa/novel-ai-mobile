@@ -41,6 +41,13 @@
         </provider>
     </application>
 
+    <!-- 端末の読み上げの部品（TextToSpeech）を見つける（Android 11 から、見たい外の部品は名指しが要る。ReadAloudPlugin） -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />

@@ -2368,3 +2368,36 @@ a.gh-open {
 .relation-row { padding: 10px 0; border-bottom: 1px solid var(--line, #ddd); }
 .relation-row .materials-name { display: block; font-weight: bold; }
 .relation-words { margin: 4px 0 0; }
+
+/* ［…］→ 読み上げの帯（`episodeScreen.ts`）。原稿の下に今の文と［止める］ */
+.aloud-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.aloud-bar[hidden] {
+  display: none;
+}
+.aloud-now {
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aloud-bar button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--surface);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}

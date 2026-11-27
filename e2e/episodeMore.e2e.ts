@@ -252,6 +252,8 @@ test("［…］→ 読み上げ：日本語の声が無ければ読まずに訳�
   await openWithWorks(page, "#/works", FAKE_WORKS);
   await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
   await page.locator(".ep-list .ep").first().click();
+  // 原稿の欄ができる前に押すと、読み上げは何もしない（重い CI で先に押して揺れた。2026-11-28）
+  await expect(page.locator("textarea#msEditor")).toBeVisible();
   await page.locator("#episodeMore").click();
   await page.locator(".dialog-choices button", { hasText: "読み上げ" }).click();
   await expect(page.locator("#toast")).toContainText("日本語の読み上げの声が見つかりません", { timeout: 5000 });

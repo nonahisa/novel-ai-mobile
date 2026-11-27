@@ -1011,7 +1011,10 @@ export function mountEpisodeScreen(
   const startAloud = async (): Promise<void> => {
     const target = pane;
     if (!target) return;
+    const wasReading = aloud !== undefined;
     stopAloud();
+    // 止めた直後の読みは捨てられることがある（本体と同じく 60ms 空ける）
+    if (wasReading) await new Promise((resolve) => setTimeout(resolve, 60));
     const speaker = deviceSpeaker();
     const reason = await speaker.unavailable();
     if (destroyed || pane !== target) return;

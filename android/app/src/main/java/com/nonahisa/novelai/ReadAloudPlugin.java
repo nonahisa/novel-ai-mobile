@@ -1,6 +1,8 @@
 package com.nonahisa.novelai;
 
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import com.getcapacitor.JSObject;
@@ -32,46 +34,64 @@ public class ReadAloudPlugin extends Plugin {
     private PluginCall currentCall;
 
     private void whenReady(Runnable then) {
-        if (ready != null) {
-            then.run();
-            return;
-        }
-        waiting.add(then);
-        if (tts != null) return;
-        tts = new TextToSpeech(getContext(), status -> {
-            boolean ok = false;
-            if (status == TextToSpeech.SUCCESS) {
-                int result = tts.setLanguage(Locale.JAPAN);
-                ok = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED;
+        synchronized (this) {
+            if (ready == null) {
+                waiting.add(then);
+                if (tts == null) {
+                    // 初期化の知らせは、組み立ての途中（tts に入る前）に届くことがある（読み上げの部品が1つも無い端末）。
+                    // 組み立てが終わってから扱うよう、メインの順番待ちへ回す
+                    Handler main = new Handler(Looper.getMainLooper());
+                    tts = new TextToSpeech(getContext(), status -> main.post(() -> initialized(status)));
+                }
+                return;
             }
+        }
+        then.run();
+    }
+
+    private void initialized(int status) {
+        boolean ok = false;
+        TextToSpeech engine;
+        synchronized (this) {
+            engine = tts;
+        }
+        if (status == TextToSpeech.SUCCESS && engine != null) {
+            int result = engine.setLanguage(Locale.JAPAN);
+            ok = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED;
+            // 聞き手は使えるときだけ付ける（失敗のときは engine が使えない）
+            if (ok) {
+                engine.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                    @Override
+                    public void onStart(String utteranceId) {}
+
+                    @Override
+                    public void onDone(String utteranceId) {
+                        finish(utteranceId, "done");
+                    }
+
+                    @Override
+                    public void onError(String utteranceId) {
+                        finish(utteranceId, "stopped");
+                    }
+
+                    @Override
+                    public void onStop(String utteranceId, boolean interrupted) {
+                        finish(utteranceId, "stopped");
+                    }
+                });
+            }
+        }
+        List<Runnable> run;
+        synchronized (this) {
             ready = ok;
-            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override
-                public void onStart(String utteranceId) {}
-
-                @Override
-                public void onDone(String utteranceId) {
-                    finish(utteranceId, "done");
-                }
-
-                @Override
-                public void onError(String utteranceId) {
-                    finish(utteranceId, "stopped");
-                }
-
-                @Override
-                public void onStop(String utteranceId, boolean interrupted) {
-                    finish(utteranceId, "stopped");
-                }
-            });
-            List<Runnable> run = new ArrayList<>(waiting);
+            run = new ArrayList<>(waiting);
             waiting.clear();
-            for (Runnable r : run) r.run();
-        });
+        }
+        for (Runnable r : run) r.run();
     }
 
     private synchronized void finish(String utteranceId, String end) {
-        if (currentCall == null || !utteranceId.equals(currentId)) return;
+        if (currentCall == null || utteranceId == null || !utteranceId.equals(currentId)) return;
         PluginCall call = currentCall;
         currentCall = null;
         currentId = null;
@@ -104,9 +124,19 @@ public class ReadAloudPlugin extends Plugin {
                 currentId = UUID.randomUUID().toString();
                 currentCall = call;
             }
-            tts.setSpeechRate(rate);
-            int queued = tts.speak(text, TextToSpeech.QUEUE_FLUSH, new Bundle(), currentId);
-            if (queued != TextToSpeech.SUCCESS) finish(currentId, "stopped");
+            TextToSpeech engine;
+            String id;
+            synchronized (this) {
+                engine = tts;
+                id = currentId;
+            }
+            if (engine == null) {
+                finish(id, "stopped");
+                return;
+            }
+            engine.setSpeechRate(rate);
+            int queued = engine.speak(text, TextToSpeech.QUEUE_FLUSH, new Bundle(), id);
+            if (queued != TextToSpeech.SUCCESS) finish(id, "stopped");
         });
     }
 
@@ -121,10 +151,15 @@ public class ReadAloudPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
-        if (tts != null) {
-            tts.stop();
-            tts.shutdown();
+        TextToSpeech engine;
+        synchronized (this) {
+            engine = tts;
             tts = null;
+            ready = null;
+        }
+        if (engine != null) {
+            engine.stop();
+            engine.shutdown();
         }
     }
 }

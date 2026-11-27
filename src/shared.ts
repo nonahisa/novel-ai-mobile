@@ -10,13 +10,17 @@
  * 共有の部品をこちらで直さない。
  */
 export {
+  isPosted,
   parsePostingLedger,
+  postingEpisodeKey,
+  withPost,
   type PostingLedger,
 } from "novel-ai-assistant/src/models/posting";
 export {
   postingNotationTextHash,
   postingTextHash,
   postingBodyHash,
+  postingTitleHash,
 } from "novel-ai-assistant/src/core/postingBodyHash";
 /*
   AI への通信。本体の `fetchJson` をそのまま使う。中で読む `./fetchTimeouts` は、
@@ -102,7 +106,7 @@ export { POSTING_FILE, POSTING_SCHEMA_VERSION } from "novel-ai-assistant/src/mod
 export { TIMELINE_SCHEMA_VERSION } from "novel-ai-assistant/src/models/timeline";
 export { findLatestEpisode } from "novel-ai-assistant/src/core/latestEpisode";
 export { parseEpisodeMetadata } from "novel-ai-assistant/src/core/metadataParser";
-export { parseCollectedFile } from "novel-ai-assistant/src/core/collectedFile";
+export { collectedEpisodeStarts, parseCollectedFile } from "novel-ai-assistant/src/core/collectedFile";
 export { isWorkInfoFile } from "novel-ai-assistant/src/core/workInfoFile";
 export { inferChapterHint, toChapterHintNote } from "novel-ai-assistant/src/core/episodeChapterHint";
 export { containsConflictMarkers } from "novel-ai-assistant/src/core/mergeGuard";
@@ -238,7 +242,7 @@ export { describeWrittenAmount } from "novel-ai-assistant/src/core/writingAmount
 // ［…］→ 書き出し（2026-11-19 夜 作者の決定「投稿サイト向けの本文を写す」）：本体の「コピー（投稿サイト用）」と同じ変換
 export { convertForPosting, noteCopyMessage } from "novel-ai-assistant/src/core/postingConvert";
 export { postingCopyTargets, type PostingCopyTarget } from "novel-ai-assistant/src/core/postingCopyTargets";
-export { postingCopySource } from "novel-ai-assistant/src/core/episodeCopy";
+export { extractEpisodeParts, postingCopySource } from "novel-ai-assistant/src/core/episodeCopy";
 export { postingPageUrl } from "novel-ai-assistant/src/core/postingSiteUrls";
 export { buildReadingPlan, readingRangesOf, type ReadingSentence } from "novel-ai-assistant/src/core/readAloud";
 export { notationModeFor } from "novel-ai-assistant/src/core/manuscriptRender";

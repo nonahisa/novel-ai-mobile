@@ -4,6 +4,7 @@ import { lockScrollChain } from "./scrollChainLock";
 import { fitToVisible } from "./fitToVisible";
 import { exportCopy, exportTargets } from "./exportCopy";
 import { readWorkMemoMarkers } from "../platform/memoMarkers";
+import { markPosted, readPostingMark } from "../platform/postingMark";
 import { readPostingSites } from "../platform/postingSites";
 import { aloudStartIndex, readingPlanFor, runAloud, type AloudRun } from "./readAloud";
 import { deviceSpeaker } from "../platform/speech";
@@ -31,7 +32,7 @@ import { charFromPoint, readCharBoxes } from "./tapCaret";
 import { readProposals, withoutProposal, writeProposals } from "./typoProposals";
 import { mergeNoteRows, renderNoteBoard } from "./noteBoard";
 import { readPendingEditorProposals } from "../platform/editorProposals";
-import { applyFindingToText, DEFAULT_MEMO_MARKERS, parseMemos, postingSiteInfo, type MemoMarkers, type ProposalView } from "../shared";
+import { applyFindingToText, DEFAULT_MEMO_MARKERS, parseMemos, postingSiteInfo, type MemoMarkers, type PostingSiteId, type ProposalView } from "../shared";
 import { watchPinchSize } from "./pinchSize";
 import { mountRangeGestures } from "./rangeGestures";
 import { createTrialLog } from "./trialLogFile";
@@ -587,6 +588,7 @@ export function mountEpisodeScreen(
         ...(newEpisode ? [{ id: "newEpisode", label: "新しい話" }] : []),
         ...(newChapter ? [{ id: "newChapter", label: "章を立てる" }] : []),
         { id: "export", label: "書き出し" },
+        { id: "posted", label: "投稿しました" },
         { id: "aloud", label: "読み上げ" },
         ...(runAi
           ? [
@@ -599,6 +601,7 @@ export function mountEpisodeScreen(
         if (picked === "newEpisode") newEpisode?.();
         if (picked === "newChapter") newChapter?.();
         if (picked === "export") void exportForPosting();
+        if (picked === "posted") void markPostedFlow();
         if (picked === "aloud") void startAloud();
         if (picked === "typo" || picked === "proofread" || picked === "synopsis") runAi?.(picked);
       });
@@ -1072,6 +1075,37 @@ export function mountEpisodeScreen(
     // 開ける投稿ページが無いときは、これまでどおり知らせだけ（本体も釦を出さないだけで、文言は変えない）
     if (!pageUrl || !chosen.site) return options.toast(result.message);
     void tellWithLink(result.message, { label: `${postingSiteInfo(chosen.site).label}の投稿ページを開く`, url: pageUrl });
+  };
+  /**
+   * ［…］→［投稿しました］：投稿の台帳へ「投稿しました」の印を付ける（2026-11-28 作者の答え「付ける（ぶつかったら両方の印を残す）」。
+   * `platform/postingMark.ts`）。先に保存を済ませ（印は置き場の本文から取る）、登録した投稿先のうち、まだ出した印の無いサイトを選ぶ。
+   * 付けた印を消す・出し直しの記録はパソコンの投稿キットで（同じ話を2本出す道を作らない）
+   */
+  const markPostedFlow = async (): Promise<void> => {
+    if (!options.workRoot) return options.toast("作品の中の話でないので、投稿の印は付けられません");
+    const root = options.workRoot;
+    if (session) {
+      const status = await session.flush();
+      if (status !== "保存済み") return options.toast("保存できていないので、投稿の印は付けません");
+    }
+    const read = await readPostingMark(store, root, path);
+    if (destroyed) return;
+    if (read.kind === "none") return options.toast("この作品には投稿先が登録されていません（パソコンの投稿キットで登録します）");
+    if (read.kind === "blocked") return options.toast(read.message);
+    const unposted = read.sites.filter((entry) => !entry.posted);
+    if (unposted.length === 0) return options.toast("登録したサイトには、どれも出した印があります");
+    const picked = await chooseFrom(unposted.map((entry) => ({ id: entry.site, label: `${postingSiteInfo(entry.site).label}に投稿した` })));
+    if (picked === undefined || destroyed) return;
+    const site = picked as PostingSiteId;
+    const posted = read.sites.filter((entry) => entry.posted).map((entry) => postingSiteInfo(entry.site).label);
+    const sure = await askChoice(
+      `「${episodeScreenTitle(path)}」に、${postingSiteInfo(site).label}へ投稿した印を付けます。${posted.length > 0 ? `（出した印があるのは ${posted.join("・")}）` : ""}印を外すときはパソコンの投稿キットで直します。付けますか？`,
+      "付ける",
+      "やめる"
+    );
+    if (!sure || destroyed) return;
+    const result = await markPosted({ store, workRoot: root, episodePath: path, site, ...(options.beforeWrite ? { beforeWrite: options.beforeWrite } : {}) });
+    options.toast(result.message);
   };
   const copyOrPaste = async (id: "copy" | "paste", target: WritingPane): Promise<void> => {
     const text = target.value();

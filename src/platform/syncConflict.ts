@@ -5,6 +5,8 @@ import { decodeBytes, type TextFileContent } from "novel-ai-assistant/src/core/t
 import { FileExistsError, dirname, joinStorePath, normalizeStorePath, type FileStore } from "./fileStore";
 import type { createGitFs } from "./gitFs";
 import { gitHttp } from "./gitHttp";
+import { POSTING_FILE } from "../shared";
+import { mergePostingLedgerTexts } from "./postingMark";
 import { deleteTextFileWithRecovery, encodeForNewFile, writeTextFilePreservingFormat, type WriteTextFailureReason } from "./textFile";
 import { collectChanges } from "./workPush";
 
@@ -38,6 +40,10 @@ import { collectChanges } from "./workPush";
  * - ［両方残す］は本体と同じ：原稿はこちらの文のまま、あちらの文を同じフォルダーの
  *   `{元の名前}.conflict-{YYYY-MM-DD-HHmm}{拡張子}`（本体の `sideFileName`）へ、新しく作るだけで残す。
  *   元と同じ文字コード・改行で書く（`encodeForNewFile`）。設定資料の JSON には出さない（本体と同じ）
+ *
+ * - **投稿の台帳（`投稿状態.json`）は、こちらが「投稿しました」の印を足しただけなら、選ばずに合わせる**（2026-11-28 作者の答え
+ *   「ぶつかったら両方の印を残す」。`postingMark.ts` の `mergePostingLedgerTexts`）。あちらの台帳にこちらの印を足して作業の木へ
+ *   書き（書く直前に、こちらの中身が分けたときのままか確かめる）、［こちら］を選んだことにする。合わせられなければ、いつもどおり選ぶ
  *
  * 選んだ結果（［こちら］［両方残す］）は、端末の中だけの控え（`.git/novelai-conflict-choices.json`。
  * 送らない）に、あちらの版とこちらの中身の名前と一緒に残す。どちらかが変われば控えは効かなくなり、
@@ -261,8 +267,9 @@ export async function integrateIncoming(input: IncomingInput & StoreSide): Promi
     const status = await story.flush();
     if (status !== SAVED) return { kind: "open_unsaved", path: story.path, status };
   }
-  const plan = await planIncoming(input);
+  let plan = await planIncoming(input);
   if (plan.theirs === plan.base) return { kind: "up_to_date" };
+  if (await mergePostingLedgers(input, plan)) plan = await planIncoming(input);
   if (plan.undecided.length > 0) return { kind: "conflicts", plan };
 
   const taken: string[] = [];
@@ -297,6 +304,39 @@ export async function integrateIncoming(input: IncomingInput & StoreSide): Promi
   const open = new Set((input.openStories ?? []).map((story) => normalizeStorePath(story.path)));
   const reopen = taken.map((path) => joinStorePath(storeDir, path)).filter((path) => open.has(path));
   return { kind: "integrated", head: plan.theirs, fastForward: kept.length === 0, taken, kept, reopen };
+}
+
+/**
+ * 選んでいない競合のうち、投稿の台帳を合わせる（合わせられたものがあれば true）。合わせた台帳は［こちら］を選んだことにして控える
+ * （あちらの版とこちらの中身の名前つき。どちらかが変われば、また選び直し）
+ */
+async function mergePostingLedgers(input: IncomingInput & StoreSide, plan: IncomingPlan): Promise<boolean> {
+  const { fs, dir, store, storeDir } = input;
+  let merged = false;
+  for (const entry of plan.undecided) {
+    const name = entry.path.slice(entry.path.lastIndexOf("/") + 1);
+    if (name !== POSTING_FILE || entry.base === null || entry.ours === null || entry.theirs === null) continue;
+    const storePath = joinStorePath(storeDir, entry.path);
+    let ours: TextFileContent;
+    try {
+      ours = decodeBytes(await store.readFile(storePath));
+    } catch {
+      continue;
+    }
+    const blobText = async (oid: string) => decodeBytes((await git.readBlob({ fs, dir, oid })).blob).text;
+    const text = mergePostingLedgerTexts(await blobText(entry.base), ours.text, await blobText(entry.theirs));
+    if (text === undefined) continue;
+    // 分けたあとに書き換わっていたら書かない（その台帳は、いつもどおり選んでもらう）
+    if ((await worktreeOid(fs, dir, entry.path)) !== entry.ours) continue;
+    const written = await writeTextFilePreservingFormat(store, storePath, text, ours, ours.hash);
+    if (!written.ok) continue;
+    const record = (await readChoices(fs, dir)) ?? { theirs: plan.theirs, entries: {} };
+    const next: ChoiceRecord = record.theirs === plan.theirs ? record : { theirs: plan.theirs, entries: {} };
+    next.entries[entry.path] = { choice: "ours", ours: await worktreeOid(fs, dir, entry.path) };
+    await writeChoices(fs, dir, next);
+    merged = true;
+  }
+  return merged;
 }
 
 /** 競合した話の片側 */

@@ -30,6 +30,10 @@ type Content = string | Uint8Array;
 const utf8 = (s: string) => new TextEncoder().encode(s);
 const sjis = (s: string) => new Uint8Array(iconv.encode(s, "shift_jis"));
 const WORK = "works/作品_確認用";
+const LEDGER = "設定/投稿状態.json";
+function ledgerText(posts: unknown[], sites: unknown[] = [{ site: "kakuyomu", newEpisodeUrl: "https://kakuyomu.jp/my/works/1177354054/episodes/new" }, { site: "narou", newEpisodeUrl: "https://syosetu.com/usernovelmanage/ziwaiinput/ncode/123/" }]): string {
+  return `${JSON.stringify({ schemaVersion: "1", sites, posts, rankings: [] }, null, 2)}\n`;
+}
 const DIR = `/${WORK}`;
 
 const start: Record<string, Content> = {
@@ -38,6 +42,7 @@ const start: Record<string, Content> = {
   "本文/第2話.txt": "どこで生れたか\n",
   "本文/第3話.txt": sjis("とんと見当がつかぬ。\r\n"),
   "設定/characters.json": "{}\n",
+  [LEDGER]: ledgerText([{ episodePath: "本文/第1話.txt", site: "kakuyomu", postedAt: "2026-11-01T00:00:00.000Z" }]),
 };
 
 async function writeWork(fs: Fs, path: string, content: Content): Promise<void> {
@@ -561,5 +566,34 @@ describe("開いている話は、取り込む前に保存を済ませる（2026
     expect(result).toEqual({ kind: "open_unsaved", path: `${WORK}/本文/第3話.txt`, status: "保存待ち" });
     expect(await git.resolveRef({ fs, dir: DIR, ref: "HEAD" })).toBe(base);
     expect(textOf(await readWork(fs, "本文/第1話.txt"))).toBe("吾輩は猫である。\n名前はまだ無い。\n");
+  });
+});
+
+describe("投稿の台帳がぶつかったら、両方の印を残して合わせる（2026-11-28 作者の答え）", () => {
+  const p1 = { episodePath: "本文/第1話.txt", site: "kakuyomu", postedAt: "2026-11-01T00:00:00.000Z" };
+  const mine = { episodePath: "本文/第2話.txt", site: "kakuyomu", postedAt: "2026-11-28T00:00:00.000Z" };
+  const pc = { episodePath: "本文/第2話.txt", site: "narou", postedAt: "2026-11-27T00:00:00.000Z" };
+
+  test("こちらが印を足し、あちらも印を足したら、選ばずに取り込み、こちらの印を足した台帳が送っていない変更として残る", async () => {
+    const { fs, theirs, io } = await setup();
+    const remote = await theirs({ [LEDGER]: ledgerText([p1, pc]), "本文/第1話.txt": "吾輩は猫である。\n名前はもう有る。\n" });
+    await writeWork(fs, LEDGER, ledgerText([p1, mine]));
+    const result = await integrateIncoming(io);
+    expect(result).toMatchObject({ kind: "integrated", taken: ["本文/第1話.txt"], kept: [LEDGER] });
+    expect(await git.resolveRef({ fs, dir: DIR, ref: "HEAD" })).toBe(remote);
+    expect(JSON.parse(textOf(await readWork(fs, LEDGER))!).posts).toEqual([p1, pc, mine]);
+    // 送ると、合わせた台帳があちらへ届く
+    expect((await collectChanges(fs, DIR, [])).map((change) => change.path)).toEqual([LEDGER]);
+  });
+
+  test("こちらが印のほかも変えていたら合わせず、いつもどおり選ぶまで何も動かさない", async () => {
+    const { fs, theirs, io, base } = await setup();
+    await theirs({ [LEDGER]: ledgerText([p1, pc]) });
+    const ours = ledgerText([p1, mine], [{ site: "kakuyomu", newEpisodeUrl: "https://kakuyomu.jp/my/works/1177354054/episodes/new" }]);
+    await writeWork(fs, LEDGER, ours);
+    const result = await integrateIncoming(io);
+    expect(result).toMatchObject({ kind: "conflicts" });
+    expect(await git.resolveRef({ fs, dir: DIR, ref: "HEAD" })).toBe(base);
+    expect(textOf(await readWork(fs, LEDGER))).toBe(ours);
   });
 });

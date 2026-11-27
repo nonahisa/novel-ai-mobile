@@ -239,7 +239,7 @@ export async function listConflicts(
   fs: GitFs,
   root: string,
   base = ""
-): Promise<Array<{ path: string; decision?: "ours" | "both" | "theirs" }>> {
+): Promise<Array<{ path: string; decision?: "ours" | "both" | "theirs" | "merge" }>> {
   try {
     const dir = workRepo(root, base).dir;
     const plan = await planIncoming({ fs, dir, touched: await readTouched(fs, dir) });

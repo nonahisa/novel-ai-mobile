@@ -53,4 +53,15 @@ describe("競合を選ぶ画面", () => {
     expect(parseRoute("#/conflict/灯台守_確認用/..%2Fx.txt").kind).toBe("tab");
     expect(parseRoute("#/conflict/灯台守_確認用/.git%2Fconfig").kind).toBe("tab");
   });
+
+  test("投稿の台帳を合わせる行は「印を合わせる」と出し、押せない（選ぶ画面へ行かない）。競合の数にも入れない", () => {
+    const html = renderSyncScreen("灯台守_確認用", { unsent: [], otherCount: 0 }, "ready", [
+      { path: "本文/第1話 手紙.txt" },
+      { path: "設定/投稿状態.json", decision: "merge" },
+    ]);
+    expect(visibleText(html)).toContain("競合：1話");
+    expect(visibleText(html)).toContain("印を合わせる");
+    expect(html).not.toContain(`data-conflict="設定/投稿状態.json"`);
+    expect(html).toContain(`data-merged-ledger="設定/投稿状態.json"`);
+  });
 });

@@ -13,7 +13,7 @@ test("［…］→ 誤字脱字：書きかけを保存してから、この話�
   await editor.press("End");
   await page.keyboard.type("足した");
   await page.locator("#episodeMore").click();
-  await expect(page.locator(".dialog-choices .dialog-list button")).toHaveText(["新しい話", "章を立てる", "書き出し", "読み上げ", "誤字脱字", "推敲", "あらすじ"]);
+  await expect(page.locator(".dialog-choices .dialog-list button")).toHaveText(["新しい話", "章を立てる", "書き出し", "投稿しました", "読み上げ", "誤字脱字", "推敲", "あらすじ"]);
   await page.locator(".dialog-choices button", { hasText: "誤字脱字" }).click();
   await expect(page).toHaveURL(/#\/typo\//);
   await expect(page.locator(".estimate")).toContainText("第1話 手紙");
@@ -136,6 +136,59 @@ test("［…］→ 書き出し：台帳の URL がそのサイトのもので�
   await expect(page.locator("a.dialog-link")).toHaveCount(0);
 });
 
+// 2026-11-28 作者の答え「付ける（ぶつかったら両方の印を残す）」：投稿の台帳へ「投稿しました」の印。まだ出した印の無いサイトだけ選べる
+test("［…］→ 投稿しました：書きかけを保存してから、選んだサイトの印を台帳に足す。ほかの欄・前の印はそのまま", async ({ page }) => {
+  const LEDGER = "灯台守_確認用/設定/投稿状態.json";
+  const before = {
+    schemaVersion: "1",
+    sites: [
+      { site: "kakuyomu", newEpisodeUrl: "https://kakuyomu.jp/my/works/1177354054/episodes/new" },
+      { site: "narou", newEpisodeUrl: "https://syosetu.com/usernovelmanage/ziwaiinput/ncode/123/" },
+    ],
+    posts: [{ episodePath: "本文/第1話 手紙.txt", site: "narou", postedAt: "2026-11-01T00:00:00.000Z" }],
+    rankings: [],
+    futureField: "そのまま",
+  };
+  await openWithWorks(page, "#/works", { ...FAKE_WORKS, [LEDGER]: `${JSON.stringify(before, null, 2)}\n` });
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("textarea#msEditor");
+  await editor.click();
+  await editor.press("End");
+  await page.keyboard.type("足した");
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "投稿しました" }).click();
+  // なろうにはもう出した印があるので、選べるのはカクヨムだけ
+  await expect(page.locator(".dialog-choices .dialog-list button")).toHaveText(["カクヨムに投稿した"]);
+  await page.locator(".dialog-choices button", { hasText: "カクヨムに投稿した" }).click();
+  const sure = page.locator(".dialog[role=alertdialog]");
+  await expect(sure.locator(".dialog-message")).toContainText("カクヨムへ投稿した印を付けます");
+  await expect(sure.locator(".dialog-message")).toContainText("出した印があるのは 小説家になろう");
+  await sure.locator('[data-answer="yes"]').click();
+  await expect(page.locator("#toast")).toHaveText("投稿しましたの印を付けました");
+  expect(await readFakeFile(page, PATH)).toContain("足した");
+  const after = JSON.parse((await readFakeFile(page, LEDGER))!) as Record<string, unknown> & { posts: Array<Record<string, unknown>> };
+  expect({ ...after, posts: undefined }).toEqual({ ...before, posts: undefined });
+  expect(after.posts).toHaveLength(2);
+  expect(after.posts[0]).toEqual(before.posts[0]);
+  expect(after.posts[1]).toMatchObject({ episodePath: "本文/第1話 手紙.txt", site: "kakuyomu" });
+  expect(String(after.posts[1]!.bodyHash)).toMatch(/^v3:[0-9a-f]{64}$/);
+  // 2度目は、もう選べるサイトが無い
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "投稿しました" }).click();
+  await expect(page.locator("#toast")).toHaveText("登録したサイトには、どれも出した印があります");
+});
+
+test("［…］→ 投稿しました：投稿先を登録していない作品では、台帳を作らずに知らせる", async ({ page }) => {
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "投稿しました" }).click();
+  await expect(page.locator("#toast")).toHaveText("この作品には投稿先が登録されていません（パソコンの投稿キットで登録します）");
+  expect(await readFakeFile(page, "灯台守_確認用/設定/投稿状態.json")).toBeUndefined();
+});
+
 // 本体の設計書 6.42（音読推敲）：カーソルのある文から端末の声で読む。本文・選択には触らない。声は偽物（`speechSynthesis` を差し替える）
 test("［…］→ 読み上げ：カーソルの文から1文ずつ読み、［止める］で止まる。本文は変わらない", async ({ page }) => {
   await page.addInitScript(() => {
@@ -199,6 +252,8 @@ test("［…］→ 読み上げ：日本語の声が無ければ読まずに訳�
   await openWithWorks(page, "#/works", FAKE_WORKS);
   await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
   await page.locator(".ep-list .ep").first().click();
+  // 原稿の欄ができる前に押すと、読み上げは何もしない（重い CI で先に押して揺れた。2026-11-28）
+  await expect(page.locator("textarea#msEditor")).toBeVisible();
   await page.locator("#episodeMore").click();
   await page.locator(".dialog-choices button", { hasText: "読み上げ" }).click();
   await expect(page.locator("#toast")).toContainText("日本語の読み上げの声が見つかりません", { timeout: 5000 });

@@ -774,6 +774,23 @@ a.menu-item {
   color: var(--shu);
   font-weight: 700;
 }
+/* 知らせに添える外のページへのリンク（`dialog.ts` の tellWithLink）。釦と同じ形に見せる */
+.dialog-actions .dialog-link {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
 /* 字を1行打つ窓（`dialog.ts` の askText） */
 .dialog-input {
   inline-size: 100%;
@@ -2351,3 +2368,44 @@ a.gh-open {
 .relation-row { padding: 10px 0; border-bottom: 1px solid var(--line, #ddd); }
 .relation-row .materials-name { display: block; font-weight: bold; }
 .relation-words { margin: 4px 0 0; }
+
+/* ［…］→ 読み上げの帯（`episodeScreen.ts`）。原稿の下の端、道具帯のすぐ上に浮かせる（名前の札と同じ所。
+   枠の下に足すと、原稿の欄が枠いっぱいなので画面の外へ押し出される。2026-11-27 エミュレーター） */
+.aloud-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 60px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.aloud-bar[hidden] {
+  display: none;
+}
+.aloud-now {
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aloud-bar button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--surface);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}

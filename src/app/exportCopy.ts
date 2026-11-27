@@ -1,4 +1,4 @@
-import { convertForPosting, noteCopyMessage, postingCopySource, postingCopyTargets, type PostingCopyTarget } from "../shared";
+import { convertForPosting, noteCopyMessage, postingCopySource, postingCopyTargets, type PostingCopyTarget, type PostingSiteId } from "../shared";
 import type { MemoMarkers } from "../shared";
 
 /**
@@ -10,10 +10,12 @@ import type { MemoMarkers } from "../shared";
  *
  * - 範囲を選んでいればそこだけ。選んでいなければ話ぜんぶ（頭書きを外し、前後の空行を詰める。合本ならカーソルの話）
  * - 付箋の行（作品のメモの印）は落とす（本体と同じ。変換の中で落とす）
- * - 貼り付け先は本体と同じ一覧（サイトの名前で選ぶ。投稿の台帳はまだ読まないので、並びは既定のまま）
+ * - 貼り付け先は本体と同じ一覧（サイトの名前で選ぶ）。投稿の台帳に登録した投稿先を先に並べる（2026-11-27。本体と同じ。
+ *   台帳は読むだけ：`platform/postingSites.ts`）
+ * - 写したあと、そのサイトの投稿ページが分かれば［◯◯の投稿ページを開く］を添える（本体の設計書 6.68.6）
  */
-export function exportTargets(): PostingCopyTarget[] {
-  return postingCopyTargets([]);
+export function exportTargets(registered: readonly PostingSiteId[] = []): PostingCopyTarget[] {
+  return postingCopyTargets(registered);
 }
 
 export interface ExportResult {

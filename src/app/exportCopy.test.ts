@@ -9,6 +9,12 @@ describe("［…］→ 書き出し：投稿サイト向けの本文を写す（
     expect(exportTargets().map((t) => t.label)).toEqual(expect.arrayContaining(["小説家になろう", "カクヨム"]));
   });
 
+  it("投稿の台帳に登録した投稿先を先に並べる（本体と同じ）", () => {
+    const labels = exportTargets(["kakuyomu"]).map((t) => t.label);
+    expect(labels[0]).toBe("カクヨム");
+    expect(exportTargets()[0]!.label).not.toBe("カクヨム");
+  });
+
   it("カクヨム向け：ルビと傍点をカクヨムの書き方に、付箋の行を落とし、末の空行を詰める", () => {
     const result = exportCopy(body, { start: 0, end: 0 }, site("kakuyomu"));
     expect(result.text).toBe("｜灯台《とうだい》の《《手紙》》が届いた。");

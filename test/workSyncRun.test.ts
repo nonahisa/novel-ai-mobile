@@ -17,6 +17,7 @@ import {
 } from "../src/platform/workSyncRun";
 import { readWorkSync } from "../src/platform/workSync";
 import { noteTouched, readTouched } from "../src/platform/touchedPaths";
+import { steadyGitFsOptions } from "./support/steadyGitFs";
 import { FakeGitHub, author } from "./support/fakeGitHub";
 import { GitFsFileStore } from "./support/gitFsFileStore";
 
@@ -35,7 +36,7 @@ async function setup(remoteUrl: string | null = "https://github.com/sakka/toudai
   const gh = new FakeGitHub();
   const remote = await gh.init(start);
   const backend = new MemoryGitFsBackend(msPerWrite);
-  const fs = createGitFs(backend);
+  const fs = createGitFs(backend, steadyGitFsOptions());
   await fs.promises.mkdir(BASE);
   await fs.promises.mkdir(DIR);
   await git.init({ fs, dir: DIR, defaultBranch: "main" });

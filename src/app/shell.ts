@@ -847,7 +847,9 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       return repos;
     },
     token: async () => (store instanceof CapacitorFileStore ? secretVault().get(GITHUB_TOKEN_SECRET) : undefined),
-    fetchOne: (root, token) => fetchWork({ fs: createGitFs(new CapacitorGitFsBackend()), root, token, store, fastForwardOnly: true }).then(afterIntegrated(store, root)),
+    // 1回の取得ごとに置き場を作る（`.git` を覚えるのはその1回のあいだだけ。`createGitFs` の `steadyGitDir`）
+    fetchOne: (root, token) =>
+      fetchWork({ fs: createGitFs(new CapacitorGitFsBackend(), { steadyGitDir: true }), root, token, store, fastForwardOnly: true }).then(afterIntegrated(store, root)),
     canRun: () => {
       const kind = parseRoute(location.hash).kind;
       // 同期の画面（G）も外す（［取ってくる］［送る］と同じ作品の git を重ねて触らない）
@@ -1101,7 +1103,8 @@ function mountSyncScreen(screen: HTMLElement, store: FileStore, root: string, st
   const run = async (kind: "fetch" | "send"): Promise<string> => {
     const token = await secretVault().get(GITHUB_TOKEN_SECRET);
     if (!token) return outcomeText({ kind: "failed", reason: "sign_in_again" });
-    const fs = createGitFs(new CapacitorGitFsBackend());
+    // 1回の［取ってくる］［送る］ごとに置き場を作る（`.git` を覚えるのはその1回のあいだだけ。`createGitFs` の `steadyGitDir`）
+    const fs = createGitFs(new CapacitorGitFsBackend(), { steadyGitDir: true });
     if (kind === "fetch") return outcomeText(await fetchWork({ fs, root, token, store }).then(afterIntegrated(store, root)));
     let user = readGithubUser(globalThis.localStorage);
     if (!user) {

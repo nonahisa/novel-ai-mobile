@@ -83,17 +83,25 @@ export function createGitFs(
      * - この置き場から書いた・消した・作った場所は忘れて、問い合わせ直す
      */
     snapshot?: boolean;
+    /**
+     * **1回の操作（［送る］［取ってくる］）のあいだだけ**、`.git` がフォルダーであることを覚える（2026-11-27 作者
+     * 「動作の高速化」）。isomorphic-git は操作を呼ぶたびに `.git` を2回見に来る（60話の［送る］1回で121回）。
+     * 覚えるのはフォルダーだったときだけで、この置き場からその場所を消す・書く・作ると忘れる。原稿・設定・索引の stat は
+     * 毎回見る（運ぶ中身を決める所と、並んで走るほかの操作が書く索引には手を付けない）
+     */
+    steadyGitDir?: boolean;
   } = {}
 ) {
   const seen = new Map<string, GitFsStat>();
   const forget = (path: string) => seen.delete(normalizeGitPath(path));
   const statOf = async (path: string): Promise<GitFsStat | undefined> => {
-    if (!options.snapshot) return backend.stat(path);
+    if (!options.snapshot && !options.steadyGitDir) return backend.stat(path);
     const key = normalizeGitPath(path);
     const known = seen.get(key);
     if (known) return known;
     const stat = await backend.stat(path);
-    if (stat && key.endsWith("/.git/index")) seen.set(key, stat);
+    if (stat && options.snapshot && key.endsWith("/.git/index")) seen.set(key, stat);
+    if (stat?.type === "dir" && key.endsWith("/.git")) seen.set(key, stat);
     return stat;
   };
   const statOrThrow = async (path: string) => {
@@ -111,6 +119,10 @@ export function createGitFs(
   return {
     promises: {
       async readFile(path: string, options?: ReadOptions): Promise<Uint8Array | string> {
+        // isomorphic-git は操作を呼ぶたびに、場所を渡さずに読んで「Promise で答えるか」を確かめる（答えの中身は見ない）。
+        // 端末ではそれが毎回アプリの中の口まで往復していた（［送る］1回で240回）ので、置き場へ届けずに断る
+        // （2026-11-27 作者「動作の高速化」）。場所の無い読み込みは本物の読み込みになり得ない
+        if (typeof path !== "string" || path === "") throw fsError("ENOENT", String(path));
         const bytes = await backend.readFile(path);
         return wantsText(options) ? utf8Decoder.decode(bytes) : bytes;
       },

@@ -13,6 +13,7 @@ import {
 import { collectChanges, pushWork } from "../src/platform/workPush";
 import { createAutoSave } from "../src/app/autoSave";
 import { RECOVERY_DIRECTORY_NAME, readTextFile } from "../src/platform/textFile";
+import { steadyGitFsOptions } from "./support/steadyGitFs";
 import { FakeGitHub, author } from "./support/fakeGitHub";
 import { GitFsFileStore } from "./support/gitFsFileStore";
 
@@ -61,7 +62,7 @@ const textOf = (bytes: Uint8Array | undefined) => (bytes ? new TextDecoder().dec
 
 async function setup(msPerWrite = 1_000) {
   const backend = new MemoryGitFsBackend(msPerWrite);
-  const fs = createGitFs(backend);
+  const fs = createGitFs(backend, steadyGitFsOptions());
   const store = new GitFsFileStore(backend);
   await fs.promises.mkdir("/works");
   await fs.promises.mkdir(DIR);

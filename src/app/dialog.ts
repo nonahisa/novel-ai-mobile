@@ -132,6 +132,36 @@ export function tell(message: string, okLabel = "閉じる"): Promise<void> {
 }
 
 /**
+ * **知らせに、外のページへのリンクを1つ添える窓**（［…］→ 書き出しのあとの［◯◯の投稿ページを開く］。本体の設計書 6.68.6）。
+ * リンクは `<a>` のまま置く（押すと Capacitor が端末のブラウザへ渡す。ヘルプの Discord と同じ道）。押したときだけ開き、
+ * 勝手には開かない。リンクを押しても［閉じる］・背景を押しても窓を閉じる
+ */
+export function tellWithLink(message: string, link: { label: string; url: string }, closeLabel = "閉じる"): Promise<void> {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "dialog-backdrop";
+    backdrop.innerHTML = `<div class="dialog" role="alertdialog" aria-modal="true"><p class="dialog-message"></p><div class="dialog-actions"><button type="button" data-answer="ok"></button><a class="dialog-link primary" data-answer="link"></a></div></div>`;
+    backdrop.querySelector<HTMLElement>(".dialog-message")!.textContent = message;
+    const ok = backdrop.querySelector<HTMLButtonElement>('[data-answer="ok"]')!;
+    ok.textContent = closeLabel;
+    const anchor = backdrop.querySelector<HTMLAnchorElement>('[data-answer="link"]')!;
+    anchor.textContent = link.label;
+    anchor.href = link.url;
+    const close = () => {
+      backdrop.remove();
+      resolve();
+    };
+    ok.addEventListener("click", close);
+    anchor.addEventListener("click", close);
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) close();
+    });
+    document.body.appendChild(backdrop);
+    ok.focus({ preventScroll: true });
+  });
+}
+
+/**
  * **画面の中に出す、いくつかから1つ選ぶ窓**（［作品］の［＋］の「GitHub から取り寄せる／新しく作る」。設計書 4.4.3）。
  * 選んだものの `id` を返す。［やめる］・背景を押す・端末の［戻る］（`data-answer="no"`）は undefined。
  * まだ作っていないもの（`planned`）は灰色の「未」で出し、選ぶと `id` を返す（呼ぶ側が「まだ作っていません」と知らせる）

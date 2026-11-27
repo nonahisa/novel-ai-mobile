@@ -4,11 +4,12 @@ import { lockScrollChain } from "./scrollChainLock";
 import { fitToVisible } from "./fitToVisible";
 import { exportCopy, exportTargets } from "./exportCopy";
 import { readWorkMemoMarkers } from "../platform/memoMarkers";
+import { readPostingSites } from "../platform/postingSites";
 import { App } from "@capacitor/app";
 import type { FileStore } from "../platform/fileStore";
 import type { AutoSaveStatus } from "./autoSave";
 import { failureMessage } from "./autoSave";
-import { askChoice, askText, chooseFrom, tell } from "./dialog";
+import { askChoice, askText, chooseFrom, tell, tellWithLink } from "./dialog";
 import { openEpisode, type BackgroundSource, type EpisodeSession } from "./episodeSession";
 import { escapeHtml, renderAppBar } from "./menuScreen";
 import { TOOL_STRIP, applyRuby, insertText, rubyPlan, toggleEmphasis, wrapBrackets, type TextEdit, type ToolId } from "./manuscriptTools";
@@ -28,7 +29,7 @@ import { charFromPoint, readCharBoxes } from "./tapCaret";
 import { readProposals, withoutProposal, writeProposals } from "./typoProposals";
 import { mergeNoteRows, renderNoteBoard } from "./noteBoard";
 import { readPendingEditorProposals } from "../platform/editorProposals";
-import { applyFindingToText, DEFAULT_MEMO_MARKERS, parseMemos, type MemoMarkers, type ProposalView } from "../shared";
+import { applyFindingToText, DEFAULT_MEMO_MARKERS, parseMemos, postingSiteInfo, type MemoMarkers, type ProposalView } from "../shared";
 import { watchPinchSize } from "./pinchSize";
 import { mountRangeGestures } from "./rangeGestures";
 import { createTrialLog } from "./trialLogFile";
@@ -989,11 +990,16 @@ export function mountEpisodeScreen(
    * 出ない。写しは端末の写し（`navigator.clipboard`）。読めない・書けない端末（許しが無いなど）は知らせて止める。
    * 貼り付けは選んだ範囲と置き換え、道具帯と同じく1手として取り消せる
    */
-  /** ［…］→ 書き出し：貼り付け先を選んで、その書き方に直した本文を写しへ（`exportCopy.ts`） */
+  /**
+   * ［…］→ 書き出し：貼り付け先を選んで、その書き方に直した本文を写しへ（`exportCopy.ts`）。投稿の台帳に登録した投稿先を
+   * 先に並べ、写したあとそのサイトの投稿ページが分かれば［◯◯の投稿ページを開く］を添える（本体の設計書 6.68.6。台帳は読むだけ）
+   */
   const exportForPosting = async (): Promise<void> => {
     const target = pane;
     if (!target) return;
-    const targets = exportTargets();
+    const posting = options.workRoot ? await readPostingSites(store, options.workRoot) : undefined;
+    if (pane !== target) return;
+    const targets = exportTargets(posting?.registered);
     const picked = await chooseFrom(targets.map((t, i) => ({ id: String(i), label: t.label })));
     if (picked === undefined || pane !== target) return;
     let markers;
@@ -1003,13 +1009,17 @@ export function mountEpisodeScreen(
       // 作品のメモの印が壊れていたら、付箋の行が本文に混ざらないよう写さない（本体と同じく止める）
       return options.toast("作品の設定（メモの印）が読めないので、写せません");
     }
-    const result = exportCopy(target.value(), target.selection(), targets[Number(picked)]!, markers);
+    const chosen = targets[Number(picked)]!;
+    const result = exportCopy(target.value(), target.selection(), chosen, markers);
     try {
       await navigator.clipboard.writeText(result.text);
-      options.toast(result.message);
     } catch {
-      options.toast("コピーできませんでした");
+      return options.toast("コピーできませんでした");
     }
+    const pageUrl = posting?.pageUrl(chosen.site);
+    // 開ける投稿ページが無いときは、これまでどおり知らせだけ（本体も釦を出さないだけで、文言は変えない）
+    if (!pageUrl || !chosen.site) return options.toast(result.message);
+    void tellWithLink(result.message, { label: `${postingSiteInfo(chosen.site).label}の投稿ページを開く`, url: pageUrl });
   };
   const copyOrPaste = async (id: "copy" | "paste", target: WritingPane): Promise<void> => {
     const text = target.value();

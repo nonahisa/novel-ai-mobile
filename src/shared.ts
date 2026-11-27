@@ -239,6 +239,8 @@ export { describeWrittenAmount } from "novel-ai-assistant/src/core/writingAmount
 export { convertForPosting, noteCopyMessage } from "novel-ai-assistant/src/core/postingConvert";
 export { postingCopyTargets, type PostingCopyTarget } from "novel-ai-assistant/src/core/postingCopyTargets";
 export { postingCopySource } from "novel-ai-assistant/src/core/episodeCopy";
+export { postingPageUrl } from "novel-ai-assistant/src/core/postingSiteUrls";
+export { postingSiteInfo, siteProfile, type PostingSiteId } from "novel-ai-assistant/src/models/posting";
 /*
   横の板の「校正・メモ」（2026-11-20 夜 作者の答え「本体と同じく位置の順に1列」）：付箋の拾い方と、
   編集者の提案と決定の突き合わせは本体と同じものを使う（`app/noteBoard.ts`・`platform/editorProposals.ts`）

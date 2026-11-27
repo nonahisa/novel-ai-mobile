@@ -93,3 +93,45 @@ test("［…］→ 書き出し → カクヨム：カクヨムの書き方に�
   await expect(page.locator("#toast")).toHaveText("カクヨム向けにコピーしました（21字）");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("｜灯台《とうだい》の《《手紙》》が届いた。");
 });
+
+// 本体の設計書 6.68.6：写したあと、台帳にそのサイトの投稿ページがあれば［◯◯の投稿ページを開く］を添える。押したときだけ開く
+test("［…］→ 書き出し：台帳に登録した投稿先が先に並び、写したあと投稿ページへのリンクが出る", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const url = "https://kakuyomu.jp/my/works/1177354054/episodes/new";
+  await openWithWorks(page, "#/works", {
+    ...FAKE_WORKS,
+    "灯台守_確認用/設定/投稿状態.json": JSON.stringify({ schemaVersion: "1", sites: [{ site: "kakuyomu", newEpisodeUrl: url }], posts: [] }),
+  });
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  await page.locator("textarea#msEditor").fill("{灯台|とうだい}の{{手紙}}が届いた。\n");
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "書き出し" }).click();
+  await expect(page.locator(".dialog-choices .dialog-list button").first()).toHaveText("カクヨム");
+  await page.locator(".dialog-choices button", { hasText: /^カクヨム$/ }).click();
+  const dialog = page.locator(".dialog[role=alertdialog]");
+  await expect(dialog.locator(".dialog-message")).toHaveText("カクヨム向けにコピーしました（21字）");
+  await expect(dialog.locator("a.dialog-link")).toHaveText("カクヨムの投稿ページを開く");
+  await expect(dialog.locator("a.dialog-link")).toHaveAttribute("href", url);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("｜灯台《とうだい》の《《手紙》》が届いた。");
+  // 勝手には開かない。［閉じる］で閉じ、原稿の画面のまま
+  await dialog.locator("button", { hasText: "閉じる" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("textarea#msEditor")).toBeVisible();
+});
+
+test("［…］→ 書き出し：台帳の URL がそのサイトのものでなければ、リンクは出さない（知らせだけ）", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openWithWorks(page, "#/works", {
+    ...FAKE_WORKS,
+    "灯台守_確認用/設定/投稿状態.json": JSON.stringify({ schemaVersion: "1", sites: [{ site: "kakuyomu", newEpisodeUrl: "https://example.com/new" }], posts: [] }),
+  });
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  await page.locator("textarea#msEditor").fill("{灯台|とうだい}の{{手紙}}が届いた。\n");
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "書き出し" }).click();
+  await page.locator(".dialog-choices button", { hasText: /^カクヨム$/ }).click();
+  await expect(page.locator("#toast")).toHaveText("カクヨム向けにコピーしました（21字）");
+  await expect(page.locator("a.dialog-link")).toHaveCount(0);
+});

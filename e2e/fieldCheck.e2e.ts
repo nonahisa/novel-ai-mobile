@@ -59,9 +59,14 @@ test.describe("1章：縦書きの欄でキーを打つ（本物の日本語入�
     await expect.poll(() => paneText(page)).toBe(`${before}\nねこ`);
     await page.keyboard.press("Backspace");
     await expect.poll(() => paneText(page)).toBe(`${before}\nね`);
-    // 範囲を選んで消す（Shift＋上で2字。縦書きでは字に沿って動くのは上下の矢印）
-    await page.keyboard.press("Shift+ArrowUp");
-    await page.keyboard.press("Shift+ArrowUp");
+    // 範囲を選んで消す（カーソルの前の2字を選ぶ）。Shift＋矢印で選ぶと、縦書きで矢印がどう動くかが OS の
+    // キーの決まりで違う（Mac の Chromium は行ごとに動き、選ぶ幅が広がる。2026-11-27 作者の答え「A：テストの
+    // 選び方を変える」）。ここで見たいのは「選んだ範囲を ⌫ で消せる」なので、選ぶのは字の並びの順で2字にそろえる
+    await page.locator("#draftInput").evaluate(() => {
+      const sel = window.getSelection()!;
+      sel.modify("extend", "backward", "character");
+      sel.modify("extend", "backward", "character");
+    });
     await page.keyboard.press("Backspace");
     await expect.poll(() => paneText(page)).toBe(before);
     // 縦書きのまま（打っても横書きへ替わらない）

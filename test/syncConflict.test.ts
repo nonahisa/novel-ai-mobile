@@ -586,6 +586,40 @@ describe("投稿の台帳がぶつかったら、両方の印を残して合わ�
     expect((await collectChanges(fs, DIR, [])).map((change) => change.path)).toEqual([LEDGER]);
   });
 
+  test("話の競合が残っているあいだは、台帳は「印を合わせる」と決めた扱いで一覧に出すだけで、作業の木は動かさない。話を選んで取り込むと合わせる", async () => {
+    const { fs, store, theirs, io, base } = await setup();
+    await theirs({ [LEDGER]: ledgerText([p1, pc]), "本文/第2話.txt": "パソコンで直した"+"\n" });
+    const ours = ledgerText([p1, mine]);
+    await writeWork(fs, LEDGER, ours);
+    await writeWork(fs, "本文/第2話.txt", "スマホで直した"+"\n");
+    const plan = await planIncoming(io);
+    expect(plan.conflicts.map((entry) => [entry.path, entry.decision])).toEqual([
+      ["本文/第2話.txt", undefined],
+      [LEDGER, "merge"],
+    ]);
+    expect(plan.undecided.map((entry) => entry.path)).toEqual(["本文/第2話.txt"]);
+    expect(await integrateIncoming(io)).toMatchObject({ kind: "conflicts" });
+    expect(textOf(await readWork(fs, LEDGER))).toBe(ours);
+    expect(await git.resolveRef({ fs, dir: DIR, ref: "HEAD" })).toBe(base);
+    // 話を［こちら］で選ぶと取り込み、そのとき台帳を合わせる
+    const material = (await readConflict({ ...io, path: "本文/第2話.txt" }))!;
+    expect((await applyConflictChoice({ ...io, material, choice: "ours" })).ok).toBe(true);
+    expect(await integrateIncoming(io)).toMatchObject({ kind: "integrated" });
+    expect(JSON.parse(textOf(await readWork(fs, LEDGER))!).posts).toEqual([p1, pc, mine]);
+    expect(textOf(await readWork(fs, "本文/第2話.txt"))).toBe("スマホで直した"+"\n");
+    void store;
+  });
+
+  test("台帳を自分で［あちら］と選んだら、そちらが勝つ（合わせない）", async () => {
+    const { fs, theirs, io } = await setup();
+    await theirs({ [LEDGER]: ledgerText([p1, pc]) });
+    await writeWork(fs, LEDGER, ledgerText([p1, mine]));
+    const material = (await readConflict({ ...io, path: LEDGER }))!;
+    expect((await applyConflictChoice({ ...io, material, choice: "theirs" })).ok).toBe(true);
+    expect(await integrateIncoming(io)).toMatchObject({ kind: "integrated" });
+    expect(JSON.parse(textOf(await readWork(fs, LEDGER))!).posts).toEqual([p1, pc]);
+  });
+
   test("こちらが印のほかも変えていたら合わせず、いつもどおり選ぶまで何も動かさない", async () => {
     const { fs, theirs, io, base } = await setup();
     await theirs({ [LEDGER]: ledgerText([p1, pc]) });

@@ -44,10 +44,11 @@ function actionButtons(access: SyncAccess): string {
 /** 取ってきた版と競合した話（リポジトリの中の道）。選んだものは `decision` */
 export interface SyncConflictRow {
   path: string;
-  decision?: "ours" | "both" | "theirs";
+  /** `merge`：投稿の台帳を両方の印を残して合わせる（選ばなくてよい。押せない行にする。`syncConflict.ts`） */
+  decision?: "ours" | "both" | "theirs" | "merge";
 }
 
-const DECISION_LABELS = { ours: "こちら", both: "両方", theirs: "あちら" } as const;
+const DECISION_LABELS = { ours: "こちら", both: "両方", theirs: "あちら", merge: "印を合わせる" } as const;
 
 /** 競合の一覧（取り込むまで出す）。押すと選ぶ画面。選んだ話には選んだものの印 */
 function conflictList(root: string, conflicts: readonly SyncConflictRow[]): string {
@@ -59,6 +60,10 @@ function conflictList(root: string, conflicts: readonly SyncConflictRow[]): stri
       const mark = row.decision
         ? `<span class="flag ok">${DECISION_LABELS[row.decision]}</span>`
         : `<span class="flag shu">選んでください</span>`;
+      // 投稿の台帳を合わせる行は押せない（［こちら］を選ぶと、あちらの印を消して送ることになる）
+      if (row.decision === "merge") {
+        return `<div class="ep" data-merged-ledger="${escapeHtml(row.path)}"><span class="no"></span><span class="name">${escapeHtml(name)}</span><span class="chars">${mark}</span></div>`;
+      }
       return `<button class="ep" data-conflict="${escapeHtml(row.path)}" data-root="${escapeHtml(root)}"><span class="no"></span><span class="name">${escapeHtml(name)}</span><span class="chars">${mark}</span></button>`;
     })
     .join("");

@@ -50,13 +50,15 @@ describe("台帳から、この話をどのサイトへ出したかを読む", (
     expect((await readPostingMark(await storeWith(ledgerOf({ schemaVersion: "99" })), ROOT, EP1)).kind).toBe("blocked");
   });
 
-  it("合本（1ファイルに何話も）には印を出さない（ファイルまるごとの印は全話を投稿済みにしてしまう）", async () => {
-    const collected = "第1話 手紙\n\n姉から手紙が届いた。\n\n---\n\n第2話 霧笛\n\n霧が出た。\n";
+  it("合本（1ファイルに何話も）には印を出さず、付けもしない（ファイルまるごとの印は全話を投稿済みにしてしまう）", async () => {
+    // 本体の合本の試し（collectedNavigation.test.ts）と同じ区切り
+    const collected = ["----- エピソード1開始 -----", "【本文】", "　一話目", "----- エピソード2開始 -----", "【本文】", "　二話目"].join("\n");
     const path = `${ROOT}/本文/合本.txt`;
-    const store = await storeWith(ledgerOf({}), { [path]: collected });
-    const read = await readPostingMark(store, ROOT, path);
-    // 合本と読めなければ（区切りの決まりが違えば）ふつうの話として読む。読めたときだけ止める
-    if (read.kind !== "ready") expect(read.kind).toBe("blocked");
+    const text = ledgerOf({});
+    const store = await storeWith(text, { [path]: collected });
+    expect((await readPostingMark(store, ROOT, path)).kind).toBe("blocked");
+    expect((await markPosted({ store, workRoot: ROOT, episodePath: path, site: "kakuyomu", now: NOW })).ok).toBe(false);
+    expect(dec(await store.readFile(LEDGER))).toBe(text);
   });
 
   it("競合の印（<<<<<<<）が残っている話には印を付けない", async () => {

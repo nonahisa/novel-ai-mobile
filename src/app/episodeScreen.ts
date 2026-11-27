@@ -1079,7 +1079,7 @@ export function mountEpisodeScreen(
   /**
    * ［…］→［投稿しました］：投稿の台帳へ「投稿しました」の印を付ける（2026-11-28 作者の答え「付ける（ぶつかったら両方の印を残す）」。
    * `platform/postingMark.ts`）。先に保存を済ませ（印は置き場の本文から取る）、登録した投稿先のうち、まだ出した印の無いサイトを選ぶ。
-   * 付けた印を消す・出し直しの記録はパソコンの投稿キットで（同じ話を2本出す道を作らない）
+   * 付けた印を外す口は無い（本体の投稿キットにも無い。外すには台帳を手で直す）。出し直しの記録はパソコンの投稿キットで
    */
   const markPostedFlow = async (): Promise<void> => {
     if (!options.workRoot) return options.toast("作品の中の話でないので、投稿の印は付けられません");
@@ -1099,7 +1099,7 @@ export function mountEpisodeScreen(
     const site = picked as PostingSiteId;
     const posted = read.sites.filter((entry) => entry.posted).map((entry) => postingSiteInfo(entry.site).label);
     const sure = await askChoice(
-      `「${episodeScreenTitle(path)}」に、${postingSiteInfo(site).label}へ投稿した印を付けます。${posted.length > 0 ? `（出した印があるのは ${posted.join("・")}）` : ""}印を外すときはパソコンの投稿キットで直します。付けますか？`,
+      `「${episodeScreenTitle(path)}」に、${postingSiteInfo(site).label}へ投稿した印を付けます。${posted.length > 0 ? `（出した印があるのは ${posted.join("・")}）` : ""}付けた印は、アプリでは外せません（パソコンの投稿キットにも外す釦はありません）。付けますか？`,
       "付ける",
       "やめる"
     );

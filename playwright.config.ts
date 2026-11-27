@@ -38,6 +38,11 @@ export default defineConfig({
   testMatch: "**/*.e2e.ts",
   outputDir: "test-results/e2e",
   fullyParallel: true,
+  /*
+    CI（windows-latest は4コア）では働き手を4つにする。既定は半分の2つで、1400件ほどで15分の上限
+    （ci.yml の timeout-minutes）すれすれになり、2026-11-28 の #214 で上限を越えて取り消された。手元は既定のまま
+  */
+  workers: process.env.CI ? 4 : undefined,
   reporter: [["list"]],
   use: {
     baseURL: `http://localhost:${PORT}`,

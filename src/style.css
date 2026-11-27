@@ -2369,14 +2369,22 @@ a.gh-open {
 .relation-row .materials-name { display: block; font-weight: bold; }
 .relation-words { margin: 4px 0 0; }
 
-/* ［…］→ 読み上げの帯（`episodeScreen.ts`）。原稿の下に今の文と［止める］ */
+/* ［…］→ 読み上げの帯（`episodeScreen.ts`）。原稿の下の端、道具帯のすぐ上に浮かせる（名前の札と同じ所。
+   枠の下に足すと、原稿の欄が枠いっぱいなので画面の外へ押し出される。2026-11-27 エミュレーター） */
 .aloud-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 60px;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  border-top: 1px solid var(--line);
+  padding: 6px 8px 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
   background: var(--surface);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 .aloud-bar[hidden] {
   display: none;

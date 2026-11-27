@@ -70,10 +70,15 @@ export async function readKind<T extends { id: string }>(
   }
   const records: T[] = [];
   const seen = new Set<string>();
-  for (const name of [...names].sort()) {
-    if (!name.endsWith(".json") || name.startsWith("_")) continue;
+  const wanted = [...names].sort().filter((name) => name.endsWith(".json") && !name.startsWith("_"));
+  // 中身は並べて読む（端末の置き場は1件ごとにアプリの中の口を往復する。2026-11-27 作者「動作の高速化」）。
+  // 解釈・重複の確かめ・読めない訳の並びは、名前の順のまま
+  const contents = await readAllSettled(store, wanted.map((name) => joinStorePath(dir, name)));
+  for (const [index, name] of wanted.entries()) {
     try {
-      const raw: unknown = JSON.parse(new TextDecoder().decode(await store.readFile(joinStorePath(dir, name))));
+      const read = contents[index]!;
+      if (!read.ok) throw read.error;
+      const raw: unknown = JSON.parse(new TextDecoder().decode(read.bytes));
       const record = parse(raw);
       if (name !== `${record.id}.json` && !name.startsWith(`${record.id}_`)) {
         throw new Error(`ファイル名とID「${record.id}」が一致しません。`);
@@ -90,11 +95,15 @@ export async function readKind<T extends { id: string }>(
 
 /** 作品の設定フォルダー（置き場の根から。`WorkLayout.settings`）の資料から、用語の色の語を作る */
 export async function readWorkTerms(store: FileStore, settingsDir: string): Promise<WorkTerms> {
-  const errors: WorkTerms["errors"] = [];
-  const characters = await readKind(store, settingsDir, "characters", parseCharacter, errors);
-  const locations = await readKind(store, settingsDir, "locations", parseLocation, errors);
-  const abilities = await readKind(store, settingsDir, "abilities", parseAbility, errors);
-  const organizations = await readKind(store, settingsDir, "organizations", parseOrganization, errors);
+  // 4種類も並べて読む。読めない訳は種類の順（人物・場所・能力・組織）に並べ直す
+  const kindErrors: WorkTerms["errors"][] = [[], [], [], []];
+  const [characters, locations, abilities, organizations] = await Promise.all([
+    readKind(store, settingsDir, "characters", parseCharacter, kindErrors[0]!),
+    readKind(store, settingsDir, "locations", parseLocation, kindErrors[1]!),
+    readKind(store, settingsDir, "abilities", parseAbility, kindErrors[2]!),
+    readKind(store, settingsDir, "organizations", parseOrganization, kindErrors[3]!),
+  ]);
+  const errors: WorkTerms["errors"] = kindErrors.flat();
 
   const entries: TermEntry[] = [];
   const push = (text: string, kind: TermEntry["kind"], record: Named) =>
@@ -190,4 +199,25 @@ export async function readSeriesTerms(store: FileStore, workRoot: string): Promi
     }
   }
   return entries;
+}
+
+/** 同時に読む数（多すぎると端末の口が詰まる） */
+const READ_PARALLEL = 8;
+
+/** いくつかのファイルを並べて読む。結果は渡した順。読めなかったものは訳を返す（ほかは読む） */
+async function readAllSettled(store: FileStore, paths: readonly string[]): Promise<({ ok: true; bytes: Uint8Array } | { ok: false; error: unknown })[]> {
+  const results: ({ ok: true; bytes: Uint8Array } | { ok: false; error: unknown })[] = new Array(paths.length);
+  let next = 0;
+  const reader = async () => {
+    while (next < paths.length) {
+      const index = next++;
+      try {
+        results[index] = { ok: true, bytes: await store.readFile(paths[index]!) };
+      } catch (error) {
+        results[index] = { ok: false, error };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(READ_PARALLEL, paths.length) }, reader));
+  return results;
 }

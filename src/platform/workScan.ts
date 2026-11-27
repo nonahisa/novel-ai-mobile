@@ -430,24 +430,38 @@ async function readTree(
   } catch {
     return [];
   }
-  const found: TreeFile[] = [];
+  // 並びは名前の一覧のまま。読むのは並べて（端末の置き場は1ファイルごとにアプリの中の口を往復するので、
+  // 1つずつ待つと話の数だけ待ちが積み上がる。2026-11-27 作者「動作の高速化」）。中身と順は変わらない
+  const slots: (Promise<TreeFile> | Promise<TreeFile[]>)[] = [];
+  const files: { location: string; path: string; done: (file: TreeFile) => void }[] = [];
   for (const [name, kind] of entries) {
     if (name.startsWith(".")) continue;
     const location = join(dirLoc, name);
     const path = joinStorePath(dirPath, name);
     if (kind === "file") {
       if (!accept(name, "file", location)) continue;
-      try {
-        found.push({ location, bytes: await store.readFile(path) });
-      } catch {
-        found.push({ location });
-      }
+      slots.push(new Promise<TreeFile>((done) => files.push({ location, path, done })));
     } else if (kind === "directory" && accept(name, "directory", location)) {
-      found.push(...(await readTree(store, location, path, accept, depth + 1)));
+      slots.push(readTree(store, location, path, accept, depth + 1));
     }
   }
-  return found;
+  let next = 0;
+  const reader = async () => {
+    while (next < files.length) {
+      const file = files[next++]!;
+      try {
+        file.done({ location: file.location, bytes: await store.readFile(file.path) });
+      } catch {
+        file.done({ location: file.location });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(READ_PARALLEL, files.length) }, reader));
+  return (await Promise.all(slots)).flat();
 }
+
+/** 本文のファイルを同時に読む数（多すぎると端末の口が詰まる。8で十分に縮む） */
+const READ_PARALLEL = 8;
 
 /** フォルダーの名前（作品の題が無いときの題） */
 export function folderTitle(root: string): string {

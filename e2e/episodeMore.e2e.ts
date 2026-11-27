@@ -177,6 +177,8 @@ test("［…］→ 読み上げ：カーソルの文から1文ずつ読み、［
   await page.locator("#episodeMore").click();
   await page.locator(".dialog-choices button", { hasText: "読み上げ" }).click();
   await expect(page.locator("#aloudBar")).toBeVisible();
+  // 帯は画面の中に出る（枠の下に足すと画面の外へ押し出された。2026-11-27 エミュレーター）
+  await expect(page.locator("#aloudBar")).toBeInViewport({ ratio: 1 });
   await expect(page.locator("#aloudNow")).toHaveText("二つ目の文。");
   await page.evaluate(() => (window as unknown as { __aloud: { finish: () => void } }).__aloud.finish());
   await expect(page.locator("#aloudNow")).toHaveText("三つ目の文。");

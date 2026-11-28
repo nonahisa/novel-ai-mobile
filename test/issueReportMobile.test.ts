@@ -8,6 +8,7 @@ import {
   mobileReportSteps,
   secretRedactor,
   type MobileIssueReportInput,
+  placeReportFailure,
 } from "../src/platform/issueReportMobile";
 
 const NOW = new Date(2026, 10, 28, 12, 0, 0);
@@ -132,5 +133,18 @@ describe("部品", () => {
   it("手順：Android は置いた所、iOS は「ファイル」から選ぶ", () => {
     expect(mobileReportSteps("android", "NAI-x.md", "Documents › 小説執筆")[2]).toContain("「Documents › 小説執筆」を開いて NAI-x.md");
     expect(mobileReportSteps("ios", "NAI-x.md", "")[2]).toContain("「ファイル」から");
+  });
+});
+
+// Android 10 以前は Documents に書くのにファイルの許しが要る（minSdk 24）。断られたら英語の訳でなく、次の手を日本語で出す
+describe("placeReportFailure", () => {
+  it("許しを断られたら、もう一度押して許すか、要約を写す道を示す", () => {
+    const message = placeReportFailure(new Error("Unable to do file operation, user denied permission request."));
+    expect(message).toBe("記録を置けませんでした。ファイルの許しが要ります。もう一度押して［許可］を選ぶか、［要約をコピー］で要約だけを貼ってください");
+  });
+
+  it("ほかの失敗は訳を添える", () => {
+    expect(placeReportFailure(new Error("disk full"))).toBe("記録を置けませんでした（disk full）");
+    expect(placeReportFailure("x")).toBe("記録を置けませんでした（x）");
   });
 });

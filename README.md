@@ -61,7 +61,7 @@ AI の利用料はそれぞれの AI の会社から請求されます。
 
 ## 質問と不具合の報告
 
-使い方の質問・不具合・要望は、Discord のサーバー「小説執筆部屋」（https://discord.gg/6pcuUaCMax）で受け付けています。GitHub をお使いなら、不具合は [Issues](https://github.com/nonahisa/novel-ai-mobile/issues) へも送れます。
+使い方の質問・不具合・要望は、Discord のサーバー「小説執筆部屋」（https://discord.gg/6pcuUaCMax）で受け付けています。不具合を知らせるときは、アプリの［ほか］→ ヘルプ → 障害報告用の記録 で記録を作り、#不具合報告 で /不具合を報告 の「添付」に付けてください（原稿は入りません。人物名・作品名は伏せられます）。GitHub をお使いなら、不具合は [Issues](https://github.com/nonahisa/novel-ai-mobile/issues) へも送れます。
 
 ## ライセンス
 

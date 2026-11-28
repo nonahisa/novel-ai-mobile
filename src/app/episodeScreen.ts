@@ -4,9 +4,11 @@ import { lockScrollChain } from "./scrollChainLock";
 import { fitToVisible } from "./fitToVisible";
 import { exportCopy, exportTargets } from "./exportCopy";
 import { readWorkMemoMarkers } from "../platform/memoMarkers";
+import { readingSpansForEpisode } from "../platform/readingDictionary";
+import { nameReadingSpansForWork } from "../platform/nameReadings";
 import { markPosted, readPostingMark } from "../platform/postingMark";
 import { readPostingSites } from "../platform/postingSites";
-import { aloudStartIndex, readingPlanFor, runAloud, type AloudRun } from "./readAloud";
+import { aloudStartIndex, readingMemoEdit, readingPlanFor, resumeIndexAt, runAloud, type AloudPlan, type AloudRun } from "./readAloud";
 import { deviceSpeaker } from "../platform/speech";
 import { App } from "@capacitor/app";
 import type { FileStore } from "../platform/fileStore";
@@ -32,12 +34,12 @@ import { charFromPoint, readCharBoxes } from "./tapCaret";
 import { readProposals, withoutProposal, writeProposals } from "./typoProposals";
 import { mergeNoteRows, renderNoteBoard } from "./noteBoard";
 import { readPendingEditorProposals } from "../platform/editorProposals";
-import { applyFindingToText, DEFAULT_MEMO_MARKERS, parseMemos, postingSiteInfo, type MemoMarkers, type PostingSiteId, type ProposalView } from "../shared";
+import { applyFindingToText, DEFAULT_MEMO_MARKERS, mergeReadingSpans, parseMemos, postingSiteInfo, type MemoMarkers, type PostingSiteId, type ProposalView } from "../shared";
 import { watchPinchSize } from "./pinchSize";
 import { mountRangeGestures } from "./rangeGestures";
 import { createTrialLog } from "./trialLogFile";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
-import type { TermEntry } from "../shared";
+import type { ReadingSentence, ReadingSpan, TermEntry } from "../shared";
 import type { TermFinder } from "./editContextPane";
 import { traceTouch, wantsIosTextareaFixes, watchTextareaLongPress } from "./textareaLongPress";
 import { watchOwnCaret } from "./textareaCaret";
@@ -621,7 +623,7 @@ export function mountEpisodeScreen(
   // 原稿の欄は作り直さない（回転や分割画面で、書きかけ・カーソル・変換中の字を保つ。設計書 4.3・4.5）
   const sideOpen = readSideOpen();
   const boardOpen = readBoardOpen();
-  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}" data-board="${boardOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><aside class="ms-board" id="msBoard" aria-label="横の板"><div class="seg board-tabs" role="tablist"><button type="button" data-board-tab="proposals" aria-pressed="true">校正・メモ</button><button type="button" data-board-tab="term" aria-pressed="false">資料</button></div><div id="msBoardBody"></div><div id="msBoardTerm" hidden></div></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}<div class="aloud-bar" id="aloudBar" role="status" hidden><p class="aloud-now" id="aloudNow"></p><button type="button" class="primary" id="aloudStop">止める</button></div></div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><a class="term-sheet-open" id="termSheetOpen" hidden>資料を開く</a><ol class="term-hits" id="termSheetHits"></ol></div>`;
+  screen.innerHTML = `${renderAppBar(episodeScreenTitle(path), { back: true, subId: "saveState" })}<div class="ms-layout" id="msLayout" data-side="${sideOpen ? "open" : "closed"}" data-board="${boardOpen ? "open" : "closed"}"><aside class="ms-side" id="msSide" aria-label="話の一覧"></aside><aside class="ms-board" id="msBoard" aria-label="横の板"><div class="seg board-tabs" role="tablist"><button type="button" data-board-tab="proposals" aria-pressed="true">校正・メモ</button><button type="button" data-board-tab="term" aria-pressed="false">資料</button></div><div id="msBoardBody"></div><div id="msBoardTerm" hidden></div></aside><div class="ms-main"><div class="ms-host" id="msHost" aria-busy="true"></div><button type="button" class="term-tag" id="termTag" hidden></button>${renderToolStrip()}<div class="aloud-bar" id="aloudBar" role="status" hidden><p class="aloud-now" id="aloudNow"></p><button type="button" id="aloudFlag">⚑ 引っかかった</button><button type="button" id="aloudResume" hidden>続ける</button><button type="button" class="primary" id="aloudStop">止める</button></div></div></div><div class="term-sheet" id="termSheet" role="dialog" aria-labelledby="termSheetTitle" hidden><div class="term-sheet-head"><h2 id="termSheetTitle"></h2><button type="button" class="appbar-action" id="termSheetClose">閉じる</button></div><p id="termSheetSummary"></p><a class="term-sheet-open" id="termSheetOpen" hidden>資料を開く</a><ol class="term-hits" id="termSheetHits"></ol></div>`;
   // 上のバーの右に押し口を入れる。［一覧］は中・広い段だけ（CSS で出す）
   const sideToggle = document.createElement("button");
   sideToggle.className = "appbar-action ms-side-toggle";
@@ -1088,22 +1090,77 @@ export function mountEpisodeScreen(
    */
   /**
    * ［…］→ 読み上げ（本体の設計書 6.42 音読推敲。`readAloud.ts`）：カーソルのある文から、端末の声で1文ずつ読む。
-   * 読んでいるあいだは下の帯に今の文と［止める］。本文・選択・カーソルには触らない（本体と同じ。読み上げ中に打った字が
-   * 選んだ範囲を置き換えて原稿を壊さないように）。画面を離れたら止める
+   * 読んでいるあいだは下の帯に今の文と［⚑ 引っかかった］［止める］。本文・選択・カーソルには触らない（本体と同じ。読み上げ中に
+   * 打った字が選んだ範囲を置き換えて原稿を壊さないように）。画面を離れたら止める。
+   * 本文に触るのは［⚑ 引っかかった］の1行だけ：読んでいる文の上に付箋の行を挿し（取り消しに1手として積む）、一時停止する
+   * （本体と同じ。引っかかったから印を打つので、そのまま読み進めても頭に入らない）。［続ける］で同じ文から読む
    */
   let aloud: AloudRun | undefined;
   /** 塗りを置いた欄（話を移ったあとでも、その欄の塗りを消す） */
   let aloudPane: WritingPane | undefined;
+  /** いま読んでいる文と、その計画を作った本文（打って本文が変わったら、文の行は当てにならない） */
+  let aloudSentence: ReadingSentence | undefined;
+  let aloudText = "";
+  let aloudMarkers: MemoMarkers | undefined;
+  /** 一時停止した文の頭（本文の位置）。止まっていなければ undefined */
+  let aloudPausedAt: number | undefined;
   const aloudBar = screen.querySelector<HTMLElement>("#aloudBar")!;
   const aloudNow = screen.querySelector<HTMLElement>("#aloudNow")!;
+  const aloudFlag = screen.querySelector<HTMLButtonElement>("#aloudFlag")!;
+  const aloudResume = screen.querySelector<HTMLButtonElement>("#aloudResume")!;
+  const showAloudBar = (paused: boolean) => {
+    aloudBar.hidden = false;
+    aloudFlag.hidden = paused;
+    aloudResume.hidden = !paused;
+  };
   const stopAloud = () => {
     aloud?.stop();
     aloud = undefined;
+    aloudSentence = undefined;
+    aloudPausedAt = undefined;
     aloudBar.hidden = true;
     aloudPane?.markReading?.(null);
     aloudPane = undefined;
   };
   screen.querySelector<HTMLButtonElement>("#aloudStop")!.addEventListener("click", stopAloud);
+  /**
+   * 声へ渡す写しに当てる読み（本体の読み上げと同じ順）：読みの辞書（文脈つき）が先、設定資料の名前の読みが後で、重なれば辞書が勝つ
+   * （本体の `mergeReadingSpans`）。作者のルビはどちらにも勝つ。読めなくても空で続ける（読み上げは止めない）
+   */
+  const aloudReadings = async (text: string): Promise<ReadingSpan[]> => {
+    const root = options.workRoot;
+    if (!root) return [];
+    const dictionary = await readingSpansForEpisode(store, root, path, text);
+    let names: ReadingSpan[] = [];
+    try {
+      names = await nameReadingSpansForWork(store, (await readWorkLayout(store, root)).settings, text);
+    } catch {
+      names = [];
+    }
+    return mergeReadingSpans(dictionary, names);
+  };
+  const readAloudFrom = async (target: WritingPane, plan: AloudPlan, from: number): Promise<void> => {
+    const run = runAloud(deviceSpeaker(), plan, from, {
+      rate: 1,
+      onSentence: (_, sentence) => {
+        aloudSentence = sentence;
+        aloudNow.textContent = sentence.speech;
+        target.markReading?.({ start: sentence.start, end: sentence.end });
+      },
+    });
+    aloud = run;
+    aloudPane = target;
+    aloudPausedAt = undefined;
+    showAloudBar(false);
+    const end = await run.finished;
+    if (aloud !== run) return;
+    aloud = undefined;
+    aloudSentence = undefined;
+    aloudBar.hidden = true;
+    target.markReading?.(null);
+    aloudPane = undefined;
+    if (end === "done" && !destroyed) options.toast("読み終えました");
+  };
   const startAloud = async (): Promise<void> => {
     const target = pane;
     if (!target) return;
@@ -1111,8 +1168,7 @@ export function mountEpisodeScreen(
     stopAloud();
     // 止めた直後の読みは捨てられることがある（本体と同じく 60ms 空ける）
     if (wasReading) await new Promise((resolve) => setTimeout(resolve, 60));
-    const speaker = deviceSpeaker();
-    const reason = await speaker.unavailable();
+    const reason = await deviceSpeaker().unavailable();
     if (destroyed || pane !== target) return;
     if (reason) return options.toast(reason);
     let markers;
@@ -1122,26 +1178,60 @@ export function mountEpisodeScreen(
       markers = undefined;
     }
     if (destroyed || pane !== target) return;
-    const plan = readingPlanFor(target.value(), path, markers);
+    aloudMarkers = markers;
+    aloudText = target.value();
+    const readings = await aloudReadings(aloudText);
+    if (destroyed || pane !== target || target.value() !== aloudText) return;
+    const plan = readingPlanFor(aloudText, path, markers, readings);
     if (plan.sentences.length === 0) return options.toast("読む文がありません");
-    const run = runAloud(speaker, plan, aloudStartIndex(plan, target.selection().start), {
-      rate: 1,
-      onSentence: (_, sentence) => {
-        aloudNow.textContent = sentence.speech;
-        target.markReading?.({ start: sentence.start, end: sentence.end });
-      },
-    });
-    aloud = run;
-    aloudPane = target;
-    aloudBar.hidden = false;
-    const end = await run.finished;
-    if (aloud !== run) return;
-    aloud = undefined;
-    aloudBar.hidden = true;
-    target.markReading?.(null);
-    aloudPane = undefined;
-    if (end === "done" && !destroyed) options.toast("読み終えました");
+    await readAloudFrom(target, plan, aloudStartIndex(plan, target.selection().start));
   };
+  aloudFlag.addEventListener("click", () => {
+    const target = aloudPane;
+    const sentence = aloudSentence;
+    if (!aloud || !target || !sentence) return;
+    const text = target.value();
+    // 読み始めてから打った字があると、文の行がずれている（違う行の上に挿さない）
+    if (text !== aloudText) {
+      stopAloud();
+      return options.toast("読んでいるあいだに本文が変わったので、印を置きませんでした。もう一度［読み上げ］から始めてください");
+    }
+    const run = aloud;
+    aloud = undefined;
+    run.stop();
+    const edit = readingMemoEdit(text, sentence.line, aloudMarkers);
+    if (edit.kind === "already") {
+      options.toast("この文の上には、もう印があります");
+      aloudPausedAt = sentence.start;
+      return showAloudBar(true);
+    }
+    const { start, end } = target.selection();
+    const size = edit.insert.length;
+    const moved = (offset: number) => (offset >= edit.at ? offset + size : offset);
+    target.apply({ text: text.slice(0, edit.at) + edit.insert + text.slice(edit.at), selStart: moved(start), selEnd: moved(end) });
+    aloudText = target.value();
+    aloudPausedAt = moved(sentence.start);
+    target.markReading?.({ start: moved(sentence.start), end: moved(sentence.end) });
+    showAloudBar(true);
+  });
+  aloudResume.addEventListener("click", async () => {
+    const target = aloudPane;
+    const at = aloudPausedAt;
+    if (!target || at === undefined || destroyed) return;
+    // 止めているあいだに打っていてもよい（計画は今の本文で作り直す。辞書の句の位置も今の本文で求める）
+    aloudResume.disabled = true;
+    const text = target.value();
+    const readings = await aloudReadings(text);
+    aloudResume.disabled = false;
+    if (destroyed || aloudPane !== target || aloudPausedAt !== at || target.value() !== text) return;
+    aloudText = text;
+    const plan = readingPlanFor(aloudText, path, aloudMarkers, readings);
+    if (plan.sentences.length === 0) {
+      stopAloud();
+      return options.toast("読む文がありません");
+    }
+    void readAloudFrom(target, plan, resumeIndexAt(plan, at));
+  });
   /**
    * ［…］→ 書き出し：貼り付け先を選んで、その書き方に直した本文を写しへ（`exportCopy.ts`）。投稿の台帳に登録した投稿先を
    * 先に並べ、写したあとそのサイトの投稿ページが分かれば［◯◯の投稿ページを開く］を添える（本体の設計書 6.68.6。台帳は読むだけ）

@@ -56,6 +56,7 @@ export {
   MemoMarkersConfigError,
   MEMO_MARKER_DEFS,
   MEMO_MARKER_IDS,
+  memoInsertOf,
   memoMarkerLabels,
   memoMarkersOf,
   memoMarkersOfConfigText,
@@ -99,7 +100,14 @@ export { nextChapterNumber, nextDatedName, nextUntitledName, parseEpisodeFileNam
 */
 export { renameUnnumberedSynopses, renumberBookPositions, renumberChapterSet, renumberPostingPosts, renumberTimelineEpisodes } from "novel-ai-assistant/src/core/episodeRenumber";
 export { READINGS_DIRECTORY, readingDictionaryMoveConflictMessage } from "novel-ai-assistant/src/core/readingDictionaryPlace";
-export { readingDictionaryFileName } from "novel-ai-assistant/src/core/readingDictionary";
+// 設定資料の名前の読み（本体の設計書 6.42.2）を読み上げに当てる（`platform/nameReadings.ts`）。IME の控えは使わない
+export { mergeReadingSpans, nameReadingsFrom, nameReadingSpans } from "novel-ai-assistant/src/core/imeReading";
+export {
+  parseReadingDictionary,
+  readingDictionaryFileName,
+  readingSpansFor,
+  type ReadingSpan,
+} from "novel-ai-assistant/src/core/readingDictionary";
 export { normalizeEpisodePath } from "novel-ai-assistant/src/models/chapter";
 export { BOOK_DIR, BOOK_FILE, BOOK_SCHEMA_VERSION } from "novel-ai-assistant/src/models/book";
 export { POSTING_FILE, POSTING_SCHEMA_VERSION } from "novel-ai-assistant/src/models/posting";
@@ -244,7 +252,7 @@ export { convertForPosting, noteCopyMessage } from "novel-ai-assistant/src/core/
 export { postingCopyTargets, type PostingCopyTarget } from "novel-ai-assistant/src/core/postingCopyTargets";
 export { extractEpisodeParts, postingCopySource } from "novel-ai-assistant/src/core/episodeCopy";
 export { postingPageUrl } from "novel-ai-assistant/src/core/postingSiteUrls";
-export { buildReadingPlan, readingRangesOf, type ReadingSentence } from "novel-ai-assistant/src/core/readAloud";
+export { buildReadingPlan, isReadingMemoLine, READ_ALOUD_MEMO_TEXT, readingRangesOf, type ReadingSentence } from "novel-ai-assistant/src/core/readAloud";
 export { notationModeFor } from "novel-ai-assistant/src/core/manuscriptRender";
 export { postingSiteInfo, siteProfile, type PostingSiteId } from "novel-ai-assistant/src/models/posting";
 /*

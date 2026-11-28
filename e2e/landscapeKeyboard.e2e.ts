@@ -166,7 +166,10 @@ test.describe("一覧の指の動き", () => {
     await openFirst(page);
     const editor = page.locator("textarea#msEditor");
     await editor.click();
-    /** 一覧の上で指を `dy` 動かし、その動きが止められたか（一覧は頭にある） */
+    /**
+     * 一覧の上で指を `dy` 動かし、その動きが止められたかと、そのとき一覧が送れたか（一覧は頭にある）。
+     * 送れるかは指を動かすのと同じ瞬間に測る（別々に測ると、そのあいだに一覧の中身が届いて食い違い、CI で揺れた。2026-11-28 PR #216）
+     */
     const swipeOnSide = (dy: number) =>
       page.locator("#msSide").evaluate((side, d) => {
         side.scrollTop = 0;
@@ -174,16 +177,17 @@ test.describe("一覧の指の動き", () => {
         const touch = (y: number) => new Touch({ identifier: 1, target: side, clientX: r.x + 20, clientY: y });
         side.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, cancelable: true, touches: [touch(r.y + 40)] }));
         const move = new TouchEvent("touchmove", { bubbles: true, cancelable: true, touches: [touch(r.y + 40 + d)] });
+        const scrolls = side.scrollHeight > side.clientHeight + 1;
         side.dispatchEvent(move);
-        return move.defaultPrevented;
+        return { prevented: move.defaultPrevented, scrolls };
       }, dy);
     await page.setViewportSize({ width: 780, height: 150 });
     await expect(page.locator("html")).toHaveAttribute("data-compact", "on");
     // 頭にある一覧で指を下へ（それ以上戻れない）：ページへ渡さない
-    expect(await swipeOnSide(30)).toBe(true);
+    expect((await swipeOnSide(30)).prevented).toBe(true);
     // 指を上へ（一覧が送れる）なら止めない
-    const scrolls = await page.locator("#msSide").evaluate((el) => el.scrollHeight > el.clientHeight + 1);
-    expect(await swipeOnSide(-30)).toBe(!scrolls);
+    const up = await swipeOnSide(-30);
+    expect(up.prevented).toBe(!up.scrolls);
   });
 });
 

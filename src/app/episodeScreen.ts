@@ -150,6 +150,11 @@ interface WritingPane {
    * 字の無い所を押したら `null`。持たない欄（textarea）は、カーソルの位置で札を決める
    */
   pressedChar?(): number | null;
+  /**
+   * 読み上げで読んでいる文を塗る（本体の設計書 6.42「追従」）。`null` で消す。選択とカーソルには触らない。
+   * 持たない欄（右の線の欄〈テスト中〉）は塗らない（本体もテスト中の欄では塗らない）
+   */
+  markReading?(range: { start: number; end: number } | null): void;
   destroy(): void;
 }
 
@@ -193,7 +198,9 @@ function mountWritingPane(
   const stopInputCheck = onVerticalBroken
     ? watchVerticalInput(area, { vertical: () => area.classList.contains("vertical"), warn: onVerticalBroken, storage: window.localStorage })
     : undefined;
+  const marks = mountAloudMarks(area);
   return {
+    markReading: (range) => marks.mark(range),
     setText(text) {
       area.value = text;
       backdrop?.refresh();
@@ -222,9 +229,91 @@ function mountWritingPane(
       stopLongPress?.();
       stopOwnCaret?.();
       stopInputCheck?.();
+      marks.destroy();
       backdrop?.destroy();
       area.remove();
     },
+  };
+}
+
+/**
+ * **読み上げの塗りの層**（本体の設計書 6.42「追従」。本体の `#aloudmarks`）。
+ *
+ * textarea の選択は次に打った字で置き換わる範囲なので使わない（読み上げ中に打つと一文が消えて原稿を壊す）。
+ * 代わりに、textarea の真上に同じ字の大きさ・折り返しで本文を並べた層を重ね、字は透明のまま、読んでいる文の地だけを塗る。
+ * - 層は読んでいるあいだだけ置く。指は通す（押す・打つは下の textarea へ）
+ * - 送りは textarea に合わせる。読んでいる文が欄の外なら、textarea の送りを動かして寄せる（選択とカーソルは変えない）
+ */
+function mountAloudMarks(area: HTMLTextAreaElement) {
+  let layer: HTMLElement | undefined;
+  let range: { start: number; end: number } | null = null;
+  let frame = 0;
+  const place = () => {
+    if (!layer) return;
+    layer.style.left = `${area.offsetLeft}px`;
+    layer.style.top = `${area.offsetTop}px`;
+    layer.style.width = `${area.offsetWidth}px`;
+    layer.style.height = `${area.offsetHeight}px`;
+  };
+  const syncScroll = () => {
+    if (!layer) return;
+    layer.scrollTop = area.scrollTop;
+    layer.scrollLeft = area.scrollLeft;
+  };
+  /** 塗った文が欄の外なら、欄の3分の1ほどの所へ寄せる */
+  const reveal = (mark: HTMLElement, box: HTMLElement) => {
+    const outer = box.getBoundingClientRect();
+    const inner = mark.getBoundingClientRect();
+    if (inner.top < outer.top || inner.bottom > outer.bottom) area.scrollTop += inner.top - outer.top - outer.height / 3;
+    if (inner.left < outer.left || inner.right > outer.right) area.scrollLeft += (inner.left + inner.right) / 2 - (outer.left + outer.right) / 2;
+  };
+  const paint = (revealing: boolean) => {
+    frame = 0;
+    if (!layer || !range) return;
+    const text = area.value;
+    const start = Math.min(range.start, text.length);
+    const end = Math.min(Math.max(range.end, start), text.length);
+    const tail = text.endsWith("\n") || text === "" ? "​" : "";
+    layer.innerHTML = `${escapeHtml(text.slice(0, start))}<mark>${escapeHtml(text.slice(start, end))}</mark>${escapeHtml(text.slice(end))}${tail}`;
+    layer.className = `ms-editor ms-aloud-marks ${area.classList.contains("vertical") ? "vertical" : "horizontal"}`;
+    place();
+    syncScroll();
+    const mark = layer.querySelector<HTMLElement>("mark");
+    if (revealing && mark) {
+      reveal(mark, layer);
+      syncScroll();
+    }
+  };
+  const refresh = () => {
+    if (layer && !frame) frame = requestAnimationFrame(() => paint(false));
+  };
+  const resize = new ResizeObserver(refresh);
+  const remove = () => {
+    cancelAnimationFrame(frame);
+    frame = 0;
+    resize.disconnect();
+    area.removeEventListener("scroll", syncScroll);
+    area.removeEventListener("input", refresh);
+    layer?.remove();
+    layer = undefined;
+  };
+  return {
+    mark(next: { start: number; end: number } | null) {
+      range = next;
+      if (!next) return remove();
+      if (!layer) {
+        layer = document.createElement("div");
+        layer.id = "aloudMarks";
+        layer.setAttribute("aria-hidden", "true");
+        area.insertAdjacentElement("afterend", layer);
+        area.addEventListener("scroll", syncScroll);
+        area.addEventListener("input", refresh);
+        resize.observe(area);
+      }
+      cancelAnimationFrame(frame);
+      paint(true);
+    },
+    destroy: remove,
   };
 }
 
@@ -1003,12 +1092,16 @@ export function mountEpisodeScreen(
    * 選んだ範囲を置き換えて原稿を壊さないように）。画面を離れたら止める
    */
   let aloud: AloudRun | undefined;
+  /** 塗りを置いた欄（話を移ったあとでも、その欄の塗りを消す） */
+  let aloudPane: WritingPane | undefined;
   const aloudBar = screen.querySelector<HTMLElement>("#aloudBar")!;
   const aloudNow = screen.querySelector<HTMLElement>("#aloudNow")!;
   const stopAloud = () => {
     aloud?.stop();
     aloud = undefined;
     aloudBar.hidden = true;
+    aloudPane?.markReading?.(null);
+    aloudPane = undefined;
   };
   screen.querySelector<HTMLButtonElement>("#aloudStop")!.addEventListener("click", stopAloud);
   const startAloud = async (): Promise<void> => {
@@ -1035,14 +1128,18 @@ export function mountEpisodeScreen(
       rate: 1,
       onSentence: (_, sentence) => {
         aloudNow.textContent = sentence.speech;
+        target.markReading?.({ start: sentence.start, end: sentence.end });
       },
     });
     aloud = run;
+    aloudPane = target;
     aloudBar.hidden = false;
     const end = await run.finished;
     if (aloud !== run) return;
     aloud = undefined;
     aloudBar.hidden = true;
+    target.markReading?.(null);
+    aloudPane = undefined;
     if (end === "done" && !destroyed) options.toast("読み終えました");
   };
   /**

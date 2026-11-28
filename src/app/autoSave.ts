@@ -1,3 +1,4 @@
+import { noteFailure } from "../platform/failureLog";
 import type { FileStore } from "../platform/fileStore";
 import {
   writeTextFilePreservingFormat,
@@ -194,6 +195,8 @@ export function createAutoSave(options: AutoSaveOptions): AutoSave {
     const key = failure.reason;
     if (key === toldFailure) return;
     toldFailure = key;
+    // 知らせるのと同じ回だけ、失敗の記録にも残す（同じ理由が続いても1回）
+    noteFailure("保存", failure.detail ?? failure.reason, { 種別: failure.reason });
     for (const listener of [...failureListeners]) {
       try {
         listener(failure);

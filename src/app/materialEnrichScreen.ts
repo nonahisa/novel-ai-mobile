@@ -1,4 +1,5 @@
 import { NARRATOR_MOVE_PREFIX, decideFeatureAI, describeNarratorMove, paidUsageNotice, type NarratorMoveItem } from "../shared";
+import { noteFailure } from "../platform/failureLog";
 import { describeChoice, readAiChoices } from "../platform/aiAssignment";
 import { CLOUD_PROVIDERS, type CloudProviderId } from "../platform/aiKeys";
 import { backgroundWork, whileWorking, type BackgroundWork } from "../platform/backgroundWork";
@@ -151,6 +152,7 @@ export function mountMaterialEnrich(screen: HTMLElement, deps: MaterialEnrichDep
   const slot = screen.querySelector<HTMLElement>("#enrichSlot")!;
   const abort = new AbortController();
   const fail = (message: string) => {
+    noteFailure("本文から読み直す（読み込み）", message);
     if (!deps.stillHere()) return;
     slot.removeAttribute("aria-busy");
     slot.innerHTML = `<p class="flag shu long" id="enrichProblem">${escapeHtml(message)}</p>`;
@@ -250,6 +252,9 @@ export function mountMaterialEnrich(screen: HTMLElement, deps: MaterialEnrichDep
           }
         });
       } catch (error) {
+        if (!abort.signal.aborted) {
+          noteFailure("本文から読み直す", error, { 使用中のAI: `${chosenProvider.displayName} / ${chosen.model}` });
+        }
         if (abort.signal.aborted || !deps.stillHere()) return;
         run.disabled = false;
         slot.querySelector<HTMLTextAreaElement>("#enrichNotes")?.removeAttribute("disabled");

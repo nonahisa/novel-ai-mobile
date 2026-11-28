@@ -334,3 +334,14 @@ export { WORLD_SCHEMA_VERSION } from "novel-ai-assistant/src/models/world";
 export { buildRelationGraph, egoGraph, type RelationEdge } from "novel-ai-assistant/src/core/relationGraph";
 // コミュニティ（Discord）の招待の URL（本体と同じ1つ。［ほか］→ ヘルプ → コミュニティ（Discord））
 export { COMMUNITY_DISCORD_URL } from "novel-ai-assistant/src/core/community";
+/*
+  障害報告用の記録（本体 設計書 8.5。core/issueReport.ts）。組み立てと伏せ方は本体のものをそのまま使う。
+  モバイル版が足すのは、失敗の記録（`platform/failureLog.ts`）と、環境の行と、渡し方だけ
+*/
+export {
+  buildIssueReport,
+  makeIssueReportId,
+  ISSUE_REPORT_RANGES,
+  type IssueReport,
+  type IssueReportInput,
+} from "novel-ai-assistant/src/core/issueReport";

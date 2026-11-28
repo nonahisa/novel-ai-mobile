@@ -18,6 +18,7 @@ import { confirmPaidUsage } from "./paidConfirm";
 import { episodeName, mountEpisodePicker, pickedEpisodesText, renderTypoEstimate, type PickRow } from "./typoScreen";
 import { findSynopsis } from "../shared";
 import { chooseAiForRun } from "./aiChoose";
+import { noteFailure } from "../platform/failureLog";
 import { askChoice, tell } from "./dialog";
 import { renameEpisodeWithLedgers, renamedEpisodeFileName } from "../platform/episodeRename";
 import { Capacitor } from "@capacitor/core";
@@ -97,6 +98,7 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
   const now = screen.querySelector<HTMLElement>("#synopsisNow")!;
   const abort = new AbortController();
   const fail = (message: string) => {
+    noteFailure("あらすじ（読み込み）", message);
     if (!deps.stillHere()) return;
     slot.removeAttribute("aria-busy");
     slot.innerHTML = `<p class="flag shu long">${escapeHtml(message)}</p>`;
@@ -294,6 +296,15 @@ export function mountSynopsisRun(screen: HTMLElement, deps: SynopsisRunDeps): ()
         abort.signal.removeEventListener("abort", stopWithScreen);
       }
       plans.clear();
+      // 話の名前（label）は原稿の題なので残さない。何件目かと理由だけ
+      failures.forEach((failure, index) =>
+        noteFailure("あらすじ", failure.reason, {
+          種別: "AI に作ってもらえなかった",
+          段: `${index + 1}件目`,
+          使用中のAI: `${chosenProvider.displayName} / ${chosen.model}`,
+        }),
+      );
+      if (saveFailure) noteFailure("あらすじ（保存）", saveFailure);
       if (!deps.stillHere()) return;
       if (saveFailure) {
         progress.textContent = made.length > 0 ? `${made.length}話のあらすじを書きました。${saveFailure}` : saveFailure;

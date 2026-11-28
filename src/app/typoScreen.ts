@@ -17,6 +17,7 @@ import { Capacitor } from "@capacitor/core";
 import { readSeriesTerms, readWorkTerms } from "../platform/workTerms";
 import { escapeHtml, renderAppBar } from "./menuScreen";
 import { confirmPaidUsage } from "./paidConfirm";
+import { noteFailure } from "../platform/failureLog";
 import { addProposals, readProposals, replaceEpisodeProposals, writeProposals } from "./typoProposals";
 
 /**
@@ -185,6 +186,7 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
   const slot = screen.querySelector<HTMLElement>("#typoSlot")!;
   const abort = new AbortController();
   const fail = (error: unknown) => {
+    noteFailure(`${label}（読み込み）`, error);
     if (deps.stillHere()) slot.innerHTML = `<p class="flag shu long">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
   };
   void (async () => {
@@ -319,6 +321,13 @@ export function mountTypoRun(screen: HTMLElement, deps: TypoRunDeps): () => void
         // 残りの話だけを選び直して、見積もりから（払う前にもう一度確かめる）
         selected = list.slice(interrupted).map((input) => input.path);
         return showEstimate(`裏に回したので「${episodeName(list[interrupted]!.path)}」の途中で止めました。続きを走らせますか`);
+      }
+      for (const failure of total.failures) {
+        noteFailure(label, failure.reason, {
+          種別: "AI に見てもらえなかった",
+          チャンク: String(failure.chunk),
+          使用中のAI: `${chosenProvider.displayName} / ${chosen.model}`,
+        });
       }
       progress.textContent = typoResultText(total);
       slot.querySelector<HTMLElement>("#typoAfter")!.innerHTML = `<div class="menu-items"><button class="menu-item built" data-tab="proposals">提案を見る</button></div>`;

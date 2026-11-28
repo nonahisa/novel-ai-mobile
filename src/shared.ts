@@ -56,6 +56,7 @@ export {
   MemoMarkersConfigError,
   MEMO_MARKER_DEFS,
   MEMO_MARKER_IDS,
+  memoInsertOf,
   memoMarkerLabels,
   memoMarkersOf,
   memoMarkersOfConfigText,
@@ -244,7 +245,7 @@ export { convertForPosting, noteCopyMessage } from "novel-ai-assistant/src/core/
 export { postingCopyTargets, type PostingCopyTarget } from "novel-ai-assistant/src/core/postingCopyTargets";
 export { extractEpisodeParts, postingCopySource } from "novel-ai-assistant/src/core/episodeCopy";
 export { postingPageUrl } from "novel-ai-assistant/src/core/postingSiteUrls";
-export { buildReadingPlan, readingRangesOf, type ReadingSentence } from "novel-ai-assistant/src/core/readAloud";
+export { buildReadingPlan, isReadingMemoLine, READ_ALOUD_MEMO_TEXT, readingRangesOf, type ReadingSentence } from "novel-ai-assistant/src/core/readAloud";
 export { notationModeFor } from "novel-ai-assistant/src/core/manuscriptRender";
 export { postingSiteInfo, siteProfile, type PostingSiteId } from "novel-ai-assistant/src/models/posting";
 /*

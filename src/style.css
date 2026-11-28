@@ -2432,6 +2432,14 @@ a.gh-open {
   font: inherit;
   font-size: 14px;
   font-weight: 700;
+  flex: none;
+  white-space: nowrap;
+}
+/* ［⚑ 引っかかった］［続ける］は縁だけ（［止める］と見分ける。狭い幅では今の文の欄が縮む） */
+.aloud-bar button:not(.primary) {
+  padding: 0 12px;
+  background: var(--surface);
+  color: var(--accent);
 }
 
 /* 障害報告用の記録（2026-11-28。`issueReportScreen.ts`） */

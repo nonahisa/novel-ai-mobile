@@ -306,6 +306,72 @@ test("［…］→ 読み上げ：読んでいる文を塗り、外れた所な�
   expect(await editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 0]);
 });
 
+// 本体の設計書 6.42「⚑ 引っかかった」：読んでいる文の上に付箋の行を1行挿して一時停止。［続ける］で同じ文から。取り消せる
+test("［…］→ 読み上げ →［⚑ 引っかかった］：文の上に付箋を挿して止まり、［続ける］で同じ文から読む", async ({ page }) => {
+  await page.addInitScript(() => {
+    const spoken: string[] = [];
+    let current: { onend: (() => void) | null } | undefined;
+    const fake = {
+      getVoices: () => [{ lang: "ja-JP", name: "偽の声" }],
+      addEventListener: () => undefined,
+      speak(utterance: { text: string; onend: (() => void) | null }) {
+        spoken.push(utterance.text);
+        current = utterance;
+      },
+      cancel() {
+        current = undefined;
+      },
+    };
+    Object.defineProperty(window, "speechSynthesis", { value: fake, configurable: true });
+    (window as unknown as { SpeechSynthesisUtterance: unknown }).SpeechSynthesisUtterance = class {
+      text: string;
+      lang = "";
+      rate = 1;
+      voice: unknown;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(text: string) {
+        this.text = text;
+      }
+    };
+    (window as unknown as { __aloud: unknown }).__aloud = { spoken, finish: () => current?.onend?.() };
+  });
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("textarea#msEditor");
+  const body = "一つ目の文。\n二つ目の文。\n三つ目の文。";
+  await editor.fill(body);
+  const caret = body.indexOf("三つ目");
+  await editor.evaluate((el: HTMLTextAreaElement, at) => el.setSelectionRange(at, at), body.indexOf("二つ目"));
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "読み上げ" }).click();
+  await expect(page.locator("#aloudNow")).toHaveText("二つ目の文。");
+  // 読んでいるあいだにカーソルを三つ目へ動かしておく（挿した行の分だけ後ろへずれる）
+  await editor.evaluate((el: HTMLTextAreaElement, at) => el.setSelectionRange(at, at), caret);
+  await page.locator("#aloudFlag").click();
+  const marked = "一つ目の文。\n// 音読：ここで引っかかった\n二つ目の文。\n三つ目の文。";
+  await expect(editor).toHaveValue(marked);
+  const shift = "// 音読：ここで引っかかった\n".length;
+  expect(await editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([caret + shift, caret + shift]);
+  // 一時停止：［⚑］は隠れ、［続ける］が出る。塗りは同じ文のまま
+  await expect(page.locator("#aloudFlag")).toBeHidden();
+  await expect(page.locator("#aloudResume")).toBeVisible();
+  await expect(page.locator("#aloudMarks mark")).toHaveText("二つ目の文。");
+  await page.locator("#aloudResume").click();
+  await expect(page.locator("#aloudFlag")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __aloud: { spoken: string[] } }).__aloud.spoken)).toEqual(["二つ目の文。", "二つ目の文。"]);
+  // 同じ文でもう一度押しても、2つ目は挿さない
+  await page.locator("#aloudFlag").click();
+  await expect(page.locator("#toast")).toHaveText("この文の上には、もう印があります");
+  await expect(editor).toHaveValue(marked);
+  await page.locator("#aloudStop").click();
+  await expect(page.locator("#aloudBar")).toBeHidden();
+  // 挿した行は1手として取り消せる
+  await page.locator('[data-tool="undo"]').click();
+  await expect(editor).toHaveValue(body);
+});
+
 test("［…］→ 読み上げ：日本語の声が無ければ読まずに訳を出す", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, "speechSynthesis", {

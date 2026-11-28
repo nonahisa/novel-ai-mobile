@@ -14,7 +14,7 @@ import { ACTION_TREE, COMMUNITY_DISCORD_URL, isItemShownInActionList, type Actio
 
 /** 開ける画面 */
 /** `proposals` は［提案］のタブ（頭に、最後に開いた話の誤字脱字の入口がある） */
-export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals" | "stats" | "update" | "materials";
+export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals" | "stats" | "update" | "materials" | "issueReport";
 
 /**
  * 外の決まった URL を端末のブラウザで開く項目（画面を持たない）。開く先は ここの1つずつだけで、作品や原稿は送らない。
@@ -167,6 +167,8 @@ export const TABS: readonly PlannedTab[] = [
           { label: "バージョン確認", built: "check", action: "バージョン確認" },
           { label: "ライセンス", built: "licenses" },
           // 2026-11-26 作者の答え「A ヘルプに Discord を足す」。本体の「ヘルプ › コミュニティ」と同じ URL
+          // 2026-11-28 作者の答え「3つとも作る」。本体の「障害報告用の記録」と同じ記録の形（`issueReportScreen.ts`）
+          { label: "障害報告用の記録", action: "障害報告用の記録", built: "issueReport" },
           { label: "コミュニティ（Discord）", action: "コミュニティ", link: "community" },
         ],
       },
@@ -243,6 +245,7 @@ export const BUILT_ACTIONS: Readonly<Record<string, ScreenId>> = {
   誤字脱字検知: "proposals",
   推敲: "proposals",
   執筆統計: "stats",
+  障害報告用の記録: "issueReport",
 };
 
 /** 本体の操作のうち、外の URL を開くもの（名前 → `LINKS`） */

@@ -43,7 +43,8 @@ test.describe("更新", () => {
     await openWithWorks(page, "#/other");
     await page.locator('[data-screen="update"]').click();
     await expect(page).toHaveURL(/#\/update$/);
-    await expect(page.locator(".update-current")).toContainText("モバイル版 0.1.");
+    // 版は上がっていくので、形（数.数.数）で見る（0.2.0 で「0.1.」の決め打ちが落ちた）
+    await expect(page.locator(".update-current")).toHaveText(/^モバイル版 \d+\.\d+\.\d+/);
     await expect(page.locator('[data-update-auto="off"]')).toHaveAttribute("aria-pressed", "true");
     expect(asked).toEqual([]);
   });

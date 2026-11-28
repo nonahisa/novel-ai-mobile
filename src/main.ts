@@ -2,6 +2,7 @@ import "./style.css";
 import "./looks.css";
 import { App } from "@capacitor/app";
 import { mountShell } from "./app/shell";
+import { startFailureLog, watchUncaughtFailures } from "./app/failureLogFile";
 import { handleHardwareBack } from "./app/hardwareBack";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
@@ -20,6 +21,9 @@ import { applyBodyFont, applyBodySize, readBodyFont, readBodySize } from "./app/
  * 中身は `src/app/`。端末で落ちる部品へ届いていないかは `test/androidReach.test.ts` が
  * この入口から静的 import をたどって見張る。
  */
+// 失敗の記録（障害報告用の記録の材料。`src/app/failureLogFile.ts`）。画面より先に始める
+startFailureLog();
+watchUncaughtFailures(window);
 mountShell(document.querySelector<HTMLDivElement>("#app")!);
 
 /*

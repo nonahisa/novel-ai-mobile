@@ -23,7 +23,7 @@ import {
   termColorCss,
   type TermInput,
 } from "./termHighlight";
-import { TABS, TRIAL_ITEMS, buildActionList, hiddenActions, searchActions, type PlannedTab } from "./menuPlan";
+import { TABS, TRIAL_ITEMS, buildActionList, hiddenActions, searchActions, type PlannedTab, type ScreenId } from "./menuPlan";
 import { NOT_BUILT_MESSAGE, escapeHtml, itemButton, renderActionRows, renderAppBar, renderTab, renderTabBar } from "./menuScreen";
 import {
   DRAFT_PATH,
@@ -91,7 +91,10 @@ import {
   readConflictMaterial,
   readRepoTarget,
   sendWork,
+  type SyncOutcome,
 } from "../platform/workSyncRun";
+import { noteFailure } from "../platform/failureLog";
+import { mountIssueReportScreen } from "./issueReportScreen";
 import { nativePostForm } from "../platform/githubDeviceFlow";
 import { applyLook, parseLook, readLook, renderLookSection, writeLook } from "./look";
 import { PROPOSALS_CHANGED, readProposals, renderProposals, renderTypoEntry, withoutProposal, writeProposals, type TypoProposal } from "./typoProposals";
@@ -142,6 +145,7 @@ type Route =
   | { kind: "import" }
   | { kind: "display" }
   | { kind: "licenses" }
+  | { kind: "issueReport" }
   | { kind: "ai" }
   | { kind: "drafts" }
   | { kind: "stats" }
@@ -209,6 +213,7 @@ export function parseRoute(hash: string): Route {
   if (name === "import") return { kind: "import" };
   if (name === "display") return { kind: "display" };
   if (name === "licenses") return { kind: "licenses" };
+  if (name === "issueReport") return { kind: "issueReport" };
   if (name === "ai") return { kind: "ai" };
   if (name === "drafts") return { kind: "drafts" };
   if (name === "stats") return { kind: "stats" };
@@ -262,7 +267,8 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", materials: "#/materials", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", materials: "#/materials", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update", issueReport: "#/issueReport" } as const satisfies Record<ScreenId, string>;
+// ↑ 画面を足したら、ここにも足す（足し忘れると型の検査が止める。押しても行き先が無く、作品一覧に戻っていた）
 
 /**
  * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。
@@ -522,6 +528,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       const path = await createEpisode(store, root, name);
       location.hash = episodeHash(root, path);
     } catch (error) {
+      noteFailure("新しい話を作る", error);
       toast(`新しい話を作れませんでした（${error instanceof Error ? error.message : String(error)}）`);
     }
   };
@@ -539,6 +546,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       toast(outcome === "renamed" ? "章の名前を変えました" : `「${name.trim()}」を立てました`);
       if (stillHere()) fillEpisodeSide(screen, store, root, path, scanOptions, stillHere);
     } catch (error) {
+      noteFailure("章を立てる", error);
       toast(`章を立てられませんでした（${error instanceof Error ? error.message : String(error)}）`);
     }
   };
@@ -585,7 +593,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "stats" || route.kind === "materials" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "issueReport" || route.kind === "stats" || route.kind === "materials" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab, tabBadges());
@@ -797,6 +805,16 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         lastTabHash = "#/other";
         screen.innerHTML = `${renderAppBar("更新", { back: true })}<div id="updateSlot"></div>`;
         mountUpdateScreen(screen.querySelector<HTMLElement>("#updateSlot")!, updateDeps(toast), stillHere);
+        return;
+      case "issueReport":
+        lastTabHash = "#/other";
+        mountIssueReportScreen(screen, {
+          store,
+          vault: secretVault(),
+          settings: () => DeviceSettings.load(capacitorPreferencesBackend).then(({ settings }) => settings),
+          toast,
+          stillHere,
+        });
         return;
       case "licenses":
         lastTabHash = "#/other";
@@ -1046,11 +1064,16 @@ function mountConflictScreen(screen: HTMLElement, store: FileStore, root: string
         const { applied, outcome } = await chooseConflict({ fs, root, store, material: chosen, choice });
         if (outcome) await afterIntegrated(store, root)(outcome);
         if (!applied.ok) {
+          noteFailure("競合を選ぶ", applyFailureText(applied), { 種別: applied.reason });
           await tell(applyFailureText(applied));
           return back();
         }
+        if (outcome?.kind === "failed" || outcome?.kind === "changed_meanwhile") {
+          noteFailure("競合を選んで取り込む", outcomeText(outcome), { 種別: outcome.kind === "failed" ? outcome.reason : outcome.kind });
+        }
         back(outcome ? outcomeText(outcome) : undefined);
-      } catch {
+      } catch (error) {
+        noteFailure("競合を選ぶ", error);
         await tell("書けませんでした。原稿は変えていません");
         back();
       } finally {
@@ -1100,20 +1123,29 @@ function mountSyncScreen(screen: HTMLElement, store: FileStore, root: string, st
     if (shown) slot.querySelector<HTMLElement>("#syncResult")!.textContent = shown;
     slot.removeAttribute("aria-busy");
   };
+  /** 同期の結果を1行にする。うまくいかなかったものは失敗の記録にも残す（障害報告用の記録の材料） */
+  const told = (kind: "fetch" | "send", outcome: SyncOutcome): string => {
+    if (outcome.kind === "failed" || outcome.kind === "changed_meanwhile") {
+      noteFailure(kind === "fetch" ? "同期（取ってくる）" : "同期（送る）", outcomeText(outcome), {
+        種別: outcome.kind === "failed" ? outcome.reason : outcome.kind,
+      });
+    }
+    return outcomeText(outcome);
+  };
   const run = async (kind: "fetch" | "send"): Promise<string> => {
     const token = await secretVault().get(GITHUB_TOKEN_SECRET);
-    if (!token) return outcomeText({ kind: "failed", reason: "sign_in_again" });
+    if (!token) return told(kind, { kind: "failed", reason: "sign_in_again" });
     // 1回の［取ってくる］［送る］ごとに置き場を作る（`.git` を覚えるのはその1回のあいだだけ。`createGitFs` の `steadyGitDir`）
     const fs = createGitFs(new CapacitorGitFsBackend(), { steadyGitDir: true });
-    if (kind === "fetch") return outcomeText(await fetchWork({ fs, root, token, store }).then(afterIntegrated(store, root)));
+    if (kind === "fetch") return told(kind, await fetchWork({ fs, root, token, store }).then(afterIntegrated(store, root)));
     let user = readGithubUser(globalThis.localStorage);
     if (!user) {
       user = await fetchGithubLogin(token);
       writeGithubUser(globalThis.localStorage, user);
     }
-    if (!user) return outcomeText({ kind: "failed", reason: "offline" });
+    if (!user) return told(kind, { kind: "failed", reason: "offline" });
     const message = pushMessage((state?.unsent ?? []).map((file) => file.path));
-    return outcomeText(await sendWork({ fs, root, token, author: githubIdentity(user.login, user.id), message }));
+    return told(kind, await sendWork({ fs, root, token, author: githubIdentity(user.login, user.id), message }));
   };
   slot.addEventListener("click", (event) => {
     const target = (event.target as HTMLElement).closest<HTMLElement>("[data-sync-run]");
@@ -1124,7 +1156,10 @@ function mountSyncScreen(screen: HTMLElement, store: FileStore, root: string, st
     slot.querySelector<HTMLElement>("#syncResult")!.textContent = "";
     const kind = target.dataset.syncRun === "fetch" ? "fetch" : "send";
     void run(kind)
-      .catch(() => outcomeText({ kind: "failed", reason: "unknown" }))
+      .catch((error: unknown) => {
+        noteFailure(kind === "fetch" ? "同期（取ってくる）" : "同期（送る）", error);
+        return outcomeText({ kind: "failed", reason: "unknown" });
+      })
       .then((result) => {
         running = false;
         return paint(result);

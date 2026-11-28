@@ -56,6 +56,15 @@ describe("renderAloudSettings", () => {
     expect(html).toContain("前に選んだ声がこの端末に見つかりません");
   });
 
+  it("0.2.4 で名前だけを覚えた声は、その名前の最初の声を選んだ形で出す（見つからないとは言わない）", () => {
+    const html = renderAloudSettings({ rate: 1, voice: "Kyoko" }, [
+      { id: "com.apple.voice.compact.ja-JP.Kyoko", label: "Kyoko（標準）" },
+      { id: "com.apple.voice.enhanced.ja-JP.Kyoko", label: "Kyoko（高品質）" },
+    ]);
+    expect(html).toContain('data-aloud-voice="com.apple.voice.compact.ja-JP.Kyoko" aria-pressed="true"');
+    expect(html).not.toContain("見つかりません");
+  });
+
   it("声の名前は字のまま出す（HTML として読まない）", () => {
     const html = renderAloudSettings({ rate: 1, voice: "" }, [{ id: "<b>", label: "<b>" }]);
     expect(html).not.toContain("<b>");

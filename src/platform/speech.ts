@@ -31,6 +31,44 @@ export interface SpeakerVoice {
 
 export const NO_JAPANESE_VOICE = "この端末には日本語の読み上げの声が見つかりません（端末の設定の「テキスト読み上げ」で日本語の声を入れると使えます）";
 
+/** 声の見分けに使う所だけ（`SpeechSynthesisVoice` の一部。試験で作れるように） */
+export interface WebVoiceLike {
+  name: string;
+  voiceURI: string;
+  lang: string;
+}
+
+const QUALITY: ReadonlyArray<[RegExp, string]> = [
+  [/premium/i, "最高品質"],
+  [/enhanced/i, "高品質"],
+  [/compact/i, "標準"],
+];
+
+/**
+ * 設定の画面に並べる日本語の声（iOS・ブラウザ）。**鍵は voiceURI**（2026-11-29 Mac が iPad mini 6 で見つけた：「Kyoko」が
+ * 標準と高品質で2つあり、名前では見分けられない）。同じ名前が2つ以上あれば、voiceURI から品質を読んで見出しに添える
+ * （読めなければ番号）
+ */
+export function webVoiceChoices(voices: readonly WebVoiceLike[]): SpeakerVoice[] {
+  const japanese = voices.filter((voice) => voice.lang.toLowerCase().startsWith("ja"));
+  const counts = new Map<string, number>();
+  for (const voice of japanese) counts.set(voice.name, (counts.get(voice.name) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return japanese.map((voice) => {
+    const id = voice.voiceURI || voice.name;
+    if ((counts.get(voice.name) ?? 0) < 2) return { id, label: voice.name };
+    const order = (seen.get(voice.name) ?? 0) + 1;
+    seen.set(voice.name, order);
+    const quality = QUALITY.find(([pattern]) => pattern.test(voice.voiceURI))?.[1];
+    return { id, label: `${voice.name}（${quality ?? order}）` };
+  });
+}
+
+/** 覚えた声を引く。voiceURI で探し、無ければ名前（0.2.4 は名前で覚えていた）で最初の声 */
+export function findWebVoice<T extends WebVoiceLike>(voices: readonly T[], id: string): T | undefined {
+  return voices.find((voice) => voice.voiceURI === id) ?? voices.find((voice) => voice.name === id);
+}
+
 /** iOS・ブラウザ：Web Speech API */
 export class WebSpeaker implements Speaker {
   private voice: SpeechSynthesisVoice | undefined;
@@ -68,14 +106,14 @@ export class WebSpeaker implements Speaker {
   async voices(): Promise<SpeakerVoice[]> {
     if (typeof speechSynthesis === "undefined") return [];
     if (!(await this.japaneseVoice())) return [];
-    return this.japaneseVoices().map((voice) => ({ id: voice.name, label: voice.name }));
+    return webVoiceChoices(this.japaneseVoices());
   }
 
   speak(text: string, rate: number, voiceName?: string): Promise<SpeakEnd> {
     return new Promise((resolve) => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = "ja-JP";
-      const chosen = voiceName ? this.japaneseVoices().find((voice) => voice.name === voiceName) : undefined;
+      const chosen = voiceName ? findWebVoice(this.japaneseVoices(), voiceName) : undefined;
       const voice = chosen ?? this.voice;
       if (voice) utterance.voice = voice;
       utterance.rate = rate;

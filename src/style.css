@@ -1111,6 +1111,30 @@ a.menu-item {
 .ms-editor-wrap {
   position: relative;
 }
+/*
+  読み上げの塗りの層（`episodeScreen.ts` の mountAloudMarks。本体の設計書 6.42 の #aloudmarks）。textarea の真上に重ね、
+  字は透明、読んでいる文の地だけを薄い水色に塗る（用語は字の色・メモは黄なので被らない）。指は下の textarea へ通す。
+  送り棒は textarea と同じに出して折り返しの幅をそろえ、色だけ消す
+*/
+.ms-aloud-marks {
+  position: absolute;
+  margin: 0;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-color: transparent transparent;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  background: transparent;
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+}
+.ms-aloud-marks mark {
+  color: transparent;
+  background: color-mix(in srgb, #4fb3e8 35%, transparent);
+  border-radius: 2px;
+}
 .ms-editor-wrap .ms-backdrop {
   white-space: pre-wrap;
   overflow-wrap: break-word;

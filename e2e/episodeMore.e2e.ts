@@ -242,6 +242,70 @@ test("［…］→ 読み上げ：カーソルの文から1文ずつ読み、［
   expect(await editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([body.indexOf("二つ目"), body.indexOf("二つ目")]);
 });
 
+// 本体の設計書 6.42「追従」：書く面（textarea）は選択を使わず、重ねた層に背景だけ塗る。画面の外なら寄せる
+test("［…］→ 読み上げ：読んでいる文を塗り、外れた所なら寄せる。選択とカーソルは変えない", async ({ page }) => {
+  await page.addInitScript(() => {
+    let current: { onend: (() => void) | null } | undefined;
+    const fake = {
+      getVoices: () => [{ lang: "ja-JP", name: "偽の声" }],
+      addEventListener: () => undefined,
+      speak(utterance: { onend: (() => void) | null }) {
+        current = utterance;
+      },
+      cancel() {
+        current = undefined;
+      },
+    };
+    Object.defineProperty(window, "speechSynthesis", { value: fake, configurable: true });
+    (window as unknown as { SpeechSynthesisUtterance: unknown }).SpeechSynthesisUtterance = class {
+      text: string;
+      lang = "";
+      rate = 1;
+      voice: unknown;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(text: string) {
+        this.text = text;
+      }
+    };
+    (window as unknown as { __aloud: unknown }).__aloud = { finish: () => current?.onend?.() };
+  });
+  await openWithWorks(page, "#/works", FAKE_WORKS);
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("textarea#msEditor");
+  // 長い本文：読み始めの文は欄の頭にあり、最後の文は欄の外（送らないと見えない）
+  const filler = Array.from({ length: 120 }, (_, i) => `埋め草の文その${i + 1}。`).join("\n");
+  const body = `一つ目の文。二つ目の文。\n${filler}\n最後の文。`;
+  await editor.fill(body);
+  await editor.evaluate((el: HTMLTextAreaElement) => {
+    el.setSelectionRange(0, 0);
+    el.scrollTop = 0;
+    el.scrollLeft = 0;
+  });
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "読み上げ" }).click();
+  const mark = page.locator("#aloudMarks mark");
+  await expect(mark).toHaveText("一つ目の文。");
+  // 塗りは原稿の欄の中に重なる
+  const inside = async () => {
+    const [m, e] = [await mark.boundingBox(), await editor.boundingBox()];
+    return !!m && !!e && m.x >= e.x - 1 && m.y >= e.y - 1 && m.x + m.width <= e.x + e.width + 1 && m.y + m.height <= e.y + e.height + 1;
+  };
+  // 広い幅は、話を開いた直後に左の一覧の幅が決まるまで欄が動く（待ってから見る）
+  await expect.poll(inside).toBe(true);
+  await page.evaluate(() => (window as unknown as { __aloud: { finish: () => void } }).__aloud.finish());
+  await expect(mark).toHaveText("二つ目の文。");
+  // 最後の文まで進める（埋め草は1行ずつ1文）
+  for (let i = 0; i < 121; i++) await page.evaluate(() => (window as unknown as { __aloud: { finish: () => void } }).__aloud.finish());
+  await expect(mark).toHaveText("最後の文。");
+  await expect.poll(inside).toBe(true);
+  await page.locator("#aloudStop").click();
+  await expect(page.locator("#aloudMarks mark")).toHaveCount(0);
+  await expect(editor).toHaveValue(body);
+  expect(await editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 0]);
+});
+
 test("［…］→ 読み上げ：日本語の声が無ければ読まずに訳を出す", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, "speechSynthesis", {

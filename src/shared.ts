@@ -100,7 +100,12 @@ export { nextChapterNumber, nextDatedName, nextUntitledName, parseEpisodeFileNam
 */
 export { renameUnnumberedSynopses, renumberBookPositions, renumberChapterSet, renumberPostingPosts, renumberTimelineEpisodes } from "novel-ai-assistant/src/core/episodeRenumber";
 export { READINGS_DIRECTORY, readingDictionaryMoveConflictMessage } from "novel-ai-assistant/src/core/readingDictionaryPlace";
-export { readingDictionaryFileName } from "novel-ai-assistant/src/core/readingDictionary";
+export {
+  parseReadingDictionary,
+  readingDictionaryFileName,
+  readingSpansFor,
+  type ReadingSpan,
+} from "novel-ai-assistant/src/core/readingDictionary";
 export { normalizeEpisodePath } from "novel-ai-assistant/src/models/chapter";
 export { BOOK_DIR, BOOK_FILE, BOOK_SCHEMA_VERSION } from "novel-ai-assistant/src/models/book";
 export { POSTING_FILE, POSTING_SCHEMA_VERSION } from "novel-ai-assistant/src/models/posting";

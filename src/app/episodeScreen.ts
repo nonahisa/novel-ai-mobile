@@ -4,6 +4,7 @@ import { lockScrollChain } from "./scrollChainLock";
 import { fitToVisible } from "./fitToVisible";
 import { exportCopy, exportTargets } from "./exportCopy";
 import { readWorkMemoMarkers } from "../platform/memoMarkers";
+import { readingSpansForEpisode } from "../platform/readingDictionary";
 import { markPosted, readPostingMark } from "../platform/postingMark";
 import { readPostingSites } from "../platform/postingSites";
 import { aloudStartIndex, readingMemoEdit, readingPlanFor, resumeIndexAt, runAloud, type AloudPlan, type AloudRun } from "./readAloud";
@@ -1162,7 +1163,9 @@ export function mountEpisodeScreen(
     if (destroyed || pane !== target) return;
     aloudMarkers = markers;
     aloudText = target.value();
-    const plan = readingPlanFor(aloudText, path, markers);
+    const readings = options.workRoot ? await readingSpansForEpisode(store, options.workRoot, path, aloudText) : [];
+    if (destroyed || pane !== target || target.value() !== aloudText) return;
+    const plan = readingPlanFor(aloudText, path, markers, readings);
     if (plan.sentences.length === 0) return options.toast("読む文がありません");
     await readAloudFrom(target, plan, aloudStartIndex(plan, target.selection().start));
   };
@@ -1194,13 +1197,18 @@ export function mountEpisodeScreen(
     target.markReading?.({ start: moved(sentence.start), end: moved(sentence.end) });
     showAloudBar(true);
   });
-  aloudResume.addEventListener("click", () => {
+  aloudResume.addEventListener("click", async () => {
     const target = aloudPane;
     const at = aloudPausedAt;
     if (!target || at === undefined || destroyed) return;
-    // 止めているあいだに打っていてもよい（計画は今の本文で作り直す）
-    aloudText = target.value();
-    const plan = readingPlanFor(aloudText, path, aloudMarkers);
+    // 止めているあいだに打っていてもよい（計画は今の本文で作り直す。辞書の句の位置も今の本文で求める）
+    aloudResume.disabled = true;
+    const text = target.value();
+    const readings = options.workRoot ? await readingSpansForEpisode(store, options.workRoot, path, text) : [];
+    aloudResume.disabled = false;
+    if (destroyed || aloudPane !== target || aloudPausedAt !== at || target.value() !== text) return;
+    aloudText = text;
+    const plan = readingPlanFor(aloudText, path, aloudMarkers, readings);
     if (plan.sentences.length === 0) {
       stopAloud();
       return options.toast("読む文がありません");

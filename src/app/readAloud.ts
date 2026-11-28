@@ -8,6 +8,7 @@ import {
   readingRangesOf,
   type MemoMarkers,
   type ReadingSentence,
+  type ReadingSpan,
 } from "../shared";
 import type { SpeakEnd, Speaker } from "../platform/speech";
 
@@ -26,9 +27,10 @@ export interface AloudPlan {
   readable: { start: number; end: number }[] | null;
 }
 
-export function readingPlanFor(text: string, path: string, memoMarkers?: MemoMarkers): AloudPlan {
+/** `readings` は読みの辞書の範囲（`platform/readingDictionary.ts`。声へ渡す写しだけをその読みにする。作者のルビが勝つ） */
+export function readingPlanFor(text: string, path: string, memoMarkers?: MemoMarkers, readings: readonly ReadingSpan[] = []): AloudPlan {
   return {
-    sentences: buildReadingPlan(text, notationModeFor(path), [], memoMarkers ? { memoMarkers } : {}),
+    sentences: buildReadingPlan(text, notationModeFor(path), [...readings], memoMarkers ? { memoMarkers } : {}),
     readable: readingRangesOf(text),
   };
 }

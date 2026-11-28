@@ -372,6 +372,54 @@ test("［…］→ 読み上げ →［⚑ 引っかかった］：文の上に�
   await expect(editor).toHaveValue(body);
 });
 
+// 本体の設計書 6.42.1：パソコンで作った読みの辞書（`.aiwriter/readings/<話>.json`）を、声へ渡す写しにだけ当てる。辞書と本文は変えない
+test("［…］→ 読み上げ：読みの辞書の読みで読む（本文と辞書は変えない）", async ({ page }) => {
+  await page.addInitScript(() => {
+    const spoken: string[] = [];
+    const fake = {
+      getVoices: () => [{ lang: "ja-JP", name: "偽の声" }],
+      addEventListener: () => undefined,
+      speak(utterance: { text: string }) {
+        spoken.push(utterance.text);
+      },
+      cancel: () => undefined,
+    };
+    Object.defineProperty(window, "speechSynthesis", { value: fake, configurable: true });
+    (window as unknown as { SpeechSynthesisUtterance: unknown }).SpeechSynthesisUtterance = class {
+      text: string;
+      lang = "";
+      rate = 1;
+      voice: unknown;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(text: string) {
+        this.text = text;
+      }
+    };
+    (window as unknown as { __aloud: unknown }).__aloud = { spoken };
+  });
+  const dictPath = "灯台守_確認用/.aiwriter/readings/本文__第1話 手紙.txt.json";
+  const dict = JSON.stringify({
+    version: 1,
+    episode: "本文/第1話 手紙.txt",
+    entries: [{ word: "姉", quote: "姉から手紙", reading: "あね", source: "author" }],
+  });
+  await openWithWorks(page, "#/works", { ...FAKE_WORKS, [dictPath]: dict });
+  await page.locator(".work-card", { hasText: "灯台守の手紙_確認用" }).click();
+  await page.locator(".ep-list .ep").first().click();
+  const editor = page.locator("textarea#msEditor");
+  await expect(editor).toHaveValue(/姉から手紙が届いた。/);
+  const body = await editor.inputValue();
+  await editor.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 0));
+  await page.locator("#episodeMore").click();
+  await page.locator(".dialog-choices button", { hasText: "読み上げ" }).click();
+  await expect(page.locator("#aloudNow")).toHaveText("あねから手紙が届いた。");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __aloud: { spoken: string[] } }).__aloud.spoken)).toEqual(["あねから手紙が届いた。"]);
+  await page.locator("#aloudStop").click();
+  await expect(editor).toHaveValue(body);
+  expect(await readFakeFile(page, dictPath)).toBe(dict);
+});
+
 test("［…］→ 読み上げ：日本語の声が無ければ読まずに訳を出す", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, "speechSynthesis", {

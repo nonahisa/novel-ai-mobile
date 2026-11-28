@@ -26,6 +26,21 @@ describe("webVoiceChoices", () => {
     expect(webVoiceChoices([voice("声", "x1"), voice("声", "x2")]).map((c) => c.label)).toEqual(["声（1）", "声（2）"]);
   });
 
+  // 2026-11-29 Mac が iPad mini 6（0.2.5）で見つけた：「Kyoko（標準）」が2つ並んだ（どちらの voiceURI にも compact があった見込み）
+  it("品質を添えても同じ見出しになる声は、品質に番号を添える", () => {
+    const choices = webVoiceChoices([
+      voice("Kyoko", "com.apple.voice.compact.ja-JP.Kyoko"),
+      voice("Kyoko", "com.apple.ttsbundle.Kyoko-compact"),
+    ]);
+    expect(choices.map((c) => c.label)).toEqual(["Kyoko（標準・1）", "Kyoko（標準・2）"]);
+    expect(new Set(choices.map((c) => c.id)).size).toBe(2);
+  });
+
+  it("名前も voiceURI も同じ声は、1つだけ並べる（同じ声が2回届いたとき）", () => {
+    const same = voice("Kyoko", "com.apple.voice.compact.ja-JP.Kyoko");
+    expect(webVoiceChoices([same, { ...same }])).toEqual([{ id: "com.apple.voice.compact.ja-JP.Kyoko", label: "Kyoko" }]);
+  });
+
   it("voiceURI が空なら名前を鍵にする", () => {
     expect(webVoiceChoices([voice("Kyoko", "")])).toEqual([{ id: "Kyoko", label: "Kyoko" }]);
   });

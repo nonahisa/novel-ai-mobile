@@ -5,6 +5,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
+import android.speech.tts.Voice;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -13,6 +15,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -32,6 +35,8 @@ public class ReadAloudPlugin extends Plugin {
     /** いま読んでいる文の印と、読み終えたら返す呼び出し */
     private String currentId;
     private PluginCall currentCall;
+    /** いま当てている声の名前（空は決まりの声）。文ごとに当て直さない（当て直すと文の頭が遅れる端末がある） */
+    private String chosenVoice = "";
 
     private void whenReady(Runnable then) {
         synchronized (this) {
@@ -109,10 +114,70 @@ public class ReadAloudPlugin extends Plugin {
         });
     }
 
+    /** 日本語の声（［設定］→［読み上げ］で選ぶ）。名前と、ネットが要るか。名前の順に並べる */
+    @PluginMethod
+    public void voices(PluginCall call) {
+        whenReady(() -> {
+            JSArray list = new JSArray();
+            TextToSpeech engine;
+            synchronized (this) {
+                engine = tts;
+            }
+            if (Boolean.TRUE.equals(ready) && engine != null) {
+                List<Voice> found = new ArrayList<>();
+                Set<Voice> all = null;
+                try {
+                    all = engine.getVoices();
+                } catch (RuntimeException ignored) {
+                    // 声の一覧を返せない読み上げの部品がある。一覧は空で返す（決まりの声では読める）
+                }
+                if (all != null) {
+                    for (Voice voice : all) {
+                        if (voice.getLocale() != null && "ja".equals(voice.getLocale().getLanguage())) found.add(voice);
+                    }
+                }
+                found.sort((a, b) -> a.getName().compareTo(b.getName()));
+                for (Voice voice : found) {
+                    JSObject item = new JSObject();
+                    item.put("name", voice.getName());
+                    item.put("network", voice.isNetworkConnectionRequired());
+                    list.put(item);
+                }
+            }
+            JSObject result = new JSObject();
+            result.put("voices", list);
+            call.resolve(result);
+        });
+    }
+
+    /** 名前の声に替える。空・見つからなければ端末の決まりの日本語の声に戻す（前に選んだ声が残らないように毎回決める） */
+    private void chooseVoice(TextToSpeech engine, String name) {
+        String wanted = name == null ? "" : name;
+        if (wanted.equals(chosenVoice)) return;
+        chosenVoice = wanted;
+        if (name != null && !name.isEmpty()) {
+            try {
+                Set<Voice> all = engine.getVoices();
+                if (all != null) {
+                    for (Voice voice : all) {
+                        if (name.equals(voice.getName())) {
+                            if (engine.setVoice(voice) == TextToSpeech.SUCCESS) return;
+                            break;
+                        }
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // 下の決まりの声へ
+            }
+        }
+        engine.setLanguage(Locale.JAPAN);
+    }
+
     @PluginMethod
     public void speak(PluginCall call) {
         String text = call.getString("text", "");
         float rate = call.getFloat("rate", 1.0f);
+        String voiceName = call.getString("voice", "");
         whenReady(() -> {
             if (!Boolean.TRUE.equals(ready)) {
                 call.reject("日本語の読み上げの声がありません");
@@ -134,6 +199,7 @@ public class ReadAloudPlugin extends Plugin {
                 finish(id, "stopped");
                 return;
             }
+            chooseVoice(engine, voiceName);
             engine.setSpeechRate(rate);
             int queued = engine.speak(text, TextToSpeech.QUEUE_FLUSH, new Bundle(), id);
             if (queued != TextToSpeech.SUCCESS) finish(id, "stopped");

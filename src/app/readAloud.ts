@@ -74,7 +74,8 @@ export function runAloud(
   speaker: Speaker,
   plan: AloudPlan,
   from: number,
-  options: { rate: number; onSentence: (index: number, sentence: ReadingSentence) => void }
+  /** `voice` は声の名前（［設定］→［読み上げ］。空は端末の決まりの声） */
+  options: { rate: number; voice?: string; onSentence: (index: number, sentence: ReadingSentence) => void }
 ): AloudRun {
   let stopped = false;
   const finished = (async (): Promise<SpeakEnd> => {
@@ -82,7 +83,7 @@ export function runAloud(
       if (stopped) return "stopped";
       const sentence = plan.sentences[index]!;
       options.onSentence(index, sentence);
-      const end = await speaker.speak(sentence.speech, options.rate);
+      const end = await speaker.speak(sentence.speech, options.rate, options.voice || undefined);
       if (stopped || end === "stopped") return "stopped";
     }
     return "done";

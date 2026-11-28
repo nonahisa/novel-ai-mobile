@@ -14,9 +14,19 @@ export type SpeakEnd = "done" | "stopped";
 export interface Speaker {
   /** 使えないときの訳（使えれば undefined） */
   unavailable(): Promise<string | undefined>;
-  /** 1文を読む。読み終えたら "done"、止めた・読めなかったら "stopped" */
-  speak(text: string, rate: number): Promise<SpeakEnd>;
+  /**
+   * 1文を読む。読み終えたら "done"、止めた・読めなかったら "stopped"。`voice` は声の名前（［設定］→［読み上げ］で選んだもの。
+   * 空・端末に無いときは端末の決まりの日本語の声）
+   */
+  speak(text: string, rate: number, voice?: string): Promise<SpeakEnd>;
+  /** この端末の日本語の声（名前と見出し） */
+  voices(): Promise<SpeakerVoice[]>;
   stop(): void;
+}
+
+export interface SpeakerVoice {
+  id: string;
+  label: string;
 }
 
 export const NO_JAPANESE_VOICE = "この端末には日本語の読み上げの声が見つかりません（端末の設定の「テキスト読み上げ」で日本語の声を入れると使えます）";
@@ -26,9 +36,13 @@ export class WebSpeaker implements Speaker {
   private voice: SpeechSynthesisVoice | undefined;
   private current: { resolve: (end: SpeakEnd) => void } | undefined;
 
+  private japaneseVoices(): SpeechSynthesisVoice[] {
+    return speechSynthesis.getVoices().filter((voice) => voice.lang.toLowerCase().startsWith("ja"));
+  }
+
   private async japaneseVoice(): Promise<SpeechSynthesisVoice | undefined> {
     if (typeof speechSynthesis === "undefined") return undefined;
-    const pick = () => speechSynthesis.getVoices().find((voice) => voice.lang.toLowerCase().startsWith("ja"));
+    const pick = () => this.japaneseVoices()[0];
     const now = pick();
     if (now) return now;
     // 声の一覧は遅れて届く（`voiceschanged`）。来なければ「無い」
@@ -51,11 +65,19 @@ export class WebSpeaker implements Speaker {
     return this.voice ? undefined : NO_JAPANESE_VOICE;
   }
 
-  speak(text: string, rate: number): Promise<SpeakEnd> {
+  async voices(): Promise<SpeakerVoice[]> {
+    if (typeof speechSynthesis === "undefined") return [];
+    if (!(await this.japaneseVoice())) return [];
+    return this.japaneseVoices().map((voice) => ({ id: voice.name, label: voice.name }));
+  }
+
+  speak(text: string, rate: number, voiceName?: string): Promise<SpeakEnd> {
     return new Promise((resolve) => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = "ja-JP";
-      if (this.voice) utterance.voice = this.voice;
+      const chosen = voiceName ? this.japaneseVoices().find((voice) => voice.name === voiceName) : undefined;
+      const voice = chosen ?? this.voice;
+      if (voice) utterance.voice = voice;
       utterance.rate = rate;
       // 止めたあとに遅れて届く end・error は、次の文のものと取り違えない（この文の印で見分ける）
       const token = { resolve };
@@ -81,7 +103,8 @@ export class WebSpeaker implements Speaker {
 
 interface ReadAloudPlugin {
   check(): Promise<{ available: boolean }>;
-  speak(options: { text: string; rate: number }): Promise<{ end: SpeakEnd }>;
+  speak(options: { text: string; rate: number; voice?: string }): Promise<{ end: SpeakEnd }>;
+  voices(): Promise<{ voices: { name: string; network: boolean }[] }>;
   stop(): Promise<void>;
 }
 
@@ -97,9 +120,18 @@ export class NativeSpeaker implements Speaker {
     }
   }
 
-  async speak(text: string, rate: number): Promise<SpeakEnd> {
+  async voices(): Promise<SpeakerVoice[]> {
     try {
-      return (await this.plugin.speak({ text, rate })).end === "done" ? "done" : "stopped";
+      // Android の声の名前は「ja-jp-x-htm-local」の形。ネットが要る声は見出しにそう添える
+      return (await this.plugin.voices()).voices.map((voice) => ({ id: voice.name, label: voice.network ? `${voice.name}（ネットが要る）` : voice.name }));
+    } catch {
+      return [];
+    }
+  }
+
+  async speak(text: string, rate: number, voice?: string): Promise<SpeakEnd> {
+    try {
+      return (await this.plugin.speak({ text, rate, ...(voice ? { voice } : {}) })).end === "done" ? "done" : "stopped";
     } catch {
       return "stopped";
     }

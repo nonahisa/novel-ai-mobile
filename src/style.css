@@ -2453,3 +2453,11 @@ a.gh-open {
 .report-summary pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85em; margin: 8px 0 0; }
 .report-steps { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 6px; }
 #reportSteps { display: flex; flex-direction: column; gap: 10px; }
+
+/* ［設定］→［読み上げ］：声は縦に1つずつ（名前が長い。選んでいるものは速さと同じく藍の地。`aloudSettings.ts`） */
+.aloud-voices {
+  flex-direction: column;
+}
+.aloud-voices button {
+  overflow-wrap: anywhere;
+}

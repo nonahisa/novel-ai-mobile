@@ -51,11 +51,12 @@ import { checkRemovable, removeWorkFolder } from "../platform/workRemove";
 import { watchLongPress } from "./longPress";
 import { mountOrphanDrafts } from "./orphanDrafts";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
-import { findWorkRoots, listWorks, readWorkLayout, scanWorkFolder, type ScanOptions, type WorkListItem } from "../platform/workScan";
+import { findWorkRoots, listWorks, readWorkLayout, scanWorkFolder, type ScanOptions, type ScannedWork, type WorkListItem } from "../platform/workScan";
+import { readUnpostedEpisodes } from "../platform/postingUnposted";
 import { readWorkWritingDays, statsDayKey, writingSummary } from "../platform/writingStatsRead";
 import { renderWritingStats, todayLineHtml, type WorkWriting } from "./writingStatsView";
 import { lastCommitTime } from "../platform/git";
-import { dayLabel, syncFlag, workSummary } from "./workListView";
+import { dayLabel, syncFlag, unpostedEpisodeLabel, unpostedWorkFlag, workSummary } from "./workListView";
 import { createGitFs, CapacitorGitFsBackend } from "../platform/gitFs";
 import { latestUnsentTime, readWorkSync, workRepo, type WorkSyncState } from "../platform/workSync";
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
@@ -95,6 +96,8 @@ import {
 } from "../platform/workSyncRun";
 import { noteFailure } from "../platform/failureLog";
 import { mountIssueReportScreen } from "./issueReportScreen";
+import { mountAloudSettings } from "./aloudSettings";
+import { deviceSpeaker } from "../platform/speech";
 import { nativePostForm } from "../platform/githubDeviceFlow";
 import { applyLook, parseLook, readLook, renderLookSection, writeLook } from "./look";
 import { PROPOSALS_CHANGED, readProposals, renderProposals, renderTypoEntry, withoutProposal, writeProposals, type TypoProposal } from "./typoProposals";
@@ -116,6 +119,7 @@ import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLe
  * | `#/github` | GitHub と同期（サインイン） |
  * | `#/import` | GitHub から取り寄せる |
  * | `#/display` | 表示（書体の取り寄せ） |
+ * | `#/aloud` | 設定 → 読み上げ（速さと声。`aloudSettings.ts`） |
  * | `#/licenses` | ライセンス |
  * | `#/stats` | 執筆統計（I。今日・今週の字数。読むだけ） |
  * | `#/materials[/<作品>[/<種類>/<id>[/enrich|/relations|/edit]]]` | 設定資料（E。作品を選ぶ・種類ごとの一覧・1件・本文から読み直す・関係を見る・直す） |
@@ -146,6 +150,7 @@ type Route =
   | { kind: "display" }
   | { kind: "licenses" }
   | { kind: "issueReport" }
+  | { kind: "aloud" }
   | { kind: "ai" }
   | { kind: "drafts" }
   | { kind: "stats" }
@@ -214,6 +219,7 @@ export function parseRoute(hash: string): Route {
   if (name === "display") return { kind: "display" };
   if (name === "licenses") return { kind: "licenses" };
   if (name === "issueReport") return { kind: "issueReport" };
+  if (name === "aloud") return { kind: "aloud" };
   if (name === "ai") return { kind: "ai" };
   if (name === "drafts") return { kind: "drafts" };
   if (name === "stats") return { kind: "stats" };
@@ -267,7 +273,7 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", materials: "#/materials", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update", issueReport: "#/issueReport" } as const satisfies Record<ScreenId, string>;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", materials: "#/materials", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update", issueReport: "#/issueReport", aloud: "#/aloud" } as const satisfies Record<ScreenId, string>;
 // ↑ 画面を足したら、ここにも足す（足し忘れると型の検査が止める。押しても行き先が無く、作品一覧に戻っていた）
 
 /**
@@ -593,7 +599,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "issueReport" || route.kind === "stats" || route.kind === "materials" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "issueReport" || route.kind === "aloud" || route.kind === "stats" || route.kind === "materials" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab, tabBadges());
@@ -745,6 +751,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "display":
         lastTabHash = "#/other";
         mountDisplayScreen(screen, stillHere);
+        return;
+      case "aloud":
+        lastTabHash = "#/other";
+        mountAloudSettings(screen, { storage: globalThis.localStorage, speaker: deviceSpeaker(), stillHere, toast });
         return;
       case "stats":
         lastTabHash = "#/other";
@@ -1187,6 +1197,32 @@ async function fillWorkSync(slot: HTMLElement, store: FileStore, stillHere: () =
   }
 }
 
+/**
+ * まだ投稿していない話（2026-11-29 作者の答え「両方に出す」）。作品一覧の札に「未投稿：N話」を足す。
+ * 台帳を読むので、描くのを待たせない。読めない作品は出さない
+ */
+async function fillWorkUnposted(slot: HTMLElement, store: FileStore, items: readonly WorkListItem[], stillHere: () => boolean): Promise<void> {
+  for (const item of items) {
+    if (!item.ok) continue;
+    const { episodes } = await readUnpostedEpisodes(store, item.work);
+    if (!stillHere()) return;
+    const flag = unpostedWorkFlag(episodes.size);
+    const card = [...slot.querySelectorAll<HTMLElement>(".work-card[data-work]")].find((el) => el.dataset.work === item.work.root);
+    if (flag && card) card.insertAdjacentHTML("beforeend", `<span class="flag ${flag.tone}" data-unposted-flag>${escapeHtml(flag.text)}</span>`);
+  }
+}
+
+/** 話の一覧（と原稿の左の一覧）の行に「未投稿」の印を足す */
+async function fillEpisodeUnposted(list: HTMLElement, store: FileStore, work: ScannedWork, stillHere: () => boolean): Promise<void> {
+  const { registered, episodes } = await readUnpostedEpisodes(store, work);
+  if (!stillHere() || episodes.size === 0) return;
+  for (const row of list.querySelectorAll<HTMLElement>(".ep[data-episode]")) {
+    const sites = episodes.get(row.dataset.episode!);
+    if (!sites) continue;
+    row.querySelector(".chars")?.insertAdjacentHTML("afterbegin", `<span class="flag warn" data-unposted>${escapeHtml(unpostedEpisodeLabel(sites, registered))}</span>`);
+  }
+}
+
 /** 作品ごとの今日・今週の字数（執筆統計 I。記録の読めない作品は「記録なし」） */
 async function writingOf(store: FileStore, items: readonly WorkListItem[]): Promise<WorkWriting[]> {
   const now = new Date();
@@ -1216,6 +1252,7 @@ function mountWorkList(slot: HTMLElement, store: FileStore, options: ScanOptions
     (items) => {
       if (!show(renderWorkList(items, new Date()))) return;
       void fillWorkSync(slot, store, stillHere);
+      void fillWorkUnposted(slot, store, items, stillHere);
       void writingOf(store, items).then((rows) => {
         const line = todayLineHtml(rows);
         if (line && stillHere()) slot.insertAdjacentHTML("afterbegin", line);
@@ -1240,6 +1277,7 @@ function mountEpisodeList(screen: HTMLElement, store: FileStore, root: string, o
       screen.querySelector<HTMLElement>(".appbar-title")!.firstChild!.textContent = work.title;
       screen.querySelector<HTMLElement>("#workSummary")!.textContent = workSummary(work);
       show(renderEpisodeList(work));
+      void fillEpisodeUnposted(slot, store, work, stillHere);
       void Promise.all([syncStateOf(store, root), undecidedCountOf(store, root)]).then(([state, undecided]) => {
         const flag = flagButtonHtml(state, root, undecided);
         if (flag && stillHere()) slot.insertAdjacentHTML("afterbegin", flag);
@@ -1276,6 +1314,7 @@ function fillEpisodeSide(screen: HTMLElement, store: FileStore, root: string, pa
       for (const row of side.querySelectorAll<HTMLElement>("[data-episode]")) {
         if (row.dataset.episode === path) row.setAttribute("aria-current", "page");
       }
+      void fillEpisodeUnposted(side, store, work, stillHere);
       // 開いた話を一覧の見える所へ（2026-11-20 iPhone 17 シミュレーター 0.1.132：第20話を開くと一覧が頭へ戻り、開いた話が
       // 見えない所にあった）。送るのは一覧の中だけ（`scrollIntoView` はページも送るので使わない）
       const current = side.querySelector<HTMLElement>('[aria-current="page"]');

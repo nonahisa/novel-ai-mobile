@@ -94,6 +94,7 @@ import {
   type SyncOutcome,
 } from "../platform/workSyncRun";
 import { noteFailure } from "../platform/failureLog";
+import { mountIssueReportScreen } from "./issueReportScreen";
 import { nativePostForm } from "../platform/githubDeviceFlow";
 import { applyLook, parseLook, readLook, renderLookSection, writeLook } from "./look";
 import { PROPOSALS_CHANGED, readProposals, renderProposals, renderTypoEntry, withoutProposal, writeProposals, type TypoProposal } from "./typoProposals";
@@ -144,6 +145,7 @@ type Route =
   | { kind: "import" }
   | { kind: "display" }
   | { kind: "licenses" }
+  | { kind: "issueReport" }
   | { kind: "ai" }
   | { kind: "drafts" }
   | { kind: "stats" }
@@ -211,6 +213,7 @@ export function parseRoute(hash: string): Route {
   if (name === "import") return { kind: "import" };
   if (name === "display") return { kind: "display" };
   if (name === "licenses") return { kind: "licenses" };
+  if (name === "issueReport") return { kind: "issueReport" };
   if (name === "ai") return { kind: "ai" };
   if (name === "drafts") return { kind: "drafts" };
   if (name === "stats") return { kind: "stats" };
@@ -589,7 +592,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "stats" || route.kind === "materials" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "issueReport" || route.kind === "stats" || route.kind === "materials" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab, tabBadges());
@@ -801,6 +804,16 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
         lastTabHash = "#/other";
         screen.innerHTML = `${renderAppBar("更新", { back: true })}<div id="updateSlot"></div>`;
         mountUpdateScreen(screen.querySelector<HTMLElement>("#updateSlot")!, updateDeps(toast), stillHere);
+        return;
+      case "issueReport":
+        lastTabHash = "#/other";
+        mountIssueReportScreen(screen, {
+          store,
+          vault: secretVault(),
+          settings: () => DeviceSettings.load(capacitorPreferencesBackend).then(({ settings }) => settings),
+          toast,
+          stillHere,
+        });
         return;
       case "licenses":
         lastTabHash = "#/other";

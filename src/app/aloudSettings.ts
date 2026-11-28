@@ -73,8 +73,13 @@ export function renderAloudSettings(prefs: AloudPrefs, voices: readonly AloudVoi
   if (voices === undefined) voicePart = `<p class="aloud-voices-busy" aria-busy="true">声を調べています…</p>`;
   else if (typeof voices === "string") voicePart = `<p class="flag warn long">${escapeHtml(voices)}</p>`;
   else {
-    const known = prefs.voice === "" || voices.some((voice) => voice.id === prefs.voice);
-    const chosen = known ? prefs.voice : "";
+    // 0.2.4 は iOS の声を名前（「Kyoko」）で覚えていた。今は voiceURI で覚えるので、名前なら同じ名前の最初の声とみなす
+    // （読むときも `findWebVoice` が同じ声を引く）
+    const match =
+      voices.find((voice) => voice.id === prefs.voice) ??
+      voices.find((voice) => voice.label === prefs.voice || voice.label.startsWith(`${prefs.voice}（`));
+    const known = prefs.voice === "" || match !== undefined;
+    const chosen = match?.id ?? "";
     const button = (id: string, label: string) =>
       `<button type="button" data-aloud-voice="${escapeHtml(id)}" aria-pressed="${chosen === id}">${escapeHtml(label)}</button>`;
     voicePart =

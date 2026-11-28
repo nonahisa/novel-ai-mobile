@@ -18,6 +18,7 @@ import {
   aiRows,
   buildMobileIssueReport,
   mobileReportSteps,
+  placeReportFailure,
   type DevicePlatform,
 } from "../platform/issueReportMobile";
 import { GITHUB_TOKEN_SECRET, type SecretVault } from "../platform/secretVault";
@@ -230,6 +231,6 @@ export function mountIssueReportScreen(screen: HTMLElement, deps: IssueReportScr
         const steps = mobileReportSteps(device, current.fileName, ANDROID_FOLDER_LABEL);
         result.querySelector<HTMLElement>("#reportSteps")!.innerHTML = renderReportSteps(steps, where, warnShare);
       })
-      .catch((error: unknown) => deps.toast(`記録を置けませんでした（${error instanceof Error ? error.message : String(error)}）`));
+      .catch((error: unknown) => deps.toast(placeReportFailure(error)));
   });
 }

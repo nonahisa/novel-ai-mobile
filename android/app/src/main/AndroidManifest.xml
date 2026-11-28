@@ -7,6 +7,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:requestLegacyExternalStorage="true"
         android:theme="@style/AppTheme">
 
         <activity
@@ -57,4 +58,8 @@
     <!-- 新しい版の APK を端末のインストーラーへ渡す（作者が［入れる］を押したときだけ。引継ぎ書 156章）。
          Google Play で配るときは、Play の決まり（Play の更新の道のほかで自分を入れ替えない）に当たるので外す -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 障害報告用の記録を Documents/小説執筆 に置く（引継ぎ書 190章・194章）。要るのは Android 10 以前だけ（11 以降はアプリが作った
+         ファイルなら許しなしで書ける）。Android 10 は上の requestLegacyExternalStorage も要る。Filesystem の部品が書く前に訊く -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 </manifest>

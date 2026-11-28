@@ -135,3 +135,15 @@ export function mobileReportSteps(platform: DevicePlatform, fileName: string, fo
     "5. 再現手順・期待した動き・実際の動きを書いて送る",
   ];
 }
+
+/**
+ * 記録を Documents に置けなかったときの知らせ。Android 10 以前（minSdk 24）はファイルの許しが要り、断られると
+ * 端末の部品は英語の訳（user denied permission）を返すので、次の手（もう一度押して許す・要約だけ貼る）を日本語で出す
+ */
+export function placeReportFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/denied permission|permission denied/i.test(message)) {
+    return "記録を置けませんでした。ファイルの許しが要ります。もう一度押して［許可］を選ぶか、［要約をコピー］で要約だけを貼ってください";
+  }
+  return `記録を置けませんでした（${message}）`;
+}

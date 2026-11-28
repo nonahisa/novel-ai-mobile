@@ -62,9 +62,11 @@ async function namesOnDevice(store: FileStore): Promise<{ works: string[][]; cha
   const characters: string[][] = [];
   for (const root of await findWorkRoots(store).catch(() => [] as string[])) {
     const leaf = root.slice(root.lastIndexOf("/") + 1);
-    works.push([...new Set([folderTitle(root), leaf])]);
+    // 作品の名前：フォルダー名と、作品の設定の題（`workTitle`。作品一覧に出る名前）。題が読めなければフォルダー名だけ
+    const names = new Set([folderTitle(root), leaf]);
     try {
       const layout = await readWorkLayout(store, root);
+      names.add(layout.title);
       const byId = new Map<string, string[]>();
       for (const entry of (await readWorkTerms(store, layout.settings)).entries) {
         if (entry.kind !== "character") continue;
@@ -74,6 +76,7 @@ async function namesOnDevice(store: FileStore): Promise<{ works: string[][]; cha
     } catch {
       // 設定の読めない作品は、作品の名前だけ伏せる
     }
+    works.push([...names]);
   }
   return { works, characters };
 }

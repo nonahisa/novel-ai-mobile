@@ -88,7 +88,8 @@ async function openReport(page: Page): Promise<void> {
   await putFile(
     page,
     "/DATA/failure-log/actions.log",
-    failureRecord(anHourAgo, "保存", [["種別", "path_conflict"], ["詳細", "灯台守_確認用/本文/第1話 手紙.txt で汐里の場面が書けませんでした"]]) +
+    // 作品の題（config の workTitle）も、フォルダー名も、人物の別名も出す
+    failureRecord(anHourAgo, "保存", [["種別", "path_conflict"], ["詳細", "灯台守_確認用/本文/第1話 手紙.txt（灯台守の手紙_確認用）で汐ちゃんと汐里の場面が書けませんでした"]]) +
       failureRecord(anHourAgo, "同期（送る）", [["種別", "offline"]]),
   );
   await page.goto("/#/other");
@@ -111,6 +112,29 @@ test.describe("障害報告用の記録", () => {
     await expect(page.locator(".report-masked")).toContainText("人物名・作品名");
     // ここではまだ置かない
     expect(await filesUnder(page, "/DOCUMENTS/")).toEqual([]);
+    // 詳細（後半）にも、作品の題・フォルダー名・人物の名前と別名を残さない
+    await page.locator("#reportDiscord").click();
+    await expect(page.locator("#reportWhere")).toBeVisible();
+    const [placed] = await filesUnder(page, "/DOCUMENTS/");
+    for (const name of ["灯台守の手紙", "灯台守_確認用", "汐里", "汐ちゃん"]) expect(placed!.text).not.toContain(name);
+  });
+
+  test("アプリが失敗を記録の場所へ書き、記録の画面がそれを数える（画面の例外）", async ({ page }) => {
+    await openWithWorks(page, "#/other", WITH_PEOPLE);
+    // 画面の例外は `watchUncaughtFailures` が失敗の記録へ書く（本物の書く道：noteFailure → Filesystem）
+    await page.evaluate(() => {
+      setTimeout(() => {
+        throw new Error("試しの例外");
+      });
+    });
+    await expect
+      .poll(async () => (await filesUnder(page, "/DATA/failure-log/")).map((f) => f.text).join(""))
+      .toContain("--- 画面の例外 ---");
+    const help = page.locator(".menu-section", { has: page.locator("h2", { hasText: "ヘルプ" }) });
+    await help.locator(".menu-item", { hasText: "障害報告用の記録" }).click();
+    await page.locator("#reportMake").click();
+    await expect(page.locator("#reportId")).toHaveText(/（失敗 1件）$/);
+    await expect(page.locator("#reportSummary")).toContainText("画面の例外");
   });
 
   test("［Discord で報告する］で Documents/小説執筆/<報告ID>.md に置き、手順と #不具合報告 のリンクを出す。外へは送らない", async ({ page }) => {

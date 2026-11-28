@@ -31,7 +31,8 @@ const base = (over: Partial<MobileIssueReportInput> = {}): MobileIssueReportInpu
   ais: [{ label: "既定", provider: "Gemini", model: "gemini-flash", local: false }],
   failureLog: "",
   works: [["灯台守の手紙", "灯台守の手紙_確認用"]],
-  characters: [["湊", "湊くん"], ["汐里"]],
+  // 本体は1字の名前を伏せない（ありふれた字まで潰れる。MIN_NAME_CHARS）ので、2字以上の名前で試す
+  characters: [["湊斗", "湊くん"], ["汐里"]],
   maskNames: true,
   secrets: [],
   ...over,
@@ -89,12 +90,12 @@ describe("記録の組み立て（ボットとの約束）", () => {
 
   it("失敗の記録を数え、作品と人物の名前は伏せる", () => {
     const failureLog =
-      formatFailureRecord(new Date(2026, 10, 28, 11, 0, 0), "保存", [["種別", "path_conflict"], ["詳細", "灯台守の手紙_確認用/本文/第1話.txt に湊の名"]]) +
+      formatFailureRecord(new Date(2026, 10, 28, 11, 0, 0), "保存", [["種別", "path_conflict"], ["詳細", "灯台守の手紙_確認用/本文/第1話.txt に湊斗の名"]]) +
       formatFailureRecord(new Date(2026, 10, 28, 11, 5, 0), "同期（送る）", [["種別", "offline"]]);
     const report = buildMobileIssueReport(base({ failureLog }));
     expect(report.failureCount).toBe(2);
     expect(report.document).not.toContain("灯台守");
-    expect(report.document).not.toContain("湊");
+    expect(report.document).not.toContain("湊斗");
     expect(report.document).toContain("〈人物A〉");
   });
 

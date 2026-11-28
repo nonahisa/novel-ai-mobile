@@ -50,17 +50,30 @@ const QUALITY: ReadonlyArray<[RegExp, string]> = [
  * （読めなければ番号）
  */
 export function webVoiceChoices(voices: readonly WebVoiceLike[]): SpeakerVoice[] {
-  const japanese = voices.filter((voice) => voice.lang.toLowerCase().startsWith("ja"));
-  const counts = new Map<string, number>();
-  for (const voice of japanese) counts.set(voice.name, (counts.get(voice.name) ?? 0) + 1);
-  const seen = new Map<string, number>();
-  return japanese.map((voice) => {
+  // 同じ声（鍵が同じ）が2回届いたら1つにする（選んでも見分けられない）
+  const byId = new Map<string, WebVoiceLike>();
+  for (const voice of voices) {
+    if (!voice.lang.toLowerCase().startsWith("ja")) continue;
     const id = voice.voiceURI || voice.name;
-    if ((counts.get(voice.name) ?? 0) < 2) return { id, label: voice.name };
-    const order = (seen.get(voice.name) ?? 0) + 1;
-    seen.set(voice.name, order);
-    const quality = QUALITY.find(([pattern]) => pattern.test(voice.voiceURI))?.[1];
-    return { id, label: `${voice.name}（${quality ?? order}）` };
+    if (!byId.has(id)) byId.set(id, voice);
+  }
+  const named = new Map<string, number>();
+  for (const voice of byId.values()) named.set(voice.name, (named.get(voice.name) ?? 0) + 1);
+  // 同じ名前なら品質を添える。品質を添えても同じ見出しになる（どちらも「標準」。2026-11-29 iPad mini 6 の 0.2.5）なら番号も添える
+  const rows = [...byId].map(([id, voice]) => {
+    const quality = (named.get(voice.name) ?? 0) > 1 ? QUALITY.find(([pattern]) => pattern.test(voice.voiceURI))?.[1] : undefined;
+    const shared = (named.get(voice.name) ?? 0) > 1;
+    return { id, name: voice.name, quality, base: shared ? `${voice.name}（${quality ?? ""}）` : voice.name, shared };
+  });
+  const sameBase = new Map<string, number>();
+  for (const row of rows) sameBase.set(row.base, (sameBase.get(row.base) ?? 0) + 1);
+  const order = new Map<string, number>();
+  return rows.map((row) => {
+    if (!row.shared) return { id: row.id, label: row.name };
+    if ((sameBase.get(row.base) ?? 0) < 2) return { id: row.id, label: row.base };
+    const n = (order.get(row.base) ?? 0) + 1;
+    order.set(row.base, n);
+    return { id: row.id, label: row.quality ? `${row.name}（${row.quality}・${n}）` : `${row.name}（${n}）` };
   });
 }
 

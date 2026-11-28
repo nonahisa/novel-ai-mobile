@@ -131,6 +131,8 @@ test.describe("左の線の欄の用語の色（テスト中）", () => {
   test("変換中は欄の字を見せて裏の層を隠し、確定すると打った語にも色が付く", async ({ page }) => {
     await openEpisode(page, true);
     await caretAfterFirstLine(page);
+    // 裏の層の色は、設定資料を読んだあとの次の描きで付く。付いてから変換を始める（付く前に見て CI で揺れた。2026-11-28 PR #216）
+    await expect(page.locator(".ms-backdrop .term-character").first()).toBeAttached();
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Input.imeSetComposition", { text: "あね", selectionStart: 2, selectionEnd: 2 });
     await expect(page.locator(".ms-editor-wrap")).toHaveClass(/composing/);

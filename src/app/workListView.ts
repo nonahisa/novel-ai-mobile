@@ -8,8 +8,10 @@ import {
   checkWorkEpisodeNumbers,
   episodeUnit,
   lockOf,
+  postingSiteInfo,
   workEpisodeNumberMarks,
   type EpisodeFile,
+  type PostingSiteId,
 } from "../shared";
 import { fromStorePath, toStorePath } from "../platform/paths";
 import type { ScannedWork, WorkListItem } from "../platform/workScan";
@@ -161,4 +163,21 @@ export function syncFlag(state: WorkSyncState | undefined, undecided = 0): { tex
   if (state.unsent.length > 0) return { text: `送っていない話：${state.unsent.length}`, tone: "warn" };
   if (state.otherCount > 0) return { text: `送っていない変更：${state.otherCount}`, tone: "warn" };
   return { text: "同期済み", tone: "ok" };
+}
+
+/**
+ * まだ投稿していない話の札（作品一覧。2026-11-29 作者の答え「両方に出す」）。話の数で出す。0話なら出さない。
+ * 数え方は `platform/postingUnposted.ts`（本体の作品一覧の「未投稿」と同じ見分け方）
+ */
+export function unpostedWorkFlag(count: number): { text: string; tone: "warn" } | undefined {
+  return count > 0 ? { text: `未投稿：${count}話`, tone: "warn" } : undefined;
+}
+
+/**
+ * 話の行の印。登録したサイトの全部にまだ出していなければ「未投稿」、一部だけならまだのサイトの名前を添える
+ * （本体は「未投稿2」とサイトの数を出し、どのサイトかはホバーで読む。端末にはホバーが無いので名前で出す）
+ */
+export function unpostedEpisodeLabel(sites: readonly PostingSiteId[], registered: number): string {
+  if (sites.length >= registered) return "未投稿";
+  return `未投稿：${sites.map((site) => postingSiteInfo(site).label).join("・")}`;
 }

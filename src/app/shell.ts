@@ -51,11 +51,12 @@ import { checkRemovable, removeWorkFolder } from "../platform/workRemove";
 import { watchLongPress } from "./longPress";
 import { mountOrphanDrafts } from "./orphanDrafts";
 import { createDraftJournal, shouldRestore } from "./draftJournal";
-import { findWorkRoots, listWorks, readWorkLayout, scanWorkFolder, type ScanOptions, type WorkListItem } from "../platform/workScan";
+import { findWorkRoots, listWorks, readWorkLayout, scanWorkFolder, type ScanOptions, type ScannedWork, type WorkListItem } from "../platform/workScan";
+import { readUnpostedEpisodes } from "../platform/postingUnposted";
 import { readWorkWritingDays, statsDayKey, writingSummary } from "../platform/writingStatsRead";
 import { renderWritingStats, todayLineHtml, type WorkWriting } from "./writingStatsView";
 import { lastCommitTime } from "../platform/git";
-import { dayLabel, syncFlag, workSummary } from "./workListView";
+import { dayLabel, syncFlag, unpostedEpisodeLabel, unpostedWorkFlag, workSummary } from "./workListView";
 import { createGitFs, CapacitorGitFsBackend } from "../platform/gitFs";
 import { latestUnsentTime, readWorkSync, workRepo, type WorkSyncState } from "../platform/workSync";
 import { renderEpisodeList, renderWorkError, renderWorkList } from "./workScreens";
@@ -1196,6 +1197,32 @@ async function fillWorkSync(slot: HTMLElement, store: FileStore, stillHere: () =
   }
 }
 
+/**
+ * まだ投稿していない話（2026-11-29 作者の答え「両方に出す」）。作品一覧の札に「未投稿：N話」を足す。
+ * 台帳を読むので、描くのを待たせない。読めない作品は出さない
+ */
+async function fillWorkUnposted(slot: HTMLElement, store: FileStore, items: readonly WorkListItem[], stillHere: () => boolean): Promise<void> {
+  for (const item of items) {
+    if (!item.ok) continue;
+    const { episodes } = await readUnpostedEpisodes(store, item.work);
+    if (!stillHere()) return;
+    const flag = unpostedWorkFlag(episodes.size);
+    const card = [...slot.querySelectorAll<HTMLElement>(".work-card[data-work]")].find((el) => el.dataset.work === item.work.root);
+    if (flag && card) card.insertAdjacentHTML("beforeend", `<span class="flag ${flag.tone}" data-unposted-flag>${escapeHtml(flag.text)}</span>`);
+  }
+}
+
+/** 話の一覧（と原稿の左の一覧）の行に「未投稿」の印を足す */
+async function fillEpisodeUnposted(list: HTMLElement, store: FileStore, work: ScannedWork, stillHere: () => boolean): Promise<void> {
+  const { registered, episodes } = await readUnpostedEpisodes(store, work);
+  if (!stillHere() || episodes.size === 0) return;
+  for (const row of list.querySelectorAll<HTMLElement>(".ep[data-episode]")) {
+    const sites = episodes.get(row.dataset.episode!);
+    if (!sites) continue;
+    row.querySelector(".chars")?.insertAdjacentHTML("afterbegin", `<span class="flag warn" data-unposted>${escapeHtml(unpostedEpisodeLabel(sites, registered))}</span>`);
+  }
+}
+
 /** 作品ごとの今日・今週の字数（執筆統計 I。記録の読めない作品は「記録なし」） */
 async function writingOf(store: FileStore, items: readonly WorkListItem[]): Promise<WorkWriting[]> {
   const now = new Date();
@@ -1225,6 +1252,7 @@ function mountWorkList(slot: HTMLElement, store: FileStore, options: ScanOptions
     (items) => {
       if (!show(renderWorkList(items, new Date()))) return;
       void fillWorkSync(slot, store, stillHere);
+      void fillWorkUnposted(slot, store, items, stillHere);
       void writingOf(store, items).then((rows) => {
         const line = todayLineHtml(rows);
         if (line && stillHere()) slot.insertAdjacentHTML("afterbegin", line);
@@ -1249,6 +1277,7 @@ function mountEpisodeList(screen: HTMLElement, store: FileStore, root: string, o
       screen.querySelector<HTMLElement>(".appbar-title")!.firstChild!.textContent = work.title;
       screen.querySelector<HTMLElement>("#workSummary")!.textContent = workSummary(work);
       show(renderEpisodeList(work));
+      void fillEpisodeUnposted(slot, store, work, stillHere);
       void Promise.all([syncStateOf(store, root), undecidedCountOf(store, root)]).then(([state, undecided]) => {
         const flag = flagButtonHtml(state, root, undecided);
         if (flag && stillHere()) slot.insertAdjacentHTML("afterbegin", flag);
@@ -1285,6 +1314,7 @@ function fillEpisodeSide(screen: HTMLElement, store: FileStore, root: string, pa
       for (const row of side.querySelectorAll<HTMLElement>("[data-episode]")) {
         if (row.dataset.episode === path) row.setAttribute("aria-current", "page");
       }
+      void fillEpisodeUnposted(side, store, work, stillHere);
       // 開いた話を一覧の見える所へ（2026-11-20 iPhone 17 シミュレーター 0.1.132：第20話を開くと一覧が頭へ戻り、開いた話が
       // 見えない所にあった）。送るのは一覧の中だけ（`scrollIntoView` はページも送るので使わない）
       const current = side.querySelector<HTMLElement>('[aria-current="page"]');

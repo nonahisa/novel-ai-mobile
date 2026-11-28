@@ -8,12 +8,17 @@ import type { SpeakEnd, Speaker } from "../src/platform/speech";
  */
 class FakeSpeaker implements Speaker {
   spoken: string[] = [];
+  asked: Array<{ rate: number; voice: string | undefined }> = [];
+  async voices() {
+    return [];
+  }
   private pending?: (end: SpeakEnd) => void;
   async unavailable(): Promise<string | undefined> {
     return undefined;
   }
-  speak(text: string): Promise<SpeakEnd> {
+  speak(text: string, rate: number, voice?: string): Promise<SpeakEnd> {
     this.spoken.push(text);
+    this.asked.push({ rate, voice });
     return new Promise((resolve) => (this.pending = resolve));
   }
   finish(): void {
@@ -67,6 +72,16 @@ describe("順に読み、［止める］で止まる", () => {
     expect(await run.finished).toBe("done");
     expect(speaker.spoken).toEqual(["一つ目。", "二つ目。"]);
     expect(seen).toEqual([0, 1]);
+  });
+
+  it("選んだ速さと声で読む（［設定］→［読み上げ］）", async () => {
+    const plan = readingPlanFor("一つ目。", "a.md");
+    const speaker = new FakeSpeaker();
+    const run = runAloud(speaker, plan, 0, { rate: 1.5, voice: "声B", onSentence: () => undefined });
+    await tick();
+    speaker.finish();
+    await run.finished;
+    expect(speaker.asked).toEqual([{ rate: 1.5, voice: "声B" }]);
   });
 
   it("止めたら、その先は渡さない", async () => {

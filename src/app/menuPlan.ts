@@ -14,7 +14,7 @@ import { ACTION_TREE, COMMUNITY_DISCORD_URL, isItemShownInActionList, type Actio
 
 /** 開ける画面 */
 /** `proposals` は［提案］のタブ（頭に、最後に開いた話の誤字脱字の入口がある） */
-export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals" | "stats" | "update" | "materials" | "issueReport";
+export type ScreenId = "tategaki" | "check" | "allActions" | "github" | "import" | "display" | "licenses" | "ai" | "drafts" | "proposals" | "stats" | "update" | "materials" | "issueReport" | "aloud";
 
 /**
  * 外の決まった URL を端末のブラウザで開く項目（画面を持たない）。開く先は ここの1つずつだけで、作品や原稿は送らない。
@@ -155,6 +155,8 @@ export const TABS: readonly PlannedTab[] = [
           { label: "AI", action: "AI設定", built: "ai" },
           { label: "GitHub と同期", built: "github" },
           { label: "表示", built: "display" },
+          // 2026-11-29 作者の答え「［ほか］→［設定］に置く」：読み上げの速さと声（`aloudSettings.ts`）
+          { label: "読み上げ", built: "aloud" },
           { label: "書きかけの控え", built: "drafts" },
           { label: "更新", built: "update" },
           { label: "確認省略解除・初回設定" },

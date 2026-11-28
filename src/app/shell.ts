@@ -95,6 +95,8 @@ import {
 } from "../platform/workSyncRun";
 import { noteFailure } from "../platform/failureLog";
 import { mountIssueReportScreen } from "./issueReportScreen";
+import { mountAloudSettings } from "./aloudSettings";
+import { deviceSpeaker } from "../platform/speech";
 import { nativePostForm } from "../platform/githubDeviceFlow";
 import { applyLook, parseLook, readLook, renderLookSection, writeLook } from "./look";
 import { PROPOSALS_CHANGED, readProposals, renderProposals, renderTypoEntry, withoutProposal, writeProposals, type TypoProposal } from "./typoProposals";
@@ -116,6 +118,7 @@ import { readLastEpisode, readRecentEpisodes, rememberLastEpisode, renderWriteLe
  * | `#/github` | GitHub と同期（サインイン） |
  * | `#/import` | GitHub から取り寄せる |
  * | `#/display` | 表示（書体の取り寄せ） |
+ * | `#/aloud` | 設定 → 読み上げ（速さと声。`aloudSettings.ts`） |
  * | `#/licenses` | ライセンス |
  * | `#/stats` | 執筆統計（I。今日・今週の字数。読むだけ） |
  * | `#/materials[/<作品>[/<種類>/<id>[/enrich|/relations|/edit]]]` | 設定資料（E。作品を選ぶ・種類ごとの一覧・1件・本文から読み直す・関係を見る・直す） |
@@ -146,6 +149,7 @@ type Route =
   | { kind: "display" }
   | { kind: "licenses" }
   | { kind: "issueReport" }
+  | { kind: "aloud" }
   | { kind: "ai" }
   | { kind: "drafts" }
   | { kind: "stats" }
@@ -214,6 +218,7 @@ export function parseRoute(hash: string): Route {
   if (name === "display") return { kind: "display" };
   if (name === "licenses") return { kind: "licenses" };
   if (name === "issueReport") return { kind: "issueReport" };
+  if (name === "aloud") return { kind: "aloud" };
   if (name === "ai") return { kind: "ai" };
   if (name === "drafts") return { kind: "drafts" };
   if (name === "stats") return { kind: "stats" };
@@ -267,7 +272,7 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", materials: "#/materials", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update", issueReport: "#/issueReport" } as const satisfies Record<ScreenId, string>;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", materials: "#/materials", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update", issueReport: "#/issueReport", aloud: "#/aloud" } as const satisfies Record<ScreenId, string>;
 // ↑ 画面を足したら、ここにも足す（足し忘れると型の検査が止める。押しても行き先が無く、作品一覧に戻っていた）
 
 /**
@@ -593,7 +598,7 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
     const full = route.kind === "tategaki" || route.kind === "check" || route.kind === "episode";
     tabbar.hidden = full;
     const currentTab =
-      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "issueReport" || route.kind === "stats" || route.kind === "materials" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
+      route.kind === "tab" ? route.tab.id : route.kind === "typo" ? "proposals" : route.kind === "synopsis" || route.kind === "work" || route.kind === "sync" || route.kind === "conflict" || route.kind === "episode" || route.kind === "import" ? "works" : route.kind === "all" || route.kind === "github" || route.kind === "display" || route.kind === "licenses" || route.kind === "issueReport" || route.kind === "aloud" || route.kind === "stats" || route.kind === "materials" || route.kind === "ai" || route.kind === "drafts" || route.kind === "update" ? "other" : undefined;
     const seq = ++renderSeq;
     const stillHere = () => seq === renderSeq;
     tabbar.innerHTML = renderTabBar(TABS, currentTab, tabBadges());
@@ -745,6 +750,10 @@ export function mountShell(root: HTMLElement, store: FileStore = new CapacitorFi
       case "display":
         lastTabHash = "#/other";
         mountDisplayScreen(screen, stillHere);
+        return;
+      case "aloud":
+        lastTabHash = "#/other";
+        mountAloudSettings(screen, { storage: globalThis.localStorage, speaker: deviceSpeaker(), stillHere, toast });
         return;
       case "stats":
         lastTabHash = "#/other";

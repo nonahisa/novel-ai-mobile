@@ -8,6 +8,7 @@ import { readingSpansForEpisode } from "../platform/readingDictionary";
 import { nameReadingSpansForWork } from "../platform/nameReadings";
 import { markPosted, readPostingMark } from "../platform/postingMark";
 import { readPostingSites } from "../platform/postingSites";
+import { readAloudPrefs } from "./aloudSettings";
 import { aloudStartIndex, readingMemoEdit, readingPlanFor, resumeIndexAt, runAloud, type AloudPlan, type AloudRun } from "./readAloud";
 import { deviceSpeaker } from "../platform/speech";
 import { App } from "@capacitor/app";
@@ -1140,8 +1141,11 @@ export function mountEpisodeScreen(
     return mergeReadingSpans(dictionary, names);
   };
   const readAloudFrom = async (target: WritingPane, plan: AloudPlan, from: number): Promise<void> => {
+    // 速さと声は［ほか］→［設定］→［読み上げ］で選んだもの（読み始め・［続ける］のたびに読む）
+    const prefs = readAloudPrefs(globalThis.localStorage);
     const run = runAloud(deviceSpeaker(), plan, from, {
-      rate: 1,
+      rate: prefs.rate,
+      voice: prefs.voice,
       onSentence: (_, sentence) => {
         aloudSentence = sentence;
         aloudNow.textContent = sentence.speech;

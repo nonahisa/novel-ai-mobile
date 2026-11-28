@@ -23,7 +23,7 @@ import {
   termColorCss,
   type TermInput,
 } from "./termHighlight";
-import { TABS, TRIAL_ITEMS, buildActionList, hiddenActions, searchActions, type PlannedTab } from "./menuPlan";
+import { TABS, TRIAL_ITEMS, buildActionList, hiddenActions, searchActions, type PlannedTab, type ScreenId } from "./menuPlan";
 import { NOT_BUILT_MESSAGE, escapeHtml, itemButton, renderActionRows, renderAppBar, renderTab, renderTabBar } from "./menuScreen";
 import {
   DRAFT_PATH,
@@ -267,7 +267,8 @@ export function parseRoute(hash: string): Route {
   return { kind: "tab", tab: TABS.find((tab) => tab.id === name) ?? TABS[0] };
 }
 
-const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", materials: "#/materials", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update" } as const;
+const SCREEN_HASH = { tategaki: "#/tategaki", check: "#/check", allActions: "#/all", github: "#/github", import: "#/import", display: "#/display", licenses: "#/licenses", stats: "#/stats", materials: "#/materials", ai: "#/ai", drafts: "#/drafts", proposals: "#/proposals", update: "#/update", issueReport: "#/issueReport" } as const satisfies Record<ScreenId, string>;
+// ↑ 画面を足したら、ここにも足す（足し忘れると型の検査が止める。押しても行き先が無く、作品一覧に戻っていた）
 
 /**
  * 鍵の置き場。端末では Keystore／Keychain。ブラウザ（画面のテスト）では手元だけ（開いているあいだ）。

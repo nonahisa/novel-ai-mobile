@@ -81,6 +81,12 @@ describe("記録の組み立て（ボットとの約束）", () => {
     expect(MOBILE_STEPS_HINT.startsWith("（ここに、") && MOBILE_STEPS_HINT.endsWith("）")).toBe(true);
   });
 
+  it("ファイル名は報告ID、頭に題「# 障害報告用の記録」（ボットが、ふつうの投稿に貼られた記録を見分ける）", () => {
+    const report = buildMobileIssueReport(base());
+    expect(report.fileName).toBe("NAI-20261128-ab12.md");
+    expect(report.document.split("\n")[0]).toMatch(/^# 障害報告用の記録( |$)/);
+  });
+
   it("失敗の記録を数え、作品と人物の名前は伏せる", () => {
     const failureLog =
       formatFailureRecord(new Date(2026, 10, 28, 11, 0, 0), "保存", [["種別", "path_conflict"], ["詳細", "灯台守の手紙_確認用/本文/第1話.txt に湊の名"]]) +

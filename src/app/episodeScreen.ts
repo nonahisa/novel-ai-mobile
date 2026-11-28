@@ -5,6 +5,7 @@ import { fitToVisible } from "./fitToVisible";
 import { exportCopy, exportTargets } from "./exportCopy";
 import { readWorkMemoMarkers } from "../platform/memoMarkers";
 import { readingSpansForEpisode } from "../platform/readingDictionary";
+import { nameReadingSpansForWork } from "../platform/nameReadings";
 import { markPosted, readPostingMark } from "../platform/postingMark";
 import { readPostingSites } from "../platform/postingSites";
 import { aloudStartIndex, readingMemoEdit, readingPlanFor, resumeIndexAt, runAloud, type AloudPlan, type AloudRun } from "./readAloud";
@@ -33,12 +34,12 @@ import { charFromPoint, readCharBoxes } from "./tapCaret";
 import { readProposals, withoutProposal, writeProposals } from "./typoProposals";
 import { mergeNoteRows, renderNoteBoard } from "./noteBoard";
 import { readPendingEditorProposals } from "../platform/editorProposals";
-import { applyFindingToText, DEFAULT_MEMO_MARKERS, parseMemos, postingSiteInfo, type MemoMarkers, type PostingSiteId, type ProposalView } from "../shared";
+import { applyFindingToText, DEFAULT_MEMO_MARKERS, mergeReadingSpans, parseMemos, postingSiteInfo, type MemoMarkers, type PostingSiteId, type ProposalView } from "../shared";
 import { watchPinchSize } from "./pinchSize";
 import { mountRangeGestures } from "./rangeGestures";
 import { createTrialLog } from "./trialLogFile";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
-import type { ReadingSentence, TermEntry } from "../shared";
+import type { ReadingSentence, ReadingSpan, TermEntry } from "../shared";
 import type { TermFinder } from "./editContextPane";
 import { traceTouch, wantsIosTextareaFixes, watchTextareaLongPress } from "./textareaLongPress";
 import { watchOwnCaret } from "./textareaCaret";
@@ -1122,6 +1123,22 @@ export function mountEpisodeScreen(
     aloudPane = undefined;
   };
   screen.querySelector<HTMLButtonElement>("#aloudStop")!.addEventListener("click", stopAloud);
+  /**
+   * 声へ渡す写しに当てる読み（本体の読み上げと同じ順）：読みの辞書（文脈つき）が先、設定資料の名前の読みが後で、重なれば辞書が勝つ
+   * （本体の `mergeReadingSpans`）。作者のルビはどちらにも勝つ。読めなくても空で続ける（読み上げは止めない）
+   */
+  const aloudReadings = async (text: string): Promise<ReadingSpan[]> => {
+    const root = options.workRoot;
+    if (!root) return [];
+    const dictionary = await readingSpansForEpisode(store, root, path, text);
+    let names: ReadingSpan[] = [];
+    try {
+      names = await nameReadingSpansForWork(store, (await readWorkLayout(store, root)).settings, text);
+    } catch {
+      names = [];
+    }
+    return mergeReadingSpans(dictionary, names);
+  };
   const readAloudFrom = async (target: WritingPane, plan: AloudPlan, from: number): Promise<void> => {
     const run = runAloud(deviceSpeaker(), plan, from, {
       rate: 1,
@@ -1163,7 +1180,7 @@ export function mountEpisodeScreen(
     if (destroyed || pane !== target) return;
     aloudMarkers = markers;
     aloudText = target.value();
-    const readings = options.workRoot ? await readingSpansForEpisode(store, options.workRoot, path, aloudText) : [];
+    const readings = await aloudReadings(aloudText);
     if (destroyed || pane !== target || target.value() !== aloudText) return;
     const plan = readingPlanFor(aloudText, path, markers, readings);
     if (plan.sentences.length === 0) return options.toast("読む文がありません");
@@ -1204,7 +1221,7 @@ export function mountEpisodeScreen(
     // 止めているあいだに打っていてもよい（計画は今の本文で作り直す。辞書の句の位置も今の本文で求める）
     aloudResume.disabled = true;
     const text = target.value();
-    const readings = options.workRoot ? await readingSpansForEpisode(store, options.workRoot, path, text) : [];
+    const readings = await aloudReadings(text);
     aloudResume.disabled = false;
     if (destroyed || aloudPane !== target || aloudPausedAt !== at || target.value() !== text) return;
     aloudText = text;

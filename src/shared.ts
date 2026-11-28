@@ -100,6 +100,8 @@ export { nextChapterNumber, nextDatedName, nextUntitledName, parseEpisodeFileNam
 */
 export { renameUnnumberedSynopses, renumberBookPositions, renumberChapterSet, renumberPostingPosts, renumberTimelineEpisodes } from "novel-ai-assistant/src/core/episodeRenumber";
 export { READINGS_DIRECTORY, readingDictionaryMoveConflictMessage } from "novel-ai-assistant/src/core/readingDictionaryPlace";
+// 設定資料の名前の読み（本体の設計書 6.42.2）を読み上げに当てる（`platform/nameReadings.ts`）。IME の控えは使わない
+export { mergeReadingSpans, nameReadingsFrom, nameReadingSpans } from "novel-ai-assistant/src/core/imeReading";
 export {
   parseReadingDictionary,
   readingDictionaryFileName,
